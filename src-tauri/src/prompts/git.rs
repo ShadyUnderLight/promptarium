@@ -444,7 +444,17 @@ fn parse_name_status_entries(
         }
         let status = normalize_name_status(raw_status);
         *index += 1;
-        if status.starts_with('R') || status.starts_with('C') {
+        if status.starts_with('R') {
+            let previous = token_to_str(tokens[*index])?;
+            *index += 1;
+            let path = token_to_str(tokens[*index])?;
+            *index += 1;
+            entries.push(NameStatusEntry {
+                status,
+                path,
+                previous_path: Some(previous),
+            });
+        } else if status.starts_with('C') {
             let previous = token_to_str(tokens[*index])?;
             *index += 1;
             let path = token_to_str(tokens[*index])?;
@@ -482,6 +492,11 @@ fn resolve_commit_paths_from_entries(
             )
         })?;
         commit.path = selected.path.clone();
+        if selected.status.starts_with('C') {
+            commit.previous_path = None;
+            commits.push(commit);
+            break;
+        }
         commit.previous_path = selected.previous_path.clone();
         if let Some(previous) = &selected.previous_path {
             current_path = previous.clone();
@@ -1003,6 +1018,70 @@ mod tests {
             !diff.patch.contains("top secret"),
             "root commit diff must not leak secret.txt content, got: {}",
             diff.patch
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn copy_does_not_inherit_source_history() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("copy-history");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "source.md", "source v1");
+        commit_all(&dir, "Create source");
+        fs::copy(dir.join("source.md"), dir.join("copy.md")).unwrap();
+        commit_all(&dir, "Copy source");
+        write_prompt(&dir, "copy.md", "copy v2");
+        commit_all(&dir, "Edit copy");
+
+        let page = file_history(&dir, "copy", None, None).unwrap();
+        assert!(page.tracked);
+        assert_eq!(
+            page.commits.len(),
+            2,
+            "copy history should stop at the copy commit, not include source-only commits"
+        );
+        assert_eq!(page.commits[0].subject, "Edit copy");
+        assert_eq!(page.commits[1].subject, "Copy source");
+        assert!(page.commits[1].previous_path.is_none());
+
+        let copy_diff = file_diff(&dir, "copy", &page.commits[1].hash).unwrap();
+        assert!(
+            copy_diff.patch.contains("source v1") || copy_diff.patch.contains('+'),
+            "copy commit diff should show the copied content"
+        );
+        assert!(
+            !copy_diff.patch.contains("rename from source.md"),
+            "copy commit diff should not be presented as a rename"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn copied_prompt_rejects_source_only_commit() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("copy-boundary");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "source.md", "outside source");
+        commit_all(&dir, "Create source");
+        let source_page = file_history(&dir, "source", None, None).unwrap();
+        let source_hash = source_page.commits[0].hash.clone();
+
+        let prompts = dir.join("prompts");
+        fs::create_dir_all(&prompts).unwrap();
+        fs::copy(dir.join("source.md"), prompts.join("copy.md")).unwrap();
+        commit_all(&dir, "Copy into project");
+
+        let error = file_diff(&prompts, "copy", &source_hash).unwrap_err();
+        assert!(
+            error.contains("commit not in prompt history"),
+            "source-only commit must not be reachable from copied prompt, got: {error}"
         );
         fs::remove_dir_all(&dir).ok();
     }
