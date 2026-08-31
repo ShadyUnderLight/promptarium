@@ -2,53 +2,51 @@
 
 ## Stack
 
-- **Frontend:** SvelteKit (Svelte 5, TypeScript), built as a static SPA via `@sveltejs/adapter-static`.
-- **Backend:** Tauri v2 (Rust). Rust owns the filesystem (the Markdown snippet store, the app-local roster) and the semantic-match machinery; the frontend owns rendering and the variable grammar.
-- **Package manager:** pnpm.
+- Frontend: SvelteKit, Svelte 5 and TypeScript, built as a static SPA.
+- Desktop shell: Tauri 2 and Rust.
+- Prompt storage: ordinary Markdown files with optional YAML frontmatter.
+- Package manager: pnpm.
 
-## Setup
+Rust owns the registered-project roster, frontmatter parsing and every
+filesystem operation that can write user data. The frontend owns rendering, UI
+state, Markdown preview and the one variable grammar in
+src/lib/compose/variables.ts.
 
-```bash
-pnpm install
-```
+## Setup and run
 
-For the native desktop app you also need the Rust toolchain and the Tauri system
-dependencies for your platform — see https://v2.tauri.app/start/prerequisites/.
+    pnpm install
+    pnpm dev       # browser preview with seeded in-memory projects
+    pnpm tauri dev # native desktop app
 
-## Run
-
-```bash
-pnpm dev       # frontend only, in a browser — uses a seeded in-memory store
-pnpm tauri dev # the full native desktop app
-```
-
-`pnpm dev` runs the whole UI in a plain browser against a bundled sample library
-(no native shell needed), which is the fastest way to feel-check a change.
+The browser preview has no filesystem access; it exercises the same library
+flows against an in-memory fixture.
 
 ## Verify
 
-Run these before committing:
+Run all four checks before committing:
 
-```bash
-pnpm check                    # svelte-check type-check
-pnpm test:smoke               # the variable-grammar + compose-box logic vectors
-pnpm build                    # production frontend build
-cd src-tauri && cargo test --lib   # the Rust module tests
-```
-
-CI (`.github/workflows/ci.yml`) runs the same four on every push/PR to `main`.
+    pnpm check
+    pnpm test:smoke
+    pnpm build
+    cd src-tauri && cargo test --lib
 
 ## Where things live
 
-- `src/lib/compose/` — the variable grammar (`variables.ts`) and the compose-box node model (`doc.ts`). `tests/prompts_smoke.mjs` is the whole safety net for this logic; there is no second implementation.
-- `src/lib/prompts.svelte.ts` — the reactive store (Svelte 5 runes).
-- `src/lib/components/prompts/` — the compose box, match panel, project tabs, and modals.
-- `src/lib/api.ts` + `src/lib/prompts/types.ts` — the TypeScript side of the Rust command seam. It mirrors `src-tauri/src/prompts/` by hand, because `pnpm check` cannot verify a Rust↔TS signature; keep both sides in step.
-- `src-tauri/src/prompts/` — the snippet store, the app-local roster, and the hybrid match engine (lexical + semantic).
-- `src-tauri/src/datadir.rs` — resolves the `~/.prompt-compose` data root (env `PROMPT_COMPOSE_DATA_DIR` overrides, for tests).
+- src/lib/components/library/ — project sidebar, prompt list, detail,
+  Markdown preview, editor and dialogs.
+- src/lib/library.svelte.ts — library state, filters, selection, CRUD
+  orchestration and remembered UI preferences.
+- src/lib/api.ts and src/lib/prompts/types.ts — the TypeScript mirror of the
+  Tauri command seam.
+- src/lib/compose/variables.ts — the only variable parser, retained for prompt
+  inspection and copy behavior.
+- src-tauri/src/prompts/store.rs — frontmatter parser, scanner and safe file
+  operations.
+- src-tauri/src/prompts/appstate.rs — app-local project registration.
+- src-tauri/src/prompts/state.rs — registered-project command boundary.
+- project_docs/ — the engineering, interaction and migration contracts.
 
-## Design
-
-Read `project_docs/prompts-design.md` (engineering) and `project_docs/prompts-ux.md`
-(interaction) before a non-trivial change — they carry the reasoning behind the
-current shape.
+Read project_docs/prompts-design.md and project_docs/prompts-ux.md before
+changing storage or interaction behavior. User prompt folders must remain
+portable outside this application: do not add UUIDs, sidecars, cloud metadata
+or an authoritative database.

@@ -12,9 +12,8 @@
 
     // Silent launch check: it surfaces the banner only for an update the user
     // has never been shown, and swallows every failure. There is deliberately no
-    // "check on launch" toggle — quiet unless actionable, like the embedding
-    // model's background download. The footer's manual check is the non-silent
-    // path.
+    // Keep launch checks quiet unless actionable. The footer's manual check is
+    // the non-silent path.
     checkForUpdates(true);
 
     // Any plain <a href> (e.g. the footer link) would otherwise make the Tauri

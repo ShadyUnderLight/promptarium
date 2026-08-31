@@ -1,0 +1,242 @@
+<script lang="ts">
+  import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
+  import { formatModifiedAt, promptTitle } from '$lib/library.svelte';
+  import PromptMetadataEditor from './PromptMetadata.svelte';
+  import PromptPreview from './PromptPreview.svelte';
+  import VariableList from './VariableList.svelte';
+
+  interface Props {
+    document: PromptDocument | null;
+    loading: boolean;
+    onSave: (
+      name: string,
+      body: string,
+      metadata: PromptMetadata,
+      frontmatterPrefix: string | undefined,
+      metadataDirty: boolean,
+      expectedRaw: string | undefined
+    ) => Promise<PromptDocument>;
+    onReload: (name: string) => Promise<void>;
+    onCopy: (body: string) => void;
+    onReveal: (name: string) => void;
+    onRename: (name: string, newName: string) => void;
+    onMove: (name: string, destination: string) => void;
+    onDuplicate: (document: PromptDocument, name: string) => void;
+    onDeleteRequest: (document: PromptDocument) => void;
+    onDirtyChange: (dirty: boolean) => void;
+    onNotice: (message: string) => void;
+  }
+
+  let {
+    document,
+    loading,
+    onSave,
+    onCopy,
+    onReload,
+    onReveal,
+    onRename,
+    onMove,
+    onDuplicate,
+    onDeleteRequest,
+    onDirtyChange,
+    onNotice,
+  }: Props = $props();
+
+  let mode = $state<'preview' | 'edit'>('preview');
+  let body = $state('');
+  let metadata = $state<PromptMetadata | null>(null);
+  let originalBody = $state('');
+  let originalMetadata = $state<PromptMetadata | null>(null);
+  let originalRaw = $state<string | undefined>(undefined);
+  let frontmatterPrefix = $state<string | undefined>(undefined);
+  let loadedKey = $state('');
+  let rawVisible = $state(false);
+  let saveError = $state('');
+  let saving = $state(false);
+
+  const dirty = $derived(
+    Boolean(document && metadata && originalMetadata && (body !== originalBody || JSON.stringify(metadata) !== JSON.stringify(originalMetadata)))
+  );
+  const metadataDirty = $derived(
+    Boolean(metadata && originalMetadata && JSON.stringify(metadata) !== JSON.stringify(originalMetadata))
+  );
+
+  $effect(() => {
+    const current = document;
+    if (!current) {
+      loadedKey = '';
+      metadata = null;
+      originalMetadata = null;
+      body = '';
+      originalBody = '';
+      originalRaw = undefined;
+      frontmatterPrefix = undefined;
+      mode = 'preview';
+      return;
+    }
+    const key = current.name + '\u0000' + current.raw;
+    if (key === loadedKey) return;
+    loadedKey = key;
+    body = current.body;
+    originalBody = current.body;
+    metadata = cloneMetadata(current.metadata);
+    originalMetadata = cloneMetadata(current.metadata);
+    originalRaw = current.raw;
+    frontmatterPrefix = current.frontmatterPrefix;
+    mode = 'preview';
+    rawVisible = false;
+    saveError = '';
+  });
+
+  $effect(() => {
+    onDirtyChange(dirty);
+  });
+
+  function cloneMetadata(value: PromptMetadata): PromptMetadata {
+    return { ...value, tags: [...value.tags], models: [...value.models], extra: { ...value.extra } };
+  }
+
+  function updateMetadata(value: PromptMetadata): void {
+    metadata = value;
+    saveError = '';
+  }
+
+  export async function save(): Promise<void> {
+    if (!document || !metadata || !dirty || saving) return;
+    saving = true;
+    saveError = '';
+    try {
+      const saved = await onSave(
+        document.name,
+        body,
+        cloneMetadata(metadata),
+        frontmatterPrefix,
+        metadataDirty,
+        originalRaw
+      );
+      body = saved.body;
+      originalBody = saved.body;
+      metadata = cloneMetadata(saved.metadata);
+      originalMetadata = cloneMetadata(saved.metadata);
+      originalRaw = saved.raw;
+      frontmatterPrefix = saved.frontmatterPrefix;
+      mode = 'preview';
+      onNotice('Prompt saved.');
+    } catch (error) {
+      saveError = error instanceof Error ? error.message : String(error);
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function toggleFavorite(): Promise<void> {
+    if (!metadata) return;
+    const next = cloneMetadata(metadata);
+    next.favorite = !next.favorite;
+    metadata = next;
+    if (mode === 'preview') await save();
+  }
+
+  async function reloadFromDisk(): Promise<void> {
+    if (!document) return;
+    await onReload(document.name);
+    saveError = '';
+    onNotice('Reloaded the prompt from disk. Local edits were discarded.');
+  }
+
+  function actionRename(): void {
+    if (!document) return;
+    const next = window.prompt('Rename prompt file', document.name);
+    if (next?.trim() && next.trim() !== document.name) onRename(document.name, next.trim());
+  }
+
+  function actionMove(): void {
+    if (!document) return;
+    const next = window.prompt('Move prompt to relative path', document.name);
+    if (next?.trim() && next.trim() !== document.name) onMove(document.name, next.trim());
+  }
+
+  function actionDuplicate(): void {
+    if (!document) return;
+    const next = window.prompt('New filename for duplicate', document.name + '-copy');
+    if (next?.trim()) onDuplicate(document, next.trim());
+  }
+</script>
+
+<section class="prompt-detail" aria-label="Prompt detail">
+  {#if loading}
+    <div class="detail-loading"><span></span><span></span></div>
+  {:else if !document || !metadata}
+    <div class="detail-empty">
+      <div class="detail-empty__icon">✦</div>
+      <h2>Select a prompt</h2>
+      <p>Browse the library to inspect metadata, read the Markdown and manage a prompt.</p>
+    </div>
+  {:else}
+    <div class="detail-header">
+      <div class="detail-header__title">
+        <div class="detail-title-line">
+          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? 'Remove favorite' : 'Add favorite'} onclick={toggleFavorite}>{metadata.favorite ? '★' : '☆'}</button>
+          <h2>{promptTitle(document.name)}</h2>
+          {#if dirty}<span class="dirty-dot" title="Unsaved changes"></span>{/if}
+          {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}>!</span>{/if}
+        </div>
+        <span class="detail-path">{document.relativePath}</span>
+        <span class="detail-folder">{document.folder || 'Project root'} · {formatModifiedAt(document.modifiedAt)}</span>
+      </div>
+      <div class="detail-header__actions">
+        <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>Copy Prompt</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document.name)}>Reveal</button>
+      </div>
+    </div>
+
+    <div class="detail-toolbar">
+      <div class="detail-tabs" role="tablist" aria-label="Prompt content">
+        <button type="button" role="tab" aria-selected={mode === 'preview'} class:detail-tab--active={mode === 'preview'} class="detail-tab" onclick={() => (mode = 'preview')}>Preview</button>
+        <button type="button" role="tab" aria-selected={mode === 'edit'} class:detail-tab--active={mode === 'edit'} class="detail-tab" onclick={() => (mode = 'edit')}>Edit</button>
+      </div>
+      <div class="detail-actions">
+        {#if mode === 'edit'}
+          <button type="button" class="btn btn--primary btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+        {/if}
+        <div class="detail-action-group">
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>Duplicate</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionRename}>Rename</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionMove}>Move</button>
+          <button type="button" class="btn btn--ghost btn--sm btn--danger-text" onclick={() => onDeleteRequest(document)}>Delete</button>
+        </div>
+      </div>
+    </div>
+
+    {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveError.includes('CONFLICT')}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '')}>Keep editing</button></span>{/if}</div>{/if}
+    {#if document.frontmatterError}
+      <div class="frontmatter-warning">
+        <span>Frontmatter warning: {document.frontmatterError}</span>
+        <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? 'Hide raw file' : 'Show raw file'}</button>
+      </div>
+    {/if}
+
+    {#if rawVisible}
+      <pre class="raw-file">{document.raw}</pre>
+    {:else if mode === 'preview'}
+      <PromptMetadataEditor metadata={metadata} editing={false} onChange={updateMetadata} />
+      <PromptPreview body={body} />
+    {:else}
+      <div class="editor-layout">
+        <div class="editor-main">
+          <label class="editor-label" for="prompt-body">Prompt Markdown</label>
+          <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '')}></textarea>
+          <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
+        </div>
+        <div class="editor-inspector">
+          <PromptMetadataEditor metadata={metadata} editing={true} onChange={updateMetadata} />
+        </div>
+      </div>
+    {/if}
+
+    <div class="detail-footer">
+      <VariableList body={body} />
+      {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
+    </div>
+  {/if}
+</section>

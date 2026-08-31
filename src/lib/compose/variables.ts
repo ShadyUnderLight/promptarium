@@ -78,7 +78,9 @@ export interface Variable {
 }
 
 /** A lexed run. A `literal` token is ready to emit — escapes already resolved. */
-type Token = { kind: 'literal'; text: string } | { kind: 'variable'; name: string };
+type Token =
+  | { kind: 'literal'; text: string }
+  | { kind: 'variable'; name: string; start: number; end: number };
 
 /** A variable at the start of the slice. This regex IS rule 3: everything that
  *  "stays literal" does so by failing to match here, not by a carve-out. The
@@ -111,7 +113,7 @@ function scan(text: string): Token[] {
       const m = VAR_AT.exec(text.slice(i));
       if (m) {
         flush();
-        tokens.push({ kind: 'variable', name: m[1] });
+        tokens.push({ kind: 'variable', name: m[1], start: i, end: i + m[0].length });
         i += m[0].length;
         continue;
       }
@@ -135,6 +137,16 @@ export function parseVariables(text: string): Variable[] {
     }
   }
   return vars;
+}
+
+/** Source spans for preview decoration. This is exposed from the same scanner
+ * used by parseVariables/copyText so the Markdown renderer cannot grow a
+ * second, subtly different variable grammar. Spans include the original braces
+ * and preserve escaped source text everywhere else. */
+export function variableSpans(text: string): Array<{ start: number; end: number; name: string }> {
+  return scan(text).flatMap((token) =>
+    token.kind === 'variable' ? [{ start: token.start, end: token.end, name: token.name }] : []
+  );
 }
 
 /** A variable's effective value. An empty input reads as untouched, so it

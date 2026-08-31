@@ -39,8 +39,8 @@
     "targets": "all",
     "createUpdaterArtifacts": true,
     "category": "Productivity",
-    "shortDescription": "Offline manager for Markdown prompt snippets, organized by folder-as-project.",
-    "longDescription": "Prompt Compose is an offline desktop app for managing prompt snippets. A snippet is a plain Markdown file whose filename is its name; a project is just a folder, so your whole library can live in your own git repo and read as clean diffs. Compose prompts by inserting snippets, fill their Python-format-string variables, and copy the result. Your prompts never leave your machine — the app only ever fetches, never sends. It makes two kinds of network request, neither of which its core job requires: an optional semantic-match model that improves result ranking, and its own update check, whose artifacts are cryptographically signed.",
+    "shortDescription": "Local-first Markdown prompt library organized by projects and folders.",
+    "longDescription": "Prompt Compose is a local-first macOS Prompt Library for browsing, editing and organizing Markdown prompts. A project is a real folder and each prompt is a normal Markdown file, so users can keep libraries in Finder, VS Code, Obsidian or Git. Optional YAML frontmatter adds descriptions, tags, lifecycle status, favorites and model hints. Search, preview, safe atomic editing and copying work without a cloud account, AI API key or Accessibility permission.",
     "publisher": "zhangxingeng",
     "copyright": "Copyright (c) 2026 zhangxingeng. MIT licensed.",
     "icon": [
@@ -50,8 +50,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "macOS": {
-      "infoPlist": "Info.plist"
-    }
+    "macOS": {}
   }
 }

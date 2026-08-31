@@ -1,16 +1,10 @@
 //! Prompt Compose — the native shell.
 //!
-//! Rust owns the filesystem (the Markdown snippet store, the app-local roster),
-//! the semantic-match machinery, and local speech-to-text; the SvelteKit
-//! frontend owns rendering and the variable grammar. Two command surfaces:
-//! the Prompt Library's (`prompts::state`) and dictation's (`dictate::state`).
+//! Rust owns the filesystem (the Markdown prompt store and the app-local
+//! roster). The SvelteKit frontend owns rendering and the variable grammar.
 
 mod datadir;
-mod dictate;
-mod net;
 mod prompts;
-
-use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,34 +17,27 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(prompts::state::PromptsState::new())
-        .manage(dictate::state::DictateState::new())
         .invoke_handler(tauri::generate_handler![
             prompts::state::list_projects,
             prompts::state::add_project,
             prompts::state::set_project_color,
             prompts::state::remove_project,
             prompts::state::set_active_project,
-            prompts::state::list_snippets,
-            prompts::state::save_snippet,
-            prompts::state::delete_snippet,
-            prompts::state::match_snippets,
-            prompts::state::touch_snippet,
-            dictate::state::list_audio_devices,
-            dictate::state::dictate_model_status,
-            dictate::state::download_dictate_model,
-            dictate::state::start_dictation,
-            dictate::state::stop_dictation,
+            prompts::state::scan_project,
+            prompts::state::scan_folders,
+            prompts::state::read_prompt,
+            prompts::state::create_prompt,
+            prompts::state::save_prompt,
+            prompts::state::rename_prompt,
+            prompts::state::move_prompt,
+            prompts::state::delete_prompt,
+            prompts::state::create_folder,
+            prompts::state::rename_folder,
+            prompts::state::delete_empty_folder,
+            prompts::state::search_prompts,
+            prompts::state::reveal_in_finder,
         ])
-        .setup(move |app| {
-            // Prompt Library: fetch the embedding model and index the active
-            // project in the background, silently. Semantic match is an
-            // improvement to ranking, never a prerequisite — lexical match works
-            // instantly and unconditionally, so this blocks nothing and a
-            // failure is logged rather than surfaced. There is no toggle and no
-            // progress UI by design.
-            prompts::state::spawn_background_index(&app.state::<prompts::state::PromptsState>());
-            Ok(())
-        });
+        .setup(move |_app| Ok(()));
 
     builder
         .run(tauri::generate_context!())

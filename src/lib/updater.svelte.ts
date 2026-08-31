@@ -3,10 +3,9 @@
  * update affordance.
  *
  * Checks GitHub Releases for a newer signed build and installs it in-app. This
- * is one of the app's two network requests — the other is the optional embedding
- * model (`src-tauri/src/prompts/embed.rs`) — and like that one it only ever
- * fetches. Any failure (offline, GitHub unreachable, no release yet) is
- * swallowed on the launch-time path so it can never block the app from starting.
+ * only ever fetches. Any failure (offline, GitHub unreachable, no release yet)
+ * is swallowed on the launch-time path so it can never block the app from
+ * starting.
  *
  * **The banner tells you once; the footer always knows.** A version surfaces the
  * banner at most once per install, ever — see `markSeen` below for why that is
@@ -148,7 +147,7 @@ export async function checkForUpdates(silent = true): Promise<void> {
  * this.
  *
  * Revealing rather than installing is deliberate. Installing relaunches the app,
- * which discards the in-memory compose draft, so the footer click surfaces the
+ * which discards any in-memory editor draft, so the footer click surfaces the
  * banner and lets `Update & restart` — a button that states its consequence — be
  * the confirm. It mirrors the two-step, consequence-labelled pattern the project
  * manager's Remove already uses.

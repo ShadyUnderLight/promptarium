@@ -1,371 +1,301 @@
 <script lang="ts">
-  /**
-   * Prompts — the Prompt Library view. Project tabs on top (a project is a name
-   * and a folder); the compose box is the primary surface; the library panel
-   * sits left, lists the active project's snippets, and collapses for a
-   * distraction-free box. Orchestrates the snippet modal, the library's `+`
-   * create button, the one fixed hotkey, the ↓-into-panel keyboard bridge, and
-   * the toast stack.
-   *
-   * There is no scope and no tint: a snippet lives in the folder it sits in, so
-   * "which project does this save to?" has exactly one answer — the active one.
-   */
   import { onDestroy, onMount } from 'svelte';
-  import type { Snippet } from '$lib/prompts/types';
   import {
-    prompts,
-    initPrompts,
-    disposePrompts,
-    composeInsertSnippet,
-    composeClear,
-    copyOutput,
-    touchSnippet,
-  } from '$lib/prompts.svelte';
-  import { flatten } from '$lib/compose/doc';
-  import { parseVariables } from '$lib/compose/variables';
+    batchDelete,
+    batchUpdate,
+    createPrompt,
+    deletePrompt,
+    duplicatePrompt,
+    initLibrary,
+    library,
+    movePrompt,
+    refreshLibrary,
+    renamePrompt,
+    revealPrompt,
+    saveDocument,
+    selectPrompt,
+    setSearchQuery,
+    setPaneWidth,
+    visiblePrompts,
+  } from '$lib/library.svelte';
+  import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
   import { copyToClipboard } from '$lib/copy';
   import { toasts } from '$lib/prompts/toasts.svelte';
-  import ComposeBox from './prompts/ComposeBox.svelte';
-  import VariableFillList from './prompts/VariableFillList.svelte';
-  import MatchPanel from './prompts/MatchPanel.svelte';
-  import SnippetModal, { type SnippetModalContext } from './prompts/SnippetModal.svelte';
-  import ProjectTabs from './prompts/ProjectTabs.svelte';
+  import ProjectSidebar from './library/ProjectSidebar.svelte';
+  import PromptLibrary from './library/PromptLibrary.svelte';
+  import PromptDetail from './library/PromptDetail.svelte';
+  import NewPromptDialog from './library/NewPromptDialog.svelte';
+  import ConfirmDialog from './library/ConfirmDialog.svelte';
 
-  let panelCollapsed = $state(false);
-  /** True while a project's right-click context menu (rename/color/delete) is
-   *  open — the replacement for the deleted `ProjectManagerPopover`'s
-   *  `managerOpen`, same keyboard-disarm purpose. */
-  let projectMenuOpen = $state(false);
-  let modalContext = $state<SnippetModalContext | null>(null);
-  /** MatchPanel instance — only its exported focusFirst() is called (the ↓ step
-   *  into the panel). A structural type avoids the component-instance gymnastics. */
-  let matchPanel = $state<{ focusFirst: () => boolean } | undefined>(undefined);
-  /** ComposeBox instance. Only its exported `focus()` is called (Esc out of the
-   *  match panel puts the caret back in the box). */
-  let composeBox = $state<{ focus: () => void } | undefined>(undefined);
-
-  /** True while a modal or popover owns the keyboard — the view-scoped hotkeys
-   *  disarm so a modal keystroke never triggers a command. */
-  const keyboardCaptured = $derived(modalContext !== null || projectMenuOpen);
-
-  /** Whether the fill-list column has anything to show — gates the column
-   *  itself (not just its rows), so an empty prompt doesn't reserve a blank
-   *  right-hand strip. */
-  const hasVariables = $derived(parseVariables(flatten(prompts.doc)).length > 0);
+  let searchInput: HTMLInputElement | undefined = $state(undefined);
+  let detail: { save: () => Promise<void> } | undefined = $state(undefined);
+  let newPromptOpen = $state(false);
+  let deleteTarget = $state<PromptDocument | null>(null);
+  let detailDirty = $state(false);
+  let selectedProjectMissing = $derived(Boolean(library.error?.toLowerCase().includes('project folder not found')));
 
   onMount(() => {
-    initPrompts();
-    window.addEventListener('keydown', onWindowKeydown);
-  });
-  onDestroy(() => {
-    disposePrompts();
-    window.removeEventListener('keydown', onWindowKeydown);
+    void initLibrary();
+    window.addEventListener('keydown', onGlobalKeydown);
+    window.addEventListener('focus', onWindowFocus);
   });
 
-  // ── insert flow: one path, the tinted snippet replaces the query line ────────
-  async function handleInsert(snippet: Snippet): Promise<void> {
-    composeInsertSnippet(snippet.content);
-    // Using a snippet is the ONLY thing that feeds the at-rest sort, so the
-    // insert path is where it has to be recorded — this is what makes the panel
-    // open on what you actually reach for.
-    await touchSnippet(snippet.name);
+  onDestroy(() => {
+    window.removeEventListener('keydown', onGlobalKeydown);
+    window.removeEventListener('focus', onWindowFocus);
+  });
+
+  function notice(message: string): void {
+    toasts.push(message);
   }
 
-  // ── the popup: one entrance, one surface ─────────────────────────────────────
-  // The library's `+` button — the only in-app way a snippet is created. An
-  // inserted snippet is now just tinted editable text with no link to its file,
-  // so there is nothing to click into and edit: editing composed text writes
-  // nothing to the library. Editing or deleting an existing snippet is done in
-  // the filesystem — a snippet IS a `.md` file, so that is `$EDITOR` / Finder,
-  // not an in-app editor. "The compose box is for orchestrating snippets into a
-  // prompt. The library is where snippets are made."
+  function canNavigate(): boolean {
+    if (!detailDirty) return true;
+    return window.confirm('This prompt has unsaved changes. Discard them and continue?');
+  }
 
-  /** The library's `+` button: create a new snippet from scratch. Blank context
-   *  (no `name`) opens the modal on an empty snippet — the one explicit
-   *  Save-as-snippet action. */
-  function createSnippet(): void {
-    if (prompts.activeProjectPath === null) {
-      toasts.push('Add a prompt folder first');
+  function openNewPrompt(): void {
+    if (!library.activeProjectPath) {
+      notice('Add a prompt project first.');
       return;
     }
-    modalContext = { content: '' };
+    if (!canNavigate()) return;
+    newPromptOpen = true;
   }
 
-  // ── Copy Prompt ──────────────────────────────────────────────────────────────
-  async function copyPrompt(): Promise<void> {
-    const ok = await copyToClipboard(copyOutput());
-    toasts.push(ok ? 'Prompt copied.' : 'Copy failed — select the text manually.');
+  function handleSelect(name: string): void {
+    if (!canNavigate()) return;
+    void selectPrompt(name);
   }
 
-  // ── Clear ─────────────────────────────────────────────────────────────────────
-  /** Empty the box in one click (no confirm — the founder asked for exactly that
-   *  simplicity). The store owns the reset; we just put the caret back so the user
-   *  can start typing immediately. */
-  function clearCompose(): void {
-    composeClear();
-    composeBox?.focus();
+  async function handleCreate(name: string, body: string, metadata: PromptMetadata): Promise<PromptDocument> {
+    const created = await createPrompt(name, body, metadata);
+    newPromptOpen = false;
+    notice('Prompt created.');
+    return created;
   }
 
-  // ── view-scoped hotkey — fixed, not rebindable ───────────────────────────────
-  // One command, one constant: Mod+C copies the composed prompt ("Mod" = Ctrl on
-  // Windows/Linux, Cmd on macOS). Mod+S (save as snippet) was cut along with the
-  // compose box's save-as-snippet path — the library's `+` button is now the
-  // only way to create one, and Ctrl/Cmd+S reverts to the browser's own binding.
-  // Rebinding was cut separately (contract §Cuts) — nobody ever rebound this,
-  // and the capture/conflict UI cost ~410 lines to defend a capability with no
-  // users. The chord carries Mod by construction, so the old "a hand-edited
-  // config bound a bare key, don't steal a keystroke a text field would insert"
-  // backstop has nothing left to defend against and is gone with it.
+  async function handleSave(
+    name: string,
+    body: string,
+    metadata: PromptMetadata,
+    frontmatterPrefix: string | undefined,
+    metadataDirty: boolean,
+    expectedRaw: string | undefined
+  ): Promise<PromptDocument> {
+    const saved = await saveDocument(name, body, metadata, frontmatterPrefix, metadataDirty, expectedRaw);
+    detailDirty = false;
+    return saved;
+  }
 
-  /** Does native copy have something to act on, wherever focus is? A text-entry
-   *  element's own non-collapsed selection, or a non-collapsed document
-   *  selection (contenteditable / plain DOM). This is the real "is anything
-   *  selected anywhere" — the compose box's selStart/selEnd only track the box
-   *  while IT is focused, which is exactly what let Ctrl+C hijack a fill-input
-   *  copy (contract §S9). */
-  function nativeSelectionActive(): boolean {
-    const el = document.activeElement;
-    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
-      return (
-        el.selectionStart !== null &&
-        el.selectionEnd !== null &&
-        el.selectionStart !== el.selectionEnd
-      );
+  async function handleReload(name: string): Promise<void> {
+    await selectPrompt(name);
+    detailDirty = false;
+  }
+
+  function handleCopy(body: string): void {
+    void copyToClipboard(body).then((ok) => notice(ok ? 'Prompt copied.' : 'Copy failed — select the text manually.'));
+  }
+
+  function handleReveal(name: string): void {
+    void revealPrompt(name).catch((error) => notice(errorText(error)));
+  }
+
+  function handleRename(name: string, newName: string): void {
+    if (detailDirty && !canNavigate()) return;
+    detailDirty = false;
+    void renamePrompt(name, newName)
+      .then(() => notice('Prompt renamed.'))
+      .catch((error) => notice(errorText(error)));
+  }
+
+  function handleMove(name: string, destination: string): void {
+    if (detailDirty && !canNavigate()) return;
+    detailDirty = false;
+    void movePrompt(name, destination)
+      .then(() => notice('Prompt moved.'))
+      .catch((error) => notice(errorText(error)));
+  }
+
+  function handleDuplicate(document: PromptDocument, name: string): void {
+    if (detailDirty && !canNavigate()) return;
+    void duplicatePrompt(document, name)
+      .then(() => notice('Prompt duplicated.'))
+      .catch((error) => notice(errorText(error)));
+  }
+
+  function requestDelete(document: PromptDocument): void {
+    if (detailDirty && !canNavigate()) return;
+    deleteTarget = document;
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return;
+    const name = deleteTarget.name;
+    try {
+      await deletePrompt(name);
+    } catch (error) {
+      notice(errorText(error));
+      return;
     }
-    const sel = window.getSelection();
-    return sel !== null && !sel.isCollapsed && sel.toString().length > 0;
+    deleteTarget = null;
+    detailDirty = false;
+    notice('Deleted ' + name + '.md.');
   }
 
-  function onWindowKeydown(e: KeyboardEvent): void {
-    if (keyboardCaptured) return; // a modal/popover owns the keyboard
-    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    const key = e.key.toLowerCase();
-    if (key === 'c') {
-      // Selection-aware (JC-4 / §S9): native copy owns Ctrl/Cmd+C whenever
-      // anything is selected where focus actually is; we claim only the empty
-      // key-space the OS leaves us when nothing is selected anywhere. Without
-      // this, Copy Prompt would hijack a copy out of a variable fill input.
-      if (nativeSelectionActive()) return;
-      e.preventDefault();
-      void copyPrompt();
+  async function handleBatch(
+    names: string[],
+    action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete',
+    tag?: string
+  ): Promise<void> {
+    if (!names.length) return;
+    if (detailDirty && !canNavigate()) return;
+    if (action === 'delete') {
+      const listed = names.map((name) => '• ' + name + '.md').join('\n');
+      if (!window.confirm('Delete these Markdown files?\n\n' + listed + '\n\nThis cannot be undone.')) return;
+      const failures = await batchDelete(names);
+      reportBatchResult(failures, names.length - failures.length);
+      return;
     }
+    if ((action === 'add-tag' || action === 'remove-tag') && !tag?.trim()) {
+      notice('Enter a tag first.');
+      return;
+    }
+    const selected = names
+      .map((name) => library.allPrompts.find((prompt) => prompt.name === name))
+      .filter((prompt): prompt is NonNullable<typeof prompt> => Boolean(prompt));
+    const missing = names.filter((name) => !selected.some((prompt) => prompt.name === name));
+    const failures = [...missing, ...(await batchUpdate(selected, (metadata) => {
+      const next = { ...metadata, tags: [...metadata.tags], models: [...metadata.models], extra: { ...metadata.extra } };
+      if (action === 'favorite') next.favorite = true;
+      if (action === 'unfavorite') next.favorite = false;
+      if (action === 'archive') next.status = 'archived';
+      if (action === 'draft' || action === 'active') next.status = action;
+      if (action === 'add-tag' && tag) next.tags = [...new Set([...next.tags, tag.trim()])];
+      if (action === 'remove-tag' && tag) next.tags = next.tags.filter((item) => item !== tag.trim());
+      return next;
+    }))];
+    reportBatchResult(failures, names.length - failures.length);
+  }
+
+  function reportBatchResult(failures: string[], succeeded: number): void {
+    if (failures.length) notice(succeeded + ' updated; failed: ' + failures.join(', '));
+    else notice(succeeded + ' prompt' + (succeeded === 1 ? '' : 's') + ' updated.');
+  }
+
+  function onGlobalKeydown(event: KeyboardEvent): void {
+    if (newPromptOpen || deleteTarget) return;
+    const modifier = event.metaKey || event.ctrlKey;
+    if (!modifier || event.altKey) return;
+    const key = event.key.toLowerCase();
+    if (key === 'n') {
+      event.preventDefault();
+      openNewPrompt();
+    } else if (key === 'f') {
+      event.preventDefault();
+      searchInput?.focus();
+      searchInput?.select();
+    } else if (key === 's') {
+      if (!detailDirty) return;
+      event.preventDefault();
+      void detail?.save();
+    }
+  }
+
+  function onWindowFocus(): void {
+    if (!detailDirty) void refreshLibrary();
+  }
+
+  function errorText(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  function startResize(which: 'sidebar' | 'library', event: PointerEvent): void {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startValue = which === 'sidebar' ? library.sidebarWidth : library.libraryWidth;
+    const move = (moveEvent: PointerEvent) => {
+      const next = startValue + moveEvent.clientX - startX;
+      setPaneWidth(which, next);
+    };
+    const stop = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
   }
 </script>
 
-<div class="prompts-view">
-  <div class="prompts-view__tabrow">
-    <div class="prompts-view__tabrow-tabs">
-      <ProjectTabs onProjectMenuOpenChange={(open) => (projectMenuOpen = open)} />
+<div class="library-shell" class:library-shell--missing={selectedProjectMissing}>
+  <div class="library-topbar">
+    <div class="library-topbar__title">
+      <span class="app-mark">✦</span>
+      <div>
+        <h1>Prompt Library</h1>
+        <span>{library.activeProjectPath ? (library.projects.find((item) => item.path === library.activeProjectPath)?.name ?? 'Project') : 'Local Markdown workspace'}</span>
+      </div>
+    </div>
+    <label class="global-search">
+      <span aria-hidden="true">⌕</span>
+      <input bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder="Search all prompts…" aria-label="Search all prompts" />
+      <kbd>⌘ F</kbd>
+    </label>
+    <div class="library-topbar__actions">
+      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ New prompt</button>
+      <button type="button" class="icon-button" title="Refresh library" aria-label="Refresh library" onclick={() => refreshLibrary()}>↻</button>
     </div>
   </div>
 
-  {#if prompts.loadError}
-    <div class="prompts-view__error">Couldn't load the snippet library: {prompts.loadError}</div>
+  {#if library.error && !selectedProjectMissing}
+    <div class="library-error" role="alert">{library.error}</div>
   {/if}
 
-  <div class="prompts-view__cols">
-    {#if panelCollapsed}
-      <button
-        type="button"
-        class="prompts-view__panel-peek"
-        onclick={() => (panelCollapsed = false)}
-        title="Show the library panel"
-      >
-        ⟩ Library
-      </button>
-    {:else}
-      <aside class="prompts-view__panel">
-        <div class="prompts-view__panel-head">
-          <span class="prompts-view__panel-title">Library</span>
-          <div class="prompts-view__panel-head-actions">
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm"
-              onclick={createSnippet}
-              title="New snippet"
-              aria-label="New snippet"
-            >
-              +
-            </button>
-            <button
-              type="button"
-              class="btn btn--ghost btn--sm"
-              onclick={() => (panelCollapsed = true)}
-              title="Hide the library panel (distraction-free box)"
-              aria-label="Hide the library panel"
-            >
-              ⟨
-            </button>
-          </div>
-        </div>
-        <MatchPanel bind:this={matchPanel} onInsert={handleInsert} onEscape={() => composeBox?.focus()} />
-      </aside>
-    {/if}
-
-    <section class="prompts-view__compose">
-      <ComposeBox
-        bind:this={composeBox}
-        onCopy={copyPrompt}
-        onClear={clearCompose}
-        onStepIntoPanel={() => matchPanel?.focusFirst() ?? false}
-      />
-    </section>
-
-    {#if hasVariables}
-      <aside class="prompts-view__fills">
-        <span class="prompts-view__fills-title">Variables</span>
-        <VariableFillList />
-      </aside>
-    {/if}
+  <div
+    class="library-workspace"
+    style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
+  >
+    <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
+    <button type="button" class="pane-resizer" aria-label="Resize project sidebar" onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
+    <button type="button" class="pane-resizer" aria-label="Resize prompt library" onpointerdown={(event) => startResize('library', event)}></button>
+    <PromptDetail
+      bind:this={detail}
+      document={library.selected}
+      loading={library.loadingDocument}
+      onSave={handleSave}
+      onReload={handleReload}
+      onCopy={handleCopy}
+      onReveal={handleReveal}
+      onRename={handleRename}
+      onMove={handleMove}
+      onDuplicate={handleDuplicate}
+      onDeleteRequest={requestDelete}
+      onDirtyChange={(dirty) => (detailDirty = dirty)}
+      onNotice={notice}
+    />
   </div>
 </div>
 
-{#if modalContext && prompts.activeProjectPath !== null}
-  <SnippetModal
-    context={modalContext}
-    project={prompts.activeProjectPath}
-    onClose={() => (modalContext = null)}
+{#if newPromptOpen}
+  <NewPromptDialog defaultFolder={library.folderFilter} onCreate={handleCreate} onClose={() => (newPromptOpen = false)} />
+{/if}
+
+{#if deleteTarget}
+  <ConfirmDialog
+    title="Delete prompt file?"
+    message={'Delete “' + deleteTarget.name + '.md” from ' + deleteTarget.relativePath + '? The Markdown file will be permanently deleted.'}
+    confirmLabel="Delete file"
+    destructive={true}
+    onConfirm={confirmDelete}
+    onCancel={() => (deleteTarget = null)}
   />
 {/if}
 
 {#if toasts.items.length}
   <div class="prompts-toasts" role="status" aria-live="polite">
-    {#each toasts.items as t (t.id)}
-      <button type="button" class="prompts-toast" onclick={() => toasts.dismiss(t.id)} title="Dismiss">
-        {t.text}
-      </button>
+    {#each toasts.items as toast (toast.id)}
+      <button type="button" class="prompts-toast" onclick={() => toasts.dismiss(toast.id)}>{toast.text}</button>
     {/each}
   </div>
 {/if}
-
-<style>
-  .prompts-view {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    /* Fill the viewport under the header so the compose box gets real height. */
-    min-height: calc(100vh - var(--header-h) - 9rem);
-  }
-
-  .prompts-view__tabrow {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .prompts-view__tabrow-tabs {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .prompts-view__error {
-    font-size: 0.75rem;
-    color: var(--accent-result-err);
-    border: 1px solid color-mix(in srgb, var(--accent-result-err) 25%, transparent);
-    background: color-mix(in srgb, var(--accent-result-err) 8%, transparent);
-    border-radius: 0.4rem;
-    padding: 0.5rem 0.75rem;
-  }
-
-  .prompts-view__cols {
-    display: flex;
-    gap: 1rem;
-    flex: 1;
-    align-items: stretch;
-    min-height: 0;
-  }
-  .prompts-view__panel-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.4rem;
-  }
-  .prompts-view__panel-head-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  .prompts-view__panel-peek {
-    align-self: flex-start;
-    font-family: inherit;
-    font-size: 0.68rem;
-    padding: 0.3rem 0.6rem;
-    border: 1px solid var(--border);
-    border-radius: 0.4rem;
-    background: transparent;
-    color: var(--text-faint);
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  .prompts-view__panel-peek:hover {
-    color: var(--text);
-    background: var(--bg-subtle);
-  }
-  .prompts-view__panel-title {
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-faint);
-  }
-  .prompts-view__panel {
-    width: 15.5rem;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    /* No overflow-y here on purpose: a hovered row's preview tooltip floats to
-       the RIGHT of the panel (MatchPanel.svelte), and `overflow-y: auto` would
-       force `overflow-x` to clip too, cutting the tooltip off. The page itself
-       scrolls if the library list runs long. */
-  }
-  .prompts-view__compose {
-    flex: 1;
-    display: flex;
-    min-width: 22rem; /* a variables column next door must not squeeze this thin */
-    position: relative; /* anchors the placeholder popover */
-  }
-
-  .prompts-view__fills {
-    width: 15.5rem;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    overflow-y: auto;
-  }
-  .prompts-view__fills-title {
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--text-faint);
-  }
-
-  /* Toast stack: newest at the bottom, above everything, click to dismiss. */
-  .prompts-toasts {
-    position: fixed;
-    bottom: 1.25rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 200;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .prompts-toast {
-    font-family: inherit;
-    font-size: 0.8rem;
-    padding: 0.6rem 1.1rem;
-    border: 0;
-    border-radius: 0.5rem;
-    background: var(--text);
-    color: var(--bg);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    cursor: pointer;
-    max-width: min(30rem, 92vw);
-  }
-
-  @media (max-width: 640px) {
-    .prompts-view__cols { flex-direction: column; }
-    .prompts-view__panel { width: 100%; }
-    .prompts-view__fills { width: 100%; }
-  }
-</style>

@@ -3,9 +3,8 @@
    * +page.svelte — top-level SPA shell for Prompt Compose.
    *
    * There is exactly one view: the Prompt Library (PromptsView). The shell owns
-   * only the app chrome — title, theme toggle, footer — and the compose surface
-   * lives entirely inside PromptsView, whose store keeps a draft alive for the
-   * app's lifetime.
+   * only the app chrome — title, theme toggle and footer. The library workspace
+   * owns navigation, search and prompt management.
    */
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
@@ -13,10 +12,8 @@
   import { isTauri } from '$lib/api';
   import { update, openUpdatePrompt } from '$lib/updater.svelte';
   import PromptsView from '$lib/components/PromptsView.svelte';
-  import SettingsModal from '$lib/components/SettingsModal.svelte';
 
   let theme = $state(getTheme());
-  let settingsOpen = $state(false);
 
   // The footer's update affordance is desktop-only: there is nothing to update
   // in a browser, and `check()` would just throw across an absent IPC bridge.
@@ -60,9 +57,6 @@
     <h1>Prompt Compose</h1>
   </div>
   <div class="app-header__actions">
-    <button class="btn btn--ghost btn--sm" onclick={() => (settingsOpen = true)} type="button" title="Settings">
-      ⚙
-    </button>
     <button class="btn btn--ghost btn--sm" onclick={handleToggleTheme} type="button">
       {theme === 'dark' ? 'Dark' : 'Light'}
     </button>
@@ -73,13 +67,9 @@
   <PromptsView />
 </main>
 
-{#if settingsOpen}
-  <SettingsModal onClose={() => (settingsOpen = false)} />
-{/if}
-
 <footer class="app-footer">
   <a href="https://github.com/zhangxingeng/prompt-compose" target="_blank" rel="noopener noreferrer">
-    Prompt Compose{appVersion ? ` v${appVersion}` : ''} — offline Markdown prompt snippets, organized by folder
+    Prompt Library{appVersion ? ` v${appVersion}` : ''} — local-first Markdown prompts, organized by project
   </a>
   <!--
     The permanent quiet channel for updates. The banner shows a given version at

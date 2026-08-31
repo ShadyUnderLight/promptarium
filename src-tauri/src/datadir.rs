@@ -1,10 +1,10 @@
 //! Prompt Compose's own data root: `~/.prompt-compose/`.
 //!
 //! Everything the *app* owns — the project roster and active project
-//! (`prompts-state.json`) and the rebuildable embedding cache — lives under this
-//! root, never inside a user's project folder. A project folder is the user's
-//! git repo; writing app state into it would dirty their tree on every use, and
-//! reading clean diffs is the whole reason the library is Markdown-in-git.
+//! (`prompts-state.json`) and any rebuildable indexes — lives under this root,
+//! never inside a user's project folder. A project folder is the user's git repo;
+//! writing app state into it would dirty their tree on every use, and reading
+//! clean diffs is the whole reason the library is Markdown-in-git.
 //!
 //! This app has no shipped predecessor and no legacy locations to migrate from,
 //! so there is deliberately no migration code here — just the root lookup.
