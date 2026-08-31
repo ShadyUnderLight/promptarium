@@ -34,7 +34,10 @@ mod tests {
         // Save/restore around the test so we don't leak env state to siblings.
         let prev = std::env::var("PROMPTARIUM_DATA_DIR").ok();
         std::env::set_var("PROMPTARIUM_DATA_DIR", "/tmp/promptarium-test-root");
-        assert_eq!(data_root().unwrap(), PathBuf::from("/tmp/promptarium-test-root"));
+        assert_eq!(
+            data_root().unwrap(),
+            PathBuf::from("/tmp/promptarium-test-root")
+        );
 
         // A blank override is ignored — falls back to the home-dir default.
         std::env::set_var("PROMPTARIUM_DATA_DIR", "   ");

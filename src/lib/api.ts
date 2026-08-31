@@ -12,6 +12,7 @@ import type {
   PromptMetadata,
   PromptSummary,
 } from './prompts/types';
+import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -159,6 +160,26 @@ export async function searchPrompts(project: string, query: string): Promise<Pro
 export async function revealInFinder(project: string, name?: string): Promise<void> {
   if (!isTauri()) return;
   await call<null>('reveal_in_finder', { project, name });
+}
+
+export async function gitRepositoryInfo(project: string): Promise<GitRepositoryInfo> {
+  if (!isTauri()) return { available: false, reason: 'not-a-repository' };
+  return call<GitRepositoryInfo>('git_repository_info', { project });
+}
+
+export async function gitFileHistory(
+  project: string,
+  name: string,
+  limit?: number,
+  cursor?: string
+): Promise<GitFileHistoryPage> {
+  if (!isTauri()) return { commits: [], tracked: false };
+  return call<GitFileHistoryPage>('git_file_history', { project, name, limit, cursor });
+}
+
+export async function gitFileDiff(project: string, name: string, commit: string): Promise<GitFileDiff> {
+  if (!isTauri()) return { commit, patch: '' };
+  return call<GitFileDiff>('git_file_diff', { project, name, commit });
 }
 
 interface DevPrompt {

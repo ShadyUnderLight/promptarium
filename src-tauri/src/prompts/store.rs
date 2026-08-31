@@ -276,7 +276,7 @@ fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, Par
     Some((result, parsed))
 }
 
-fn project_root(project: &Path) -> Result<PathBuf, String> {
+pub(crate) fn project_root(project: &Path) -> Result<PathBuf, String> {
     if !project.exists() {
         return Err(format!("project folder not found: {}", project.display()));
     }

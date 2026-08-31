@@ -5,6 +5,7 @@
 //! frontend-only so the application has exactly one variable parser.
 
 mod appstate;
+mod git;
 mod store;
 
 pub mod state;

@@ -82,7 +82,10 @@ fn save(root: &Path, state: &State) -> Result<(), String> {
 
 pub fn list_projects(root: &Path) -> Result<ProjectList, String> {
     let state = load(root)?;
-    Ok(ProjectList { projects: state.projects, active: state.active })
+    Ok(ProjectList {
+        projects: state.projects,
+        active: state.active,
+    })
 }
 
 /// Add a project, or rename the one already registered at this path (a path is
@@ -100,7 +103,9 @@ pub fn add_project(root: &Path, name: &str, path: &Path) -> Result<Project, Stri
     if !path.is_dir() {
         return Err(format!("project folder does not exist: {}", path.display()));
     }
-    let path = path.canonicalize().map_err(|e| format!("{}: {e}", path.display()))?;
+    let path = path
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", path.display()))?;
 
     let mut state = load(root)?;
     match state.projects.iter_mut().find(|p| p.path == path) {
@@ -155,7 +160,10 @@ pub fn replace_project_path(
     new_path: &Path,
 ) -> Result<Project, String> {
     if !new_path.is_dir() {
-        return Err(format!("project folder does not exist: {}", new_path.display()));
+        return Err(format!(
+            "project folder does not exist: {}",
+            new_path.display()
+        ));
     }
     let new_path = new_path
         .canonicalize()
@@ -172,7 +180,10 @@ pub fn replace_project_path(
         .enumerate()
         .any(|(candidate, project)| candidate != index && project.path == new_path)
     {
-        return Err(format!("project folder is already registered: {}", new_path.display()));
+        return Err(format!(
+            "project folder is already registered: {}",
+            new_path.display()
+        ));
     }
     if new_path == old_path {
         return Ok(state.projects[index].clone());
@@ -247,8 +258,10 @@ mod tests {
     use super::*;
 
     fn tmp_dir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir()
-            .join(format!("promptarium-appstate-test-{name}-{}", uuid::Uuid::new_v4()));
+        let d = std::env::temp_dir().join(format!(
+            "promptarium-appstate-test-{name}-{}",
+            uuid::Uuid::new_v4()
+        ));
         fs::create_dir_all(&d).unwrap();
         d
     }
@@ -266,11 +279,22 @@ mod tests {
     fn a_project_is_a_name_and_a_folder_and_the_first_one_becomes_active() {
         let (root, project) = fixture("add");
         let added = add_project(&root, "juror", &project).unwrap();
-        assert_eq!(added, Project { name: "juror".into(), path: project.clone(), color: None });
+        assert_eq!(
+            added,
+            Project {
+                name: "juror".into(),
+                path: project.clone(),
+                color: None
+            }
+        );
 
         let list = list_projects(&root).unwrap();
         assert_eq!(list.projects, vec![added]);
-        assert_eq!(list.active, Some(project), "the first project must become active");
+        assert_eq!(
+            list.active,
+            Some(project),
+            "the first project must become active"
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 
@@ -345,7 +369,10 @@ mod tests {
 
         let updated = set_project_color(&root, &project, Some("#0ea5e9".to_string())).unwrap();
         assert_eq!(updated.color.as_deref(), Some("#0ea5e9"));
-        assert_eq!(updated.name, "juror", "setting a color must not touch the name");
+        assert_eq!(
+            updated.name, "juror",
+            "setting a color must not touch the name"
+        );
 
         // Re-read from disk: this is what the launch-time restore would see.
         let list = list_projects(&root).unwrap();
@@ -400,7 +427,10 @@ mod tests {
 
         remove_project(&root, &project).unwrap();
 
-        assert!(list_projects(&root).unwrap().projects.is_empty(), "the roster entry is gone");
+        assert!(
+            list_projects(&root).unwrap().projects.is_empty(),
+            "the roster entry is gone"
+        );
         assert!(project.is_dir(), "the folder must survive");
         assert_eq!(
             fs::read_to_string(project.join("keep.md")).unwrap(),

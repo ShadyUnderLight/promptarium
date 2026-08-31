@@ -4,6 +4,9 @@ import {
   createPrompt as apiCreatePrompt,
   deleteEmptyFolder as apiDeleteEmptyFolder,
   deletePrompt as apiDeletePrompt,
+  gitFileDiff as apiGitFileDiff,
+  gitFileHistory as apiGitFileHistory,
+  gitRepositoryInfo as apiGitRepositoryInfo,
   listProjects as apiListProjects,
   listFolders as apiListFolders,
   movePrompt as apiMovePrompt,
@@ -29,6 +32,7 @@ import type {
   PromptSummary,
   PromptViewMode,
 } from './prompts/types';
+import type { GitFileCommit, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 
@@ -55,12 +59,23 @@ export const library = $state({
   libraryWidth: 362,
   folderPaths: [] as string[],
   searchIndexVersion: 0,
+  historyLoading: false,
+  historyRepo: null as GitRepositoryInfo | null,
+  historyPage: null as GitFileHistoryPage | null,
+  historySelectedCommit: null as string | null,
+  historyDiff: null as GitFileDiff | null,
+  historyDiffLoading: false,
+  historyError: null as string | null,
 });
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 let loadSerial = 0;
 let documentSerial = 0;
 let searchSerial = 0;
+let historySerial = 0;
+
+const historyCache = new Map<string, GitFileHistoryPage>();
+const diffCache = new Map<string, GitFileDiff>();
 
 interface SearchEntry {
   summary: PromptSummary;
@@ -100,6 +115,25 @@ function summaryOf(document: PromptDocument): PromptSummary {
 
 function promptKey(projectPath: string, name: string): string {
   return projectPath + '\u0000' + name;
+}
+
+function diffCacheKey(projectPath: string, name: string, commit: string): string {
+  return promptKey(projectPath, name) + '\u0000' + commit;
+}
+
+function resetHistoryState(): void {
+  library.historyLoading = false;
+  library.historyRepo = null;
+  library.historyPage = null;
+  library.historySelectedCommit = null;
+  library.historyDiff = null;
+  library.historyDiffLoading = false;
+  library.historyError = null;
+}
+
+function invalidateHistoryLoad(): void {
+  historySerial++;
+  resetHistoryState();
 }
 
 function invalidateSearchIndex(projectPath: string): void {
@@ -203,6 +237,7 @@ function clamp(value: number, min: number, max: number): number {
 function invalidateDocumentLoad(): void {
   documentSerial++;
   library.loadingDocument = false;
+  invalidateHistoryLoad();
 }
 
 export function activeProject(): Project | null {
@@ -354,6 +389,7 @@ export async function forgetProject(path: string): Promise<void> {
 export async function selectPrompt(project: string, name: string): Promise<void> {
   if (project !== library.activeProjectPath) return;
   const serial = ++documentSerial;
+  invalidateHistoryLoad();
   library.selectedName = name;
   library.selected = null;
   library.loadingDocument = true;
@@ -366,6 +402,115 @@ export async function selectPrompt(project: string, name: string): Promise<void>
   } finally {
     if (serial === documentSerial) library.loadingDocument = false;
   }
+}
+
+export async function loadPromptHistory(project: string, name: string): Promise<void> {
+  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  const serial = ++historySerial;
+  resetHistoryState();
+  library.historyLoading = true;
+  try {
+    const cacheKey = promptKey(project, name);
+    const cached = historyCache.get(cacheKey);
+    const repo = await apiGitRepositoryInfo(project);
+    if (
+      serial !== historySerial ||
+      project !== library.activeProjectPath ||
+      name !== library.selectedName
+    ) {
+      return;
+    }
+    library.historyRepo = repo;
+    if (!repo.available) {
+      library.historyLoading = false;
+      return;
+    }
+    const page = cached ?? (await apiGitFileHistory(project, name));
+    if (
+      serial !== historySerial ||
+      project !== library.activeProjectPath ||
+      name !== library.selectedName
+    ) {
+      return;
+    }
+    if (!cached) historyCache.set(cacheKey, page);
+    library.historyPage = page;
+    if (page.commits.length > 0) {
+      await selectHistoryCommit(project, name, page.commits[0].hash, serial);
+    }
+  } catch (error) {
+    if (
+      serial === historySerial &&
+      project === library.activeProjectPath &&
+      name === library.selectedName
+    ) {
+      library.historyError = errorText(error);
+    }
+  } finally {
+    if (
+      serial === historySerial &&
+      project === library.activeProjectPath &&
+      name === library.selectedName
+    ) {
+      library.historyLoading = false;
+    }
+  }
+}
+
+export async function selectHistoryCommit(
+  project: string,
+  name: string,
+  commit: string,
+  requestSerial = historySerial
+): Promise<void> {
+  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  library.historySelectedCommit = commit;
+  library.historyDiff = null;
+  library.historyDiffLoading = true;
+  library.historyError = null;
+  try {
+    const cacheKey = diffCacheKey(project, name, commit);
+    const cached = diffCache.get(cacheKey);
+    const diff = cached ?? (await apiGitFileDiff(project, name, commit));
+    if (
+      requestSerial !== historySerial ||
+      project !== library.activeProjectPath ||
+      name !== library.selectedName ||
+      library.historySelectedCommit !== commit
+    ) {
+      return;
+    }
+    if (!cached) diffCache.set(cacheKey, diff);
+    library.historyDiff = diff;
+  } catch (error) {
+    if (
+      requestSerial === historySerial &&
+      project === library.activeProjectPath &&
+      name === library.selectedName &&
+      library.historySelectedCommit === commit
+    ) {
+      library.historyError = errorText(error);
+    }
+  } finally {
+    if (
+      requestSerial === historySerial &&
+      project === library.activeProjectPath &&
+      name === library.selectedName &&
+      library.historySelectedCommit === commit
+    ) {
+      library.historyDiffLoading = false;
+    }
+  }
+}
+
+export function formatAuthoredAt(timestamp: number): string {
+  if (!timestamp) return '';
+  return new Date(timestamp * 1000).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function replaceSummary(summary: PromptSummary, oldName = summary.name): void {

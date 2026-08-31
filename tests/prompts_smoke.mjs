@@ -12,6 +12,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { parseVariables, variableSpans, copyText, UNSET_VALUE } = await import(
   join(root, 'src/lib/variables/variables.ts')
 );
+const { parseDiffLines, isStaleHistoryResponse } = await import(
+  join(root, 'src/lib/prompts/diff-lines.ts')
+);
 
 let failures = 0;
 function assert(condition, message) {
@@ -83,6 +86,42 @@ eq(
     { start: 32, end: 35, name: 'b' },
   ],
   'preview decoration uses the parser positions'
+);
+
+console.log('diff line parser');
+eq(
+  parseDiffLines('- old\n+ new\n context'),
+  [
+    { kind: 'remove', text: '- old' },
+    { kind: 'add', text: '+ new' },
+    { kind: 'context', text: ' context' },
+  ],
+  'unified diff lines are classified'
+);
+eq(
+  parseDiffLines('--- a/file.md\n+++ b/file.md\n@@ -1 +1 @@\n-old\n+new'),
+  [
+    { kind: 'meta', text: '--- a/file.md' },
+    { kind: 'meta', text: '+++ b/file.md' },
+    { kind: 'meta', text: '@@ -1 +1 @@' },
+    { kind: 'remove', text: '-old' },
+    { kind: 'add', text: '+new' },
+  ],
+  'diff headers and hunks are meta lines'
+);
+
+console.log('history response fencing');
+assert(
+  isStaleHistoryResponse(1, 2, '/a', 'prompt', '/a', 'prompt'),
+  'stale when serial changed'
+);
+assert(
+  !isStaleHistoryResponse(2, 2, '/a', 'prompt', '/a', 'prompt'),
+  'fresh when serial and identity match'
+);
+assert(
+  isStaleHistoryResponse(2, 2, '/a', 'prompt-a', '/a', 'prompt-b'),
+  'stale when prompt name changed'
 );
 
 if (failures > 0) {
