@@ -6,7 +6,9 @@
     loadPromptHistory,
     promptTitle,
     selectHistoryCommit,
+    loadMorePromptHistory,
   } from '$lib/library.svelte';
+  import type { GitFileCommit } from '$lib/prompts/git-types';
   import PromptMetadataEditor from './PromptMetadata.svelte';
   import PromptPreview from './PromptPreview.svelte';
   import PromptHistory from './PromptHistory.svelte';
@@ -183,9 +185,14 @@
     }
   }
 
-  function handleSelectCommit(commit: string): void {
+  function handleSelectCommit(commit: GitFileCommit): void {
     if (!document) return;
     void selectHistoryCommit(document.projectPath, document.name, commit);
+  }
+
+  function handleLoadMoreHistory(): void {
+    if (!document) return;
+    void loadMorePromptHistory(document.projectPath, document.name);
   }
 </script>
 
@@ -248,6 +255,7 @@
     {:else if mode === 'history'}
       <PromptHistory
         loading={library.historyLoading}
+        loadingMore={library.historyLoadingMore}
         repo={library.historyRepo}
         page={library.historyPage}
         selectedCommit={library.historySelectedCommit}
@@ -255,6 +263,7 @@
         diffLoading={library.historyDiffLoading}
         error={library.historyError}
         onSelectCommit={handleSelectCommit}
+        onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
       <PromptMetadataEditor metadata={metadata} editing={false} onChange={updateMetadata} />

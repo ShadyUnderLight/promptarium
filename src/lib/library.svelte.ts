@@ -33,6 +33,11 @@ import type {
   PromptViewMode,
 } from './prompts/types';
 import type { GitFileCommit, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
+import {
+  appendHistoryPage,
+  isStaleHistoryDiffResponse,
+  isStaleHistoryResponse,
+} from './prompts/history';
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 
@@ -66,6 +71,7 @@ export const library = $state({
   historyDiff: null as GitFileDiff | null,
   historyDiffLoading: false,
   historyError: null as string | null,
+  historyLoadingMore: false,
 });
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,8 +123,8 @@ function promptKey(projectPath: string, name: string): string {
   return projectPath + '\u0000' + name;
 }
 
-function diffCacheKey(projectPath: string, name: string, commit: string): string {
-  return promptKey(projectPath, name) + '\u0000' + commit;
+function diffCacheKey(projectPath: string, name: string, commit: string, pathAtCommit: string): string {
+  return promptKey(projectPath, name) + '\u0000' + commit + '\u0000' + pathAtCommit;
 }
 
 function resetHistoryState(): void {
@@ -129,6 +135,7 @@ function resetHistoryState(): void {
   library.historyDiff = null;
   library.historyDiffLoading = false;
   library.historyError = null;
+  library.historyLoadingMore = false;
 }
 
 function invalidateHistoryLoad(): void {
@@ -413,11 +420,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
     const cacheKey = promptKey(project, name);
     const cached = historyCache.get(cacheKey);
     const repo = await apiGitRepositoryInfo(project);
-    if (
-      serial !== historySerial ||
-      project !== library.activeProjectPath ||
-      name !== library.selectedName
-    ) {
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
       return;
     }
     library.historyRepo = repo;
@@ -426,33 +429,55 @@ export async function loadPromptHistory(project: string, name: string): Promise<
       return;
     }
     const page = cached ?? (await apiGitFileHistory(project, name));
-    if (
-      serial !== historySerial ||
-      project !== library.activeProjectPath ||
-      name !== library.selectedName
-    ) {
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
       return;
     }
     if (!cached) historyCache.set(cacheKey, page);
     library.historyPage = page;
     if (page.commits.length > 0) {
-      await selectHistoryCommit(project, name, page.commits[0].hash, serial);
+      await selectHistoryCommit(project, name, page.commits[0], serial);
     }
   } catch (error) {
     if (
-      serial === historySerial &&
-      project === library.activeProjectPath &&
-      name === library.selectedName
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
     ) {
       library.historyError = errorText(error);
     }
   } finally {
     if (
-      serial === historySerial &&
-      project === library.activeProjectPath &&
-      name === library.selectedName
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
     ) {
       library.historyLoading = false;
+    }
+  }
+}
+
+export async function loadMorePromptHistory(project: string, name: string): Promise<void> {
+  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  const page = library.historyPage;
+  if (!page?.nextCursor || library.historyLoadingMore) return;
+  const serial = historySerial;
+  library.historyLoadingMore = true;
+  library.historyError = null;
+  try {
+    const next = await apiGitFileHistory(project, name, undefined, page.nextCursor);
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
+      return;
+    }
+    const merged = appendHistoryPage(page, next);
+    library.historyPage = merged;
+    historyCache.set(promptKey(project, name), merged);
+  } catch (error) {
+    if (
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+    ) {
+      library.historyError = errorText(error);
+    }
+  } finally {
+    if (
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+    ) {
+      library.historyLoadingMore = false;
     }
   }
 }
@@ -460,23 +485,37 @@ export async function loadPromptHistory(project: string, name: string): Promise<
 export async function selectHistoryCommit(
   project: string,
   name: string,
-  commit: string,
+  commit: GitFileCommit,
   requestSerial = historySerial
 ): Promise<void> {
   if (project !== library.activeProjectPath || library.selectedName !== name) return;
-  library.historySelectedCommit = commit;
+  library.historySelectedCommit = commit.hash;
   library.historyDiff = null;
   library.historyDiffLoading = true;
   library.historyError = null;
   try {
-    const cacheKey = diffCacheKey(project, name, commit);
+    const cacheKey = diffCacheKey(project, name, commit.hash, commit.path);
     const cached = diffCache.get(cacheKey);
-    const diff = cached ?? (await apiGitFileDiff(project, name, commit));
+    const diff =
+      cached ??
+      (await apiGitFileDiff(
+        project,
+        name,
+        commit.hash,
+        commit.path,
+        commit.previousPath
+      ));
     if (
-      requestSerial !== historySerial ||
-      project !== library.activeProjectPath ||
-      name !== library.selectedName ||
-      library.historySelectedCommit !== commit
+      isStaleHistoryDiffResponse(
+        requestSerial,
+        historySerial,
+        project,
+        name,
+        commit.hash,
+        library.activeProjectPath,
+        library.selectedName,
+        library.historySelectedCommit
+      )
     ) {
       return;
     }
@@ -484,19 +523,31 @@ export async function selectHistoryCommit(
     library.historyDiff = diff;
   } catch (error) {
     if (
-      requestSerial === historySerial &&
-      project === library.activeProjectPath &&
-      name === library.selectedName &&
-      library.historySelectedCommit === commit
+      !isStaleHistoryDiffResponse(
+        requestSerial,
+        historySerial,
+        project,
+        name,
+        commit.hash,
+        library.activeProjectPath,
+        library.selectedName,
+        library.historySelectedCommit
+      )
     ) {
       library.historyError = errorText(error);
     }
   } finally {
     if (
-      requestSerial === historySerial &&
-      project === library.activeProjectPath &&
-      name === library.selectedName &&
-      library.historySelectedCommit === commit
+      !isStaleHistoryDiffResponse(
+        requestSerial,
+        historySerial,
+        project,
+        name,
+        commit.hash,
+        library.activeProjectPath,
+        library.selectedName,
+        library.historySelectedCommit
+      )
     ) {
       library.historyDiffLoading = false;
     }

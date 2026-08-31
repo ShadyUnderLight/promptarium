@@ -13,6 +13,10 @@ export interface GitFileCommit {
   authorEmail?: string;
   authoredAt: number;
   subject: string;
+  /** Repo-relative path of this prompt at the commit. */
+  path: string;
+  /** Present when this commit renamed the prompt file. */
+  previousPath?: string;
 }
 
 export interface GitFileHistoryPage {

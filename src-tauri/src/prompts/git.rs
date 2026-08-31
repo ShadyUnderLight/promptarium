@@ -11,6 +11,7 @@ use super::store;
 
 const DEFAULT_HISTORY_LIMIT: usize = 50;
 const FIELD_SEP: char = '\x1f';
+const COMMIT_PREFIX: &str = "COMMIT:";
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,6 +34,9 @@ pub struct GitFileCommit {
     pub author_email: Option<String>,
     pub authored_at: i64,
     pub subject: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -91,31 +95,17 @@ pub fn file_history(
     cursor: Option<&str>,
 ) -> Result<GitFileHistoryPage, String> {
     if !git_available() {
-        return Ok(GitFileHistoryPage {
-            commits: Vec::new(),
-            next_cursor: None,
-            tracked: false,
-        });
+        return Ok(empty_history_page(false));
     }
     let repo_root = match repository_root_for_project(project)? {
         Some(root) => root,
-        None => {
-            return Ok(GitFileHistoryPage {
-                commits: Vec::new(),
-                next_cursor: None,
-                tracked: false,
-            });
-        }
+        None => return Ok(empty_history_page(false)),
     };
     let file_path = store::prompt_absolute_path(project, name)?;
     let git_path = path_to_git_relative(&repo_root, &file_path)?;
     let tracked = is_tracked(&repo_root, &git_path)?;
     if !tracked {
-        return Ok(GitFileHistoryPage {
-            commits: Vec::new(),
-            next_cursor: None,
-            tracked: false,
-        });
+        return Ok(empty_history_page(false));
     }
     let limit = limit.unwrap_or(DEFAULT_HISTORY_LIMIT).clamp(1, 100);
     let skip = cursor
@@ -123,24 +113,32 @@ pub fn file_history(
         .filter(|value| !value.is_empty())
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
-    let format = format!("%H{sep}%h{sep}%an{sep}%ae{sep}%at{sep}%s", sep = FIELD_SEP);
-    let mut args = vec![
-        "-C".to_string(),
-        repo_root.to_string_lossy().into_owned(),
-        "log".to_string(),
-        "--follow".to_string(),
-        format!("--format={format}"),
-        "-n".to_string(),
-        limit.to_string(),
-    ];
-    if skip > 0 {
-        args.push(format!("--skip={skip}"));
-    }
-    args.push("--".to_string());
-    args.push(git_path);
-    let output = run_git_args(&args)?;
-    let commits = parse_log_output(&output)?;
-    let next_cursor = if commits.len() == limit {
+    let fetch_count = skip.saturating_add(limit).saturating_add(1);
+    let format = format!(
+        "{COMMIT_PREFIX}%H{sep}%h{sep}%an{sep}%ae{sep}%at{sep}%s",
+        sep = FIELD_SEP
+    );
+    let output = run_git_in_repo(
+        &repo_root,
+        &[
+            "log",
+            "--follow",
+            "--name-status",
+            &format!("--format={format}"),
+            "-n",
+            &fetch_count.to_string(),
+            "--",
+            git_path.as_str(),
+        ],
+    )?;
+    let all_commits = parse_log_with_paths(&output)?;
+    let has_more = all_commits.len() > skip + limit;
+    let commits = all_commits
+        .into_iter()
+        .skip(skip)
+        .take(limit)
+        .collect::<Vec<_>>();
+    let next_cursor = if has_more {
         Some((skip + limit).to_string())
     } else {
         None
@@ -152,29 +150,58 @@ pub fn file_history(
     })
 }
 
-pub fn file_diff(project: &Path, name: &str, commit: &str) -> Result<GitFileDiff, String> {
+pub fn file_diff(
+    project: &Path,
+    name: &str,
+    commit: &str,
+    path_at_commit: Option<&str>,
+    previous_path_at_commit: Option<&str>,
+) -> Result<GitFileDiff, String> {
     validate_commit_ref(commit)?;
     let repo_root = repository_root_for_project(project)?
         .ok_or_else(|| "project is not in a git repository".to_string())?;
     let file_path = store::prompt_absolute_path(project, name)?;
-    let git_path = path_to_git_relative(&repo_root, &file_path)?;
+    let current_git_path = path_to_git_relative(&repo_root, &file_path)?;
+    let path = path_at_commit
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(current_git_path.as_str());
+    validate_git_path(path)?;
+    if let Some(previous) = previous_path_at_commit {
+        validate_git_path(previous)?;
+    }
     let parent = resolve_parent(&repo_root, commit)?;
-    let patch = if let Some(parent) = parent.as_deref() {
-        run_git_in_repo(
-            &repo_root,
-            &["diff", parent, commit, "--", git_path.as_str()],
-        )?
-    } else {
-        run_git_in_repo(
-            &repo_root,
-            &["diff", EMPTY_TREE, commit, "--", git_path.as_str()],
-        )?
+    let patch = match parent.as_deref() {
+        None => run_git_in_repo(&repo_root, &["diff", EMPTY_TREE, commit, "--", path])?,
+        Some(parent) => {
+            let rename_aware = if let Some(previous) = previous_path_at_commit {
+                run_git_in_repo(
+                    &repo_root,
+                    &["diff", "-M100%", parent, commit, "--", previous, path],
+                )?
+            } else {
+                run_git_in_repo(&repo_root, &["diff", "-M100%", parent, commit, "--", path])?
+            };
+            if rename_aware.trim().is_empty() {
+                run_git_in_repo(&repo_root, &["show", "--format=", commit, "--", path])?
+            } else {
+                rename_aware
+            }
+        }
     };
     Ok(GitFileDiff {
         commit: commit.to_string(),
         parent,
         patch,
     })
+}
+
+fn empty_history_page(tracked: bool) -> GitFileHistoryPage {
+    GitFileHistoryPage {
+        commits: Vec::new(),
+        next_cursor: None,
+        tracked,
+    }
 }
 
 fn repository_root_for_project(project: &Path) -> Result<Option<PathBuf>, String> {
@@ -223,6 +250,19 @@ fn path_to_git_relative(repo_root: &Path, file_path: &Path) -> Result<String, St
             file_path.display()
         )),
     }
+}
+
+fn validate_git_path(path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Err("git path cannot be empty".to_string());
+    }
+    if path.starts_with('-') {
+        return Err(format!("invalid git path: {path}"));
+    }
+    if path.contains('\\') || path.contains('\0') {
+        return Err(format!("invalid git path: {path}"));
+    }
+    Ok(())
 }
 
 fn is_tracked(repo_root: &Path, git_path: &str) -> Result<bool, String> {
@@ -276,24 +316,6 @@ fn validate_commit_ref(commit: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn run_git_args(args: &[String]) -> Result<String, String> {
-    let mut command = Command::new("git");
-    for arg in args {
-        command.arg(arg);
-    }
-    let output = command
-        .output()
-        .map_err(|error| format!("git command failed: {error}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        if stderr.is_empty() {
-            return Err("git command failed".to_string());
-        }
-        return Err(stderr);
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 fn run_git_in_repo(repo_root: &Path, args: &[&str]) -> Result<String, String> {
     let mut command = Command::new("git");
     command.arg("-C").arg(repo_root);
@@ -313,26 +335,98 @@ fn run_git_in_repo(repo_root: &Path, args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn parse_log_output(output: &str) -> Result<Vec<GitFileCommit>, String> {
+fn parse_log_with_paths(output: &str) -> Result<Vec<GitFileCommit>, String> {
     let mut commits = Vec::new();
-    for line in output.lines().filter(|line| !line.is_empty()) {
-        let parts: Vec<&str> = line.split(FIELD_SEP).collect();
-        if parts.len() != 6 {
-            return Err(format!("unexpected git log format: {line}"));
+    let mut pending: Option<GitFileCommit> = None;
+
+    for line in output.lines() {
+        if let Some(rest) = line.strip_prefix(COMMIT_PREFIX) {
+            if let Some(commit) = pending.take() {
+                if commit.path.is_empty() {
+                    return Err(format!(
+                        "commit {} is missing a name-status path",
+                        commit.hash
+                    ));
+                }
+                commits.push(commit);
+            }
+            pending = Some(parse_commit_fields(rest)?);
+            continue;
         }
-        let authored_at = parts[4]
-            .parse::<i64>()
-            .map_err(|error| format!("invalid authoredAt in git log: {error}"))?;
-        commits.push(GitFileCommit {
-            hash: parts[0].to_string(),
-            short_hash: parts[1].to_string(),
-            author_name: parts[2].to_string(),
-            author_email: Some(parts[3].to_string()).filter(|email| !email.is_empty()),
-            authored_at,
-            subject: parts[5].to_string(),
-        });
+        if line.is_empty() {
+            continue;
+        }
+        let Some(commit) = pending.as_mut() else {
+            return Err(format!("unexpected git log line: {line}"));
+        };
+        if !commit.path.is_empty() {
+            return Err(format!("commit {} has multiple path entries", commit.hash));
+        }
+        let (path, previous_path) = parse_name_status_line(line)?;
+        commit.path = path;
+        commit.previous_path = previous_path;
+    }
+
+    if let Some(commit) = pending {
+        if commit.path.is_empty() {
+            return Err(format!(
+                "commit {} is missing a name-status path",
+                commit.hash
+            ));
+        }
+        commits.push(commit);
     }
     Ok(commits)
+}
+
+fn parse_commit_fields(line: &str) -> Result<GitFileCommit, String> {
+    let parts: Vec<&str> = line.split(FIELD_SEP).collect();
+    if parts.len() != 6 {
+        return Err(format!("unexpected git log format: {line}"));
+    }
+    let authored_at = parts[4]
+        .parse::<i64>()
+        .map_err(|error| format!("invalid authoredAt in git log: {error}"))?;
+    Ok(GitFileCommit {
+        hash: parts[0].to_string(),
+        short_hash: parts[1].to_string(),
+        author_name: parts[2].to_string(),
+        author_email: Some(parts[3].to_string()).filter(|email| !email.is_empty()),
+        authored_at,
+        subject: parts[5].to_string(),
+        path: String::new(),
+        previous_path: None,
+    })
+}
+
+fn parse_name_status_line(line: &str) -> Result<(String, Option<String>), String> {
+    let mut parts = line.split('\t');
+    let status = parts
+        .next()
+        .ok_or_else(|| format!("invalid name-status line: {line}"))?;
+    if status.starts_with('R') {
+        let previous = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("rename line is missing a source path: {line}"))?;
+        let path = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("rename line is missing a destination path: {line}"))?;
+        Ok((path, Some(previous)))
+    } else {
+        let path = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .ok_or_else(|| format!("name-status line is missing a path: {line}"))?;
+        Ok((path, None))
+    }
 }
 
 #[cfg(test)]
@@ -399,7 +493,6 @@ mod tests {
         if !git_ready() {
             return;
         }
-        // Use the OS temp dir so the fixture is not inside the enclosing checkout.
         let dir = std::env::temp_dir().join(format!("promptarium-git-outside-{}", Uuid::new_v4()));
         fs::create_dir_all(&dir).unwrap();
         let info = repository_info(&dir).unwrap();
@@ -427,16 +520,20 @@ mod tests {
         write_prompt(&dir, "review.md", "Review this PR for regressions.");
         commit_all(&dir, "Refine review criteria");
 
-        let info = repository_info(&dir).unwrap();
-        assert!(info.available);
-        assert!(info.repository_root.is_some());
-
         let page = file_history(&dir, "review", None, None).unwrap();
         assert!(page.tracked);
         assert_eq!(page.commits.len(), 2);
         assert_eq!(page.commits[0].subject, "Refine review criteria");
+        assert_eq!(page.commits[0].path, "review.md");
 
-        let diff = file_diff(&dir, "review", &page.commits[0].hash).unwrap();
+        let diff = file_diff(
+            &dir,
+            "review",
+            &page.commits[0].hash,
+            Some(&page.commits[0].path),
+            page.commits[0].previous_path.as_deref(),
+        )
+        .unwrap();
         assert!(diff.patch.contains('-'));
         assert!(diff.patch.contains('+'));
         fs::remove_dir_all(&dir).ok();
@@ -454,12 +551,10 @@ mod tests {
         write_prompt(&prompts, "coding/review-pr.md", "Review this PR.");
         commit_all(&dir, "Add review prompt");
 
-        let info = repository_info(&prompts).unwrap();
-        assert!(info.available);
-
         let page = file_history(&prompts, "coding/review-pr", None, None).unwrap();
         assert!(page.tracked);
         assert_eq!(page.commits.len(), 1);
+        assert_eq!(page.commits[0].path, "prompts/coding/review-pr.md");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -489,14 +584,23 @@ mod tests {
         write_prompt(&dir, "first.md", "First version.");
         commit_all(&dir, "Root commit");
         let page = file_history(&dir, "first", None, None).unwrap();
-        let diff = file_diff(&dir, "first", &page.commits[0].hash).unwrap();
+        let first = &page.commits[0];
+        let diff = file_diff(
+            &dir,
+            "first",
+            &first.hash,
+            Some(&first.path),
+            first.previous_path.as_deref(),
+        )
+        .unwrap();
         assert!(diff.parent.is_none());
         assert!(diff.patch.contains('+'));
+        assert!(diff.patch.contains("First version."));
         fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn rename_follows_history() {
+    fn rename_follows_history_and_diffs_use_historical_paths() {
         if !git_ready() {
             return;
         }
@@ -507,10 +611,71 @@ mod tests {
         commit_all(&dir, "Add prompt");
         fs::rename(dir.join("old-name.md"), dir.join("new-name.md")).unwrap();
         commit_all(&dir, "Rename prompt");
+        write_prompt(&dir, "new-name.md", "Version two.");
+        commit_all(&dir, "Edit after rename");
 
         let page = file_history(&dir, "new-name", None, None).unwrap();
         assert!(page.tracked);
-        assert_eq!(page.commits.len(), 2);
+        assert_eq!(page.commits.len(), 3);
+        assert_eq!(page.commits[2].path, "old-name.md");
+
+        let first_diff = file_diff(
+            &dir,
+            "new-name",
+            &page.commits[2].hash,
+            Some(&page.commits[2].path),
+            page.commits[2].previous_path.as_deref(),
+        )
+        .unwrap();
+        assert!(
+            first_diff.patch.contains("Version one."),
+            "first commit diff should show the original content"
+        );
+        assert!(
+            !first_diff.patch.trim().is_empty(),
+            "first commit diff must not be empty after rename"
+        );
+
+        let rename_diff = file_diff(
+            &dir,
+            "new-name",
+            &page.commits[1].hash,
+            Some(&page.commits[1].path),
+            page.commits[1].previous_path.as_deref(),
+        )
+        .unwrap();
+        assert!(
+            rename_diff.patch.contains("old-name.md") || rename_diff.patch.contains("rename"),
+            "rename commit diff should reflect the rename, got: {}",
+            rename_diff.patch
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pagination_fetches_skip_in_one_follow_log() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("pagination");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "review.md", "v1");
+        commit_all(&dir, "v1");
+        write_prompt(&dir, "review.md", "v2");
+        commit_all(&dir, "v2");
+        write_prompt(&dir, "review.md", "v3");
+        commit_all(&dir, "v3");
+
+        let first = file_history(&dir, "review", Some(2), None).unwrap();
+        assert_eq!(first.commits.len(), 2);
+        assert_eq!(first.commits[0].subject, "v3");
+        assert!(first.next_cursor.is_some());
+
+        let second = file_history(&dir, "review", Some(2), first.next_cursor.as_deref()).unwrap();
+        assert_eq!(second.commits.len(), 1);
+        assert_eq!(second.commits[0].subject, "v1");
+        assert!(second.next_cursor.is_none());
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -527,6 +692,7 @@ mod tests {
         let page = file_history(&dir, "my prompt", None, None).unwrap();
         assert!(page.tracked);
         assert_eq!(page.commits.len(), 1);
+        assert_eq!(page.commits[0].path, "my prompt.md");
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -556,7 +722,7 @@ mod tests {
         init_repo(&dir);
         write_prompt(&dir, "review.md", "Body");
         commit_all(&dir, "Initial");
-        let error = file_diff(&dir, "review", "--help").unwrap_err();
+        let error = file_diff(&dir, "review", "--help", None, None).unwrap_err();
         assert!(error.contains("invalid commit hash"));
         fs::remove_dir_all(&dir).ok();
     }

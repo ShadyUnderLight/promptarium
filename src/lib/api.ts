@@ -177,9 +177,21 @@ export async function gitFileHistory(
   return call<GitFileHistoryPage>('git_file_history', { project, name, limit, cursor });
 }
 
-export async function gitFileDiff(project: string, name: string, commit: string): Promise<GitFileDiff> {
+export async function gitFileDiff(
+  project: string,
+  name: string,
+  commit: string,
+  pathAtCommit?: string,
+  previousPathAtCommit?: string
+): Promise<GitFileDiff> {
   if (!isTauri()) return { commit, patch: '' };
-  return call<GitFileDiff>('git_file_diff', { project, name, commit });
+  return call<GitFileDiff>('git_file_diff', {
+    project,
+    name,
+    commit,
+    pathAtCommit,
+    previousPathAtCommit,
+  });
 }
 
 interface DevPrompt {

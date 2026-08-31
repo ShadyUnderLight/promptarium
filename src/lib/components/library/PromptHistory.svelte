@@ -1,21 +1,25 @@
 <script lang="ts">
-  import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from '$lib/prompts/git-types';
+  import type { GitFileCommit, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from '$lib/prompts/git-types';
   import { formatAuthoredAt } from '$lib/library.svelte';
+  import { historyEmptyMessage, historyEmptyReason } from '$lib/prompts/history';
   import DiffViewer from './DiffViewer.svelte';
 
   interface Props {
     loading: boolean;
+    loadingMore: boolean;
     repo: GitRepositoryInfo | null;
     page: GitFileHistoryPage | null;
     selectedCommit: string | null;
     diff: GitFileDiff | null;
     diffLoading: boolean;
     error: string | null;
-    onSelectCommit: (commit: string) => void;
+    onSelectCommit: (commit: GitFileCommit) => void;
+    onLoadMore: () => void;
   }
 
   let {
     loading,
+    loadingMore,
     repo,
     page,
     selectedCommit,
@@ -23,7 +27,10 @@
     diffLoading,
     error,
     onSelectCommit,
+    onLoadMore,
   }: Props = $props();
+
+  const emptyReason = $derived(historyEmptyReason(repo, page));
 </script>
 
 <section class="prompt-history" aria-label="Prompt git history">
@@ -33,23 +40,9 @@
     <div class="history-empty">
       <p>{error}</p>
     </div>
-  {:else if !repo?.available}
-    {#if repo?.reason === 'git-unavailable'}
-      <div class="history-empty">
-        <p>本机 Git 不可用，无法在此查看 Prompt 版本历史。</p>
-      </div>
-    {:else}
-      <div class="history-empty">
-        <p>此 Project 不在 Git 仓库中。将 Project 放入 Git 仓库后即可在这里查看 Prompt 版本历史。</p>
-      </div>
-    {/if}
-  {:else if page && !page.tracked}
+  {:else if emptyReason}
     <div class="history-empty">
-      <p>当前 Prompt 尚无 Git 历史。</p>
-    </div>
-  {:else if page && page.commits.length === 0}
-    <div class="history-empty">
-      <p>当前 Prompt 尚无 Git 历史。</p>
+      <p>{historyEmptyMessage(emptyReason)}</p>
     </div>
   {:else if page}
     <div class="history-layout">
@@ -61,7 +54,7 @@
             aria-selected={selectedCommit === commit.hash}
             class="history-item"
             class:history-item--active={selectedCommit === commit.hash}
-            onclick={() => onSelectCommit(commit.hash)}
+            onclick={() => onSelectCommit(commit)}
           >
             <span class="history-item__time">{formatAuthoredAt(commit.authoredAt)}</span>
             <span class="history-item__subject">{commit.subject}</span>
@@ -73,6 +66,16 @@
             </span>
           </button>
         {/each}
+        {#if page.nextCursor}
+          <button
+            type="button"
+            class="btn btn--ghost btn--sm history-load-more"
+            onclick={onLoadMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? 'Loading…' : 'Load earlier commits'}
+          </button>
+        {/if}
       </div>
       <div class="history-diff-panel">
         {#if diffLoading}

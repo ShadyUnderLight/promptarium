@@ -17,14 +17,3 @@ export function parseDiffLines(patch: string): DiffLine[] {
     return { kind: 'context' as const, text: line };
   });
 }
-
-export function isStaleHistoryResponse(
-  serial: number,
-  currentSerial: number,
-  project: string,
-  name: string,
-  activeProject: string | null,
-  activeName: string | null
-): boolean {
-  return serial !== currentSerial || project !== activeProject || name !== activeName;
-}

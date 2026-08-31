@@ -12,9 +12,16 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { parseVariables, variableSpans, copyText, UNSET_VALUE } = await import(
   join(root, 'src/lib/variables/variables.ts')
 );
-const { parseDiffLines, isStaleHistoryResponse } = await import(
+const { parseDiffLines } = await import(
   join(root, 'src/lib/prompts/diff-lines.ts')
 );
+const {
+  appendHistoryPage,
+  historyEmptyMessage,
+  historyEmptyReason,
+  isStaleHistoryDiffResponse,
+  isStaleHistoryResponse,
+} = await import(join(root, 'src/lib/prompts/history.ts'));
 
 let failures = 0;
 function assert(condition, message) {
@@ -122,6 +129,50 @@ assert(
 assert(
   isStaleHistoryResponse(2, 2, '/a', 'prompt-a', '/a', 'prompt-b'),
   'stale when prompt name changed'
+);
+assert(
+  isStaleHistoryDiffResponse(2, 2, '/a', 'prompt', 'abc', '/a', 'prompt', 'def'),
+  'stale diff when selected commit changed'
+);
+assert(
+  !isStaleHistoryDiffResponse(2, 2, '/a', 'prompt', 'abc', '/a', 'prompt', 'abc'),
+  'fresh diff when serial, identity and commit match'
+);
+
+console.log('history empty states');
+eq(historyEmptyReason({ available: false, reason: 'not-a-repository' }, null), 'not-a-repository', 'non-git project');
+eq(historyEmptyReason({ available: false, reason: 'git-unavailable' }, null), 'git-unavailable', 'git unavailable');
+eq(historyEmptyReason({ available: true }, { tracked: false, commits: [] }), 'untracked', 'untracked prompt');
+eq(historyEmptyReason({ available: true }, { tracked: true, commits: [] }), 'no-commits', 'tracked but empty');
+eq(historyEmptyReason({ available: true }, { tracked: true, commits: [{ hash: 'abc' }] }), null, 'history available');
+assert(
+  historyEmptyMessage('not-a-repository').includes('Git 仓库'),
+  'non-git empty message is user-facing'
+);
+
+console.log('history pagination merge');
+eq(
+  appendHistoryPage(
+    { tracked: true, commits: [{ hash: 'new' }], nextCursor: '50' },
+    { tracked: true, commits: [{ hash: 'old' }], nextCursor: undefined }
+  ),
+  {
+    tracked: true,
+    commits: [{ hash: 'new' }, { hash: 'old' }],
+    nextCursor: undefined,
+  },
+  'load more appends commits and advances cursor'
+);
+
+console.log('duplicate diff lines');
+eq(
+  parseDiffLines(' context\n context\n+added'),
+  [
+    { kind: 'context', text: ' context' },
+    { kind: 'context', text: ' context' },
+    { kind: 'add', text: '+added' },
+  ],
+  'duplicate context lines remain distinct without keyed each'
 );
 
 if (failures > 0) {

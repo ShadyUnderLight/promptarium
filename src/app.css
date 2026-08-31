@@ -1093,6 +1093,11 @@ body {
   color: var(--text);
 }
 
+.history-load-more {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}
+
 .frontmatter-warning,
 .detail-error {
   display: flex;
