@@ -161,14 +161,23 @@ pub fn replace_project_path(
         .canonicalize()
         .map_err(|e| format!("{}: {e}", new_path.display()))?;
     let mut state = load(root)?;
-    if state.projects.iter().any(|project| project.path == new_path) {
+    let index = state
+        .projects
+        .iter()
+        .position(|project| project.path == old_path)
+        .ok_or_else(|| format!("not a known project: {}", old_path.display()))?;
+    if state
+        .projects
+        .iter()
+        .enumerate()
+        .any(|(candidate, project)| candidate != index && project.path == new_path)
+    {
         return Err(format!("project folder is already registered: {}", new_path.display()));
     }
-    let project = state
-        .projects
-        .iter_mut()
-        .find(|project| project.path == old_path)
-        .ok_or_else(|| format!("not a known project: {}", old_path.display()))?;
+    if new_path == old_path {
+        return Ok(state.projects[index].clone());
+    }
+    let project = &mut state.projects[index];
     project.path = new_path.clone();
     if state.active.as_deref() == Some(old_path) {
         state.active = Some(new_path.clone());
@@ -301,6 +310,19 @@ mod tests {
         let list = list_projects(&root).unwrap();
         assert_eq!(list.active, Some(updated.path.clone()));
         assert_eq!(list.projects, vec![updated]);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn locating_a_recreated_project_at_the_same_path_succeeds() {
+        let (root, project) = fixture("locate-same-path");
+        let added = add_project(&root, "writing", &project).unwrap();
+        fs::remove_dir_all(&project).unwrap();
+        fs::create_dir_all(&project).unwrap();
+
+        let updated = replace_project_path(&root, &project, &project).unwrap();
+        assert_eq!(updated, added);
+        assert_eq!(list_projects(&root).unwrap().projects, vec![added]);
         fs::remove_dir_all(&root).unwrap();
     }
 

@@ -200,6 +200,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Math.round(value)));
 }
 
+function invalidateDocumentLoad(): void {
+  documentSerial++;
+  library.loadingDocument = false;
+}
+
 export function activeProject(): Project | null {
   return library.projects.find((project) => project.path === library.activeProjectPath) ?? null;
 }
@@ -213,7 +218,7 @@ export async function refreshProjects(): Promise<void> {
   try {
     const result = await apiListProjects();
     if (result.active !== library.activeProjectPath) {
-      documentSerial++;
+      invalidateDocumentLoad();
       library.selectedName = null;
       library.selected = null;
     }
@@ -222,6 +227,7 @@ export async function refreshProjects(): Promise<void> {
     library.error = null;
     await refreshLibrary();
   } catch (error) {
+    invalidateDocumentLoad();
     library.error = errorText(error);
     library.projects = [];
     library.activeProjectPath = null;
@@ -236,7 +242,7 @@ export async function refreshLibrary(): Promise<void> {
   const project = library.activeProjectPath;
   const serial = ++loadSerial;
   if (!project) {
-    documentSerial++;
+    invalidateDocumentLoad();
     library.allPrompts = [];
     library.prompts = [];
     library.folderPaths = [];
@@ -261,9 +267,16 @@ export async function refreshLibrary(): Promise<void> {
       library.prompts = summaries;
     }
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
-    if (library.selectedName && summaries.some((prompt) => prompt.name === library.selectedName)) {
-      const selected = await apiReadPrompt(project, library.selectedName);
-      if (serial !== loadSerial || project !== library.activeProjectPath) return;
+    const selectedName = library.selectedName;
+    const selectedDocumentSerial = documentSerial;
+    if (selectedName && summaries.some((prompt) => prompt.name === selectedName)) {
+      const selected = await apiReadPrompt(project, selectedName);
+      if (
+        serial !== loadSerial ||
+        project !== library.activeProjectPath ||
+        selectedDocumentSerial !== documentSerial ||
+        library.selectedName !== selectedName
+      ) return;
       library.selected = selected;
     }
     if (library.selectedName && !summaries.some((prompt) => prompt.name === library.selectedName)) {
@@ -285,7 +298,7 @@ export async function refreshLibrary(): Promise<void> {
 
 export async function setActiveProject(path: string): Promise<void> {
   await apiSetActiveProject(path);
-  documentSerial++;
+  invalidateDocumentLoad();
   library.activeProjectPath = path;
   library.selectedName = null;
   library.selected = null;
@@ -299,7 +312,7 @@ export async function addProject(name: string, path: string): Promise<Project> {
   const project = await apiAddProject(name, path);
   const roster = await apiListProjects();
   library.projects = roster.projects;
-  documentSerial++;
+  invalidateDocumentLoad();
   library.activeProjectPath = project.path;
   await apiSetActiveProject(project.path);
   await refreshLibrary();
@@ -309,7 +322,7 @@ export async function addProject(name: string, path: string): Promise<Project> {
 export async function replaceProjectPath(oldPath: string, newPath: string): Promise<Project> {
   const project = await apiReplaceProjectPath(oldPath, newPath);
   const roster = await apiListProjects();
-  documentSerial++;
+  invalidateDocumentLoad();
   library.projects = roster.projects;
   library.activeProjectPath = roster.active;
   library.selectedName = null;
@@ -449,7 +462,7 @@ export async function movePrompt(source: PromptDocument, destination: string): P
 export async function deletePrompt(source: PromptDocument): Promise<void> {
   await apiDeletePrompt(source.projectPath, source.name);
   if (source.projectPath === library.activeProjectPath) {
-    documentSerial++;
+    invalidateDocumentLoad();
     if (library.selected?.projectPath === source.projectPath && library.selected.name === source.name) {
       library.selectedName = null;
       library.selected = null;
@@ -712,7 +725,7 @@ export async function batchDelete(prompts: PromptSummary[]): Promise<string[]> {
     await refreshLibrary();
     const selected = library.selected;
     if (selected && prompts.some((prompt) => prompt.projectPath === selected.projectPath && prompt.name === selected.name)) {
-      documentSerial++;
+      invalidateDocumentLoad();
       library.selectedName = null;
       library.selected = null;
     }
