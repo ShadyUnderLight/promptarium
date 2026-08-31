@@ -14,6 +14,12 @@ const FIELD_SEP: char = '\x1f';
 const COMMIT_PREFIX: &str = "COMMIT:";
 const EMPTY_TREE: &str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
+fn git_in_repo(repo_root: &Path) -> Command {
+    let mut command = Command::new("git");
+    command.arg("-C").arg(repo_root).arg("--literal-pathspecs");
+    command
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepositoryInfo {
@@ -257,9 +263,7 @@ fn path_to_git_relative(repo_root: &Path, file_path: &Path) -> Result<String, St
 }
 
 fn is_tracked(repo_root: &Path, git_path: &str) -> Result<bool, String> {
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
+    let status = git_in_repo(repo_root)
         .arg("ls-files")
         .arg("--error-unmatch")
         .arg("--")
@@ -301,10 +305,8 @@ fn fetch_follow_log(
         "{COMMIT_PREFIX}%H{sep}%h{sep}%an{sep}%ae{sep}%at{sep}%s",
         sep = FIELD_SEP
     );
-    let mut command = Command::new("git");
+    let mut command = git_in_repo(repo_root);
     command
-        .arg("-C")
-        .arg(repo_root)
         .arg("log")
         .arg("-z")
         .arg("--follow")
@@ -331,9 +333,7 @@ fn fetch_follow_log(
 }
 
 fn resolve_parent(repo_root: &Path, commit: &str) -> Result<Option<String>, String> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
+    let output = git_in_repo(repo_root)
         .arg("rev-parse")
         .arg(format!("{commit}^"))
         .output()
@@ -374,8 +374,7 @@ fn run_git_in_repo(repo_root: &Path, args: &[&str]) -> Result<String, String> {
 }
 
 fn run_git_in_repo_bytes(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
-    let mut command = Command::new("git");
-    command.arg("-C").arg(repo_root);
+    let mut command = git_in_repo(repo_root);
     for arg in args {
         command.arg(*arg);
     }
@@ -902,6 +901,109 @@ mod tests {
         commit_all(&dir, "Initial");
         let error = file_diff(&dir, "review", "--help").unwrap_err();
         assert!(error.contains("invalid commit hash"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn literal_pathspec_metacharacters_do_not_match_siblings() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("pathspec-glob");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "foo*.md", "star prompt");
+        write_prompt(&dir, "foo-secret.md", "secret sibling");
+        commit_all(&dir, "Add both prompts");
+        write_prompt(&dir, "foo-secret.md", "secret sibling v2");
+        commit_all(&dir, "Edit sibling only");
+        write_prompt(&dir, "foo*.md", "star prompt v2");
+        commit_all(&dir, "Edit star prompt");
+
+        let page = file_history(&dir, "foo*", None, None).unwrap();
+        assert!(page.tracked);
+        assert_eq!(
+            page.commits.len(),
+            2,
+            "history should ignore commits that only touched foo-secret.md"
+        );
+        assert_eq!(page.commits[0].subject, "Edit star prompt");
+        assert_eq!(page.commits[1].subject, "Add both prompts");
+
+        let diff = file_diff(&dir, "foo*", &page.commits[0].hash).unwrap();
+        assert!(
+            diff.patch.contains("star prompt v2"),
+            "diff should include the star prompt edit"
+        );
+        assert!(
+            !diff.patch.contains("foo-secret"),
+            "diff must not leak the sibling file, got: {}",
+            diff.patch
+        );
+        assert!(
+            !diff.patch.contains("secret sibling"),
+            "diff must not include sibling content, got: {}",
+            diff.patch
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn literal_pathspec_does_not_confuse_tracked_sibling_for_untracked_prompt() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("pathspec-tracked");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "foo-secret.md", "secret sibling");
+        commit_all(&dir, "Track sibling only");
+        write_prompt(&dir, "foo*.md", "untracked star prompt");
+
+        let page = file_history(&dir, "foo*", None, None).unwrap();
+        assert!(
+            !page.tracked,
+            "untracked foo*.md must not appear tracked because foo-secret.md matches as a glob"
+        );
+        assert!(page.commits.is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn historical_pathspec_magic_is_treated_literally() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("pathspec-magic");
+        let prompts = dir.join("prompts");
+        fs::create_dir_all(&prompts).unwrap();
+        init_repo(&dir);
+        fs::write(dir.join("secret.txt"), "top secret").unwrap();
+        write_prompt(&dir, ":(top)**.md", "magic prompt");
+        commit_all(&dir, "Add magic prompt and secret");
+        fs::rename(dir.join(":(top)**.md"), prompts.join("new.md")).unwrap();
+        commit_all(&dir, "Move prompt into project");
+
+        let page = file_history(&prompts, "new", None, None).unwrap();
+        assert!(page.tracked);
+        assert_eq!(page.commits.len(), 2);
+        assert_eq!(page.commits[1].path, ":(top)**.md");
+
+        let diff = file_diff(&prompts, "new", &page.commits[1].hash).unwrap();
+        assert!(
+            diff.patch.contains("magic prompt"),
+            "root commit diff should include the original prompt"
+        );
+        assert!(
+            !diff.patch.contains("secret.txt"),
+            "root commit diff must not include unrelated repo files, got: {}",
+            diff.patch
+        );
+        assert!(
+            !diff.patch.contains("top secret"),
+            "root commit diff must not leak secret.txt content, got: {}",
+            diff.patch
+        );
         fs::remove_dir_all(&dir).ok();
     }
 }
