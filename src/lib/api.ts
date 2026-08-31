@@ -32,6 +32,16 @@ export async function addProject(name: string, path: string): Promise<Project> {
   return call<Project>('add_project', { name, path });
 }
 
+export async function replaceProjectPath(oldPath: string, newPath: string): Promise<Project> {
+  if (!isTauri()) return devReplaceProjectPath(oldPath, newPath);
+  return call<Project>('replace_project_path', { oldPath, newPath });
+}
+
+export async function renameProjectLabel(name: string, path: string): Promise<Project> {
+  if (!isTauri()) return devRenameProjectLabel(name, path);
+  return call<Project>('rename_project_label', { path, name });
+}
+
 export async function setProjectColor(path: string, color: string | null): Promise<Project> {
   if (!isTauri()) return devSetProjectColor(path, color);
   return call<Project>('set_project_color', { path, color });
@@ -521,6 +531,37 @@ function devAddProject(name: string, path: string): Project {
   devProjects.push(project);
   devStore[path] ??= [];
   devActive = path;
+  return { ...project };
+}
+
+function devReplaceProjectPath(oldPath: string, newPath: string): Project {
+  const project = devProjects.find((item) => item.path === oldPath);
+  if (!project) throw new Error('not a known project: ' + oldPath);
+  if (devProjects.some((item) => item.path === newPath)) {
+    throw new Error('project path already registered: ' + newPath);
+  }
+  project.path = newPath;
+  devStore[newPath] = devStore[oldPath] ?? [];
+  devFolders[newPath] = devFolders[oldPath] ?? new Set();
+  delete devStore[oldPath];
+  delete devFolders[oldPath];
+  if (devActive === oldPath) devActive = newPath;
+  for (const prompt of devStore[newPath]) {
+    const oldKey = oldPath + '::' + prompt.name;
+    const newKey = newPath + '::' + prompt.name;
+    devMetadata[newKey] = cloneMetadata(devMetadata[oldKey]);
+    devMtimes[newKey] = devMtimes[oldKey] ?? Date.now();
+    delete devMetadata[oldKey];
+    delete devMtimes[oldKey];
+  }
+  return { ...project };
+}
+
+function devRenameProjectLabel(name: string, path: string): Project {
+  const project = devProjects.find((item) => item.path === path);
+  if (!project) throw new Error('not a known project: ' + path);
+  if (!name.trim()) throw new Error('project name cannot be empty');
+  project.name = name.trim();
   return { ...project };
 }
 

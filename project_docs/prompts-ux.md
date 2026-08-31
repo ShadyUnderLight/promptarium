@@ -7,12 +7,12 @@ and the selected prompt inspector on the right.
 
 ## The surface at rest
 
-The header contains the app name, a search field, New Prompt, Refresh, theme and
-settings. The workspace has resizable panes:
+The header contains the app name, a search field, New Prompt, Refresh and theme.
+The workspace has resizable panes:
 
-\`\`\`text
+```text
 Projects / views / folders / tags | Prompt list | Prompt detail
-\`\`\`
+```
 
 The left sidebar shows all registered projects vertically, then Smart Views
 (All, Favorites, Draft, Archived), the active project's real folder tree, and
@@ -35,7 +35,8 @@ basename is the initial label.
 Right-clicking a project offers rename label, fixed color swatches, Reveal in
 Finder and Forget Project. Forget always says that files stay and never deletes
 the project folder. A missing registered folder is shown as Project folder not
-found, with Locate Folder and Forget actions; it is never rendered as 0 prompts.
+found, with Locate Folder and Forget actions; Locate replaces that registration's
+path instead of adding a duplicate, and it is never rendered as 0 prompts.
 
 ## Navigation and filters
 
@@ -61,7 +62,7 @@ by the existing variable parser.
 Edit mode exposes the Markdown body and controls for description, tags, status,
 favorite, model hints and created date. Cmd+S/Ctrl+S is explicit Save. A dirty
 indicator is always visible. Navigating away from dirty changes asks before
-discarding. Save writes the Markdown file atomically; it never creates a
+discarding. Refresh offers explicit Reload from disk or Keep editing. Save writes the Markdown file atomically; it never creates a
 database record or an in-project sidecar.
 
 Invalid frontmatter keeps the prompt in the library with a warning badge. The

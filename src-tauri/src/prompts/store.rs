@@ -333,12 +333,22 @@ fn safe_relative_path(
     let mut current = root.clone();
     for segment in relative.split('/') {
         current.push(segment);
-        if current.exists() {
-            let metadata = fs::symlink_metadata(&current).map_err(|e| e.to_string())?;
-            if metadata.file_type().is_symlink() {
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
                 return Err(format!("path traverses a symlink: {relative}"));
             }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.to_string()),
         }
+    }
+    match fs::symlink_metadata(&joined) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(format!("path ends in a symlink: {relative}"));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
     }
     Ok(joined)
 }
@@ -1094,6 +1104,25 @@ mod tests {
             &PromptMetadata::default()
         )
         .is_err());
+        #[cfg(unix)]
+        {
+            let outside_file = outside.join("outside.md");
+            fs::write(&outside_file, "outside").unwrap();
+            std::os::unix::fs::symlink(&outside_file, project.join("evil.md")).unwrap();
+            assert!(read_prompt(&project, "evil").is_err());
+            assert!(save_prompt(
+                &project,
+                "evil",
+                "overwrite",
+                &PromptMetadata::default(),
+                None,
+                false,
+                None
+            )
+            .is_err());
+            assert!(rename_prompt(&project, "evil", "renamed").is_err());
+            assert_eq!(fs::read_to_string(outside_file).unwrap(), "outside");
+        }
         assert!(!outside.join("pwned.md").exists());
         fs::remove_dir_all(root).unwrap();
     }

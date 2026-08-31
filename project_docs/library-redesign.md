@@ -50,6 +50,12 @@ stays visible with a warning until an explicit save repairs/replaces it.
 5. Git history: read-only file history and diffs only after the core library is
    stable. No automatic Git initialization or commits.
 
+After the first pushed baseline, the hardening pass made document identity
+explicit across asynchronous reads and mutations, isolated batch selection by
+project, added a bounded local search/variable-count index, and made missing
+project relocation replace the existing registration. These are correctness
+guards, not new product scope.
+
 The migration is additive at the file level: no database migration and no
 automatic rewrite of existing prompt libraries are required.
 

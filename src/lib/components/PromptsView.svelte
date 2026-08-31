@@ -18,7 +18,7 @@
     setPaneWidth,
     visiblePrompts,
   } from '$lib/library.svelte';
-  import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
+  import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { copyToClipboard } from '$lib/copy';
   import { toasts } from '$lib/prompts/toasts.svelte';
   import ProjectSidebar from './library/ProjectSidebar.svelte';
@@ -28,8 +28,9 @@
   import ConfirmDialog from './library/ConfirmDialog.svelte';
 
   let searchInput: HTMLInputElement | undefined = $state(undefined);
-  let detail: { save: () => Promise<void> } | undefined = $state(undefined);
+  let detail: { save: () => Promise<void>; discardChanges: () => void } | undefined = $state(undefined);
   let newPromptOpen = $state(false);
+  let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(Boolean(library.error?.toLowerCase().includes('project folder not found')));
@@ -54,6 +55,15 @@
     return window.confirm('This prompt has unsaved changes. Discard them and continue?');
   }
 
+  function isCurrentDocument(document: PromptDocument): boolean {
+    return (
+      library.activeProjectPath === document.projectPath &&
+      library.selectedName === document.name &&
+      library.selected?.projectPath === document.projectPath &&
+      library.selected.name === document.name
+    );
+  }
+
   function openNewPrompt(): void {
     if (!library.activeProjectPath) {
       notice('Add a prompt project first.');
@@ -63,64 +73,73 @@
     newPromptOpen = true;
   }
 
-  function handleSelect(name: string): void {
+  function handleSelect(prompt: PromptSummary): void {
     if (!canNavigate()) return;
-    void selectPrompt(name);
+    void selectPrompt(prompt.projectPath, prompt.name);
   }
 
   async function handleCreate(name: string, body: string, metadata: PromptMetadata): Promise<PromptDocument> {
-    const created = await createPrompt(name, body, metadata);
+    const projectPath = library.activeProjectPath;
+    if (!projectPath) throw new Error('Add a prompt project first.');
+    const created = await createPrompt(projectPath, name, body, metadata);
     newPromptOpen = false;
     notice('Prompt created.');
     return created;
   }
 
   async function handleSave(
-    name: string,
+    document: PromptDocument,
     body: string,
     metadata: PromptMetadata,
     frontmatterPrefix: string | undefined,
     metadataDirty: boolean,
     expectedRaw: string | undefined
   ): Promise<PromptDocument> {
-    const saved = await saveDocument(name, body, metadata, frontmatterPrefix, metadataDirty, expectedRaw);
-    detailDirty = false;
+    const saved = await saveDocument(document, body, metadata, frontmatterPrefix, metadataDirty, expectedRaw);
+    if (isCurrentDocument(document)) detailDirty = false;
     return saved;
   }
 
-  async function handleReload(name: string): Promise<void> {
-    await selectPrompt(name);
-    detailDirty = false;
+  async function handleReload(document: PromptDocument): Promise<void> {
+    await selectPrompt(document.projectPath, document.name);
+    if (isCurrentDocument(document)) detailDirty = false;
   }
 
   function handleCopy(body: string): void {
     void copyToClipboard(body).then((ok) => notice(ok ? 'Prompt copied.' : 'Copy failed — select the text manually.'));
   }
 
-  function handleReveal(name: string): void {
-    void revealPrompt(name).catch((error) => notice(errorText(error)));
+  function handleReveal(document: PromptDocument): void {
+    void revealPrompt(document).catch((error) => notice(errorText(error)));
   }
 
-  function handleRename(name: string, newName: string): void {
+  function handleRename(document: PromptDocument, newName: string): void {
     if (detailDirty && !canNavigate()) return;
-    detailDirty = false;
-    void renamePrompt(name, newName)
-      .then(() => notice('Prompt renamed.'))
+    void renamePrompt(document, newName)
+      .then(() => {
+        if (library.activeProjectPath === document.projectPath && library.selectedName === newName) detailDirty = false;
+        notice('Prompt renamed.');
+      })
       .catch((error) => notice(errorText(error)));
   }
 
-  function handleMove(name: string, destination: string): void {
+  function handleMove(document: PromptDocument, destination: string): void {
     if (detailDirty && !canNavigate()) return;
-    detailDirty = false;
-    void movePrompt(name, destination)
-      .then(() => notice('Prompt moved.'))
+    void movePrompt(document, destination)
+      .then(() => {
+        if (library.activeProjectPath === document.projectPath && library.selectedName === destination) detailDirty = false;
+        notice('Prompt moved.');
+      })
       .catch((error) => notice(errorText(error)));
   }
 
   function handleDuplicate(document: PromptDocument, name: string): void {
     if (detailDirty && !canNavigate()) return;
     void duplicatePrompt(document, name)
-      .then(() => notice('Prompt duplicated.'))
+      .then(() => {
+        if (library.activeProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
+        notice('Prompt duplicated.');
+      })
       .catch((error) => notice(errorText(error)));
   }
 
@@ -131,41 +150,40 @@
 
   async function confirmDelete(): Promise<void> {
     if (!deleteTarget) return;
-    const name = deleteTarget.name;
+    const document = deleteTarget;
     try {
-      await deletePrompt(name);
+      await deletePrompt(document);
     } catch (error) {
       notice(errorText(error));
       return;
     }
     deleteTarget = null;
-    detailDirty = false;
-    notice('Deleted ' + name + '.md.');
+    if (library.activeProjectPath === document.projectPath &&
+        (library.selectedName === null || library.selectedName === document.name)) {
+      detailDirty = false;
+    }
+    notice('Deleted ' + document.name + '.md.');
   }
 
   async function handleBatch(
-    names: string[],
+    prompts: PromptSummary[],
     action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete',
     tag?: string
-  ): Promise<void> {
-    if (!names.length) return;
-    if (detailDirty && !canNavigate()) return;
+  ): Promise<boolean> {
+    if (!prompts.length) return false;
+    if (detailDirty && !canNavigate()) return false;
     if (action === 'delete') {
-      const listed = names.map((name) => '• ' + name + '.md').join('\n');
-      if (!window.confirm('Delete these Markdown files?\n\n' + listed + '\n\nThis cannot be undone.')) return;
-      const failures = await batchDelete(names);
-      reportBatchResult(failures, names.length - failures.length);
-      return;
+      const listed = prompts.map((prompt) => '• ' + prompt.name + '.md').join('\n');
+      if (!window.confirm('Delete these Markdown files?\n\n' + listed + '\n\nThis cannot be undone.')) return false;
+      const failures = await batchDelete(prompts);
+      reportBatchResult(failures, prompts.length - failures.length);
+      return true;
     }
     if ((action === 'add-tag' || action === 'remove-tag') && !tag?.trim()) {
       notice('Enter a tag first.');
-      return;
+      return false;
     }
-    const selected = names
-      .map((name) => library.allPrompts.find((prompt) => prompt.name === name))
-      .filter((prompt): prompt is NonNullable<typeof prompt> => Boolean(prompt));
-    const missing = names.filter((name) => !selected.some((prompt) => prompt.name === name));
-    const failures = [...missing, ...(await batchUpdate(selected, (metadata) => {
+    const failures = await batchUpdate(prompts, (metadata) => {
       const next = { ...metadata, tags: [...metadata.tags], models: [...metadata.models], extra: { ...metadata.extra } };
       if (action === 'favorite') next.favorite = true;
       if (action === 'unfavorite') next.favorite = false;
@@ -174,8 +192,9 @@
       if (action === 'add-tag' && tag) next.tags = [...new Set([...next.tags, tag.trim()])];
       if (action === 'remove-tag' && tag) next.tags = next.tags.filter((item) => item !== tag.trim());
       return next;
-    }))];
-    reportBatchResult(failures, names.length - failures.length);
+    });
+    reportBatchResult(failures, prompts.length - failures.length);
+    return true;
   }
 
   function reportBatchResult(failures: string[], succeeded: number): void {
@@ -204,6 +223,21 @@
 
   function onWindowFocus(): void {
     if (!detailDirty) void refreshLibrary();
+  }
+
+  function handleRefresh(): void {
+    if (detailDirty) {
+      refreshPending = true;
+      return;
+    }
+    void refreshLibrary();
+  }
+
+  async function confirmRefresh(): Promise<void> {
+    refreshPending = false;
+    detail?.discardChanges();
+    detailDirty = false;
+    await refreshLibrary();
   }
 
   function errorText(error: unknown): string {
@@ -243,7 +277,7 @@
     </label>
     <div class="library-topbar__actions">
       <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ New prompt</button>
-      <button type="button" class="icon-button" title="Refresh library" aria-label="Refresh library" onclick={() => refreshLibrary()}>↻</button>
+      <button type="button" class="icon-button" title="Refresh library" aria-label="Refresh library" onclick={handleRefresh}>↻</button>
     </div>
   </div>
 
@@ -257,7 +291,7 @@
   >
     <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
     <button type="button" class="pane-resizer" aria-label="Resize project sidebar" onpointerdown={(event) => startResize('sidebar', event)}></button>
-    <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
+    <PromptLibrary projectPath={library.activeProjectPath} onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer" aria-label="Resize prompt library" onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail
       bind:this={detail}
@@ -289,6 +323,17 @@
     destructive={true}
     onConfirm={confirmDelete}
     onCancel={() => (deleteTarget = null)}
+  />
+{/if}
+
+{#if refreshPending}
+  <ConfirmDialog
+    title="Reload prompt from disk?"
+    message="This prompt has unsaved changes. Reloading will discard the local edits and read the current Markdown file again."
+    confirmLabel="Reload from disk"
+    cancelLabel="Keep editing"
+    onConfirm={confirmRefresh}
+    onCancel={() => (refreshPending = false)}
   />
 {/if}
 

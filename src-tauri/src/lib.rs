@@ -20,6 +20,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             prompts::state::list_projects,
             prompts::state::add_project,
+            prompts::state::rename_project_label,
+            prompts::state::replace_project_path,
             prompts::state::set_project_color,
             prompts::state::remove_project,
             prompts::state::set_active_project,

@@ -1,22 +1,29 @@
 <script lang="ts">
-  import { parseVariables } from '$lib/compose/variables';
-  import { library, visiblePrompts } from '$lib/library.svelte';
+  import { library, promptVariableCount, visiblePrompts } from '$lib/library.svelte';
   import type { PromptSummary } from '$lib/prompts/types';
   import PromptListItem from './PromptListItem.svelte';
   import PromptToolbar from './PromptToolbar.svelte';
 
   interface Props {
-    onSelectPrompt: (name: string) => void;
+    projectPath: string | null;
+    onSelectPrompt: (prompt: PromptSummary) => void;
     onNewPrompt: () => void;
-    onBatch: (names: string[], action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete', tag?: string) => void;
+    onBatch: (prompts: PromptSummary[], action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete', tag?: string) => Promise<boolean>;
   }
 
-  let { onSelectPrompt, onNewPrompt, onBatch }: Props = $props();
+  let { projectPath, onSelectPrompt, onNewPrompt, onBatch }: Props = $props();
   let selectedNames = $state<string[]>([]);
   const prompts = $derived(visiblePrompts());
-  const selectedDocumentVariables = $derived(
-    library.selected ? parseVariables(library.selected.body).length : null
-  );
+  $effect(() => {
+    projectPath;
+    selectedNames = [];
+  });
+
+  $effect(() => {
+    const available = new Set(prompts.map((prompt) => prompt.name));
+    const next = selectedNames.filter((name) => available.has(name));
+    if (next.length !== selectedNames.length) selectedNames = next;
+  });
 
   function toggle(name: string): void {
     selectedNames = selectedNames.includes(name)
@@ -32,13 +39,13 @@
     selectedNames = [];
   }
 
-  function handleBatch(action: Parameters<Props['onBatch']>[1], tag?: string): void {
-    onBatch(selectedNames, action, tag);
-    if (action !== 'delete') selectedNames = [];
+  async function handleBatch(action: Parameters<Props['onBatch']>[1], tag?: string): Promise<void> {
+    const selected = library.allPrompts.filter((prompt) => selectedNames.includes(prompt.name));
+    if (await onBatch(selected, action, tag)) selectedNames = [];
   }
 
   function variableCount(prompt: PromptSummary): number | null {
-    return library.selected?.name === prompt.name ? selectedDocumentVariables : null;
+    return promptVariableCount(prompt);
   }
 </script>
 
@@ -72,10 +79,10 @@
       {#each prompts as prompt (prompt.name)}
         <PromptListItem
           prompt={prompt}
-          selected={library.selectedName === prompt.name}
+          selected={library.selected?.projectPath === prompt.projectPath && library.selected.name === prompt.name}
           checked={selectedNames.includes(prompt.name)}
           variableCount={variableCount(prompt)}
-          onSelect={() => onSelectPrompt(prompt.name)}
+          onSelect={() => onSelectPrompt(prompt)}
           onToggle={(event) => { event.stopPropagation(); toggle(prompt.name); }}
         />
       {/each}

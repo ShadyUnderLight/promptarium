@@ -9,6 +9,7 @@
     forgetProject,
     library,
     renameFolder,
+    replaceProjectPath,
     setActiveProject,
     tagCounts,
   } from '$lib/library.svelte';
@@ -23,6 +24,7 @@
 
   let { onNewPrompt, canNavigate, onNotice }: Props = $props();
   let addPath = $state<string | null>(null);
+  let relocateFrom = $state<string | null>(null);
   let pathInput: HTMLInputElement | undefined = $state(undefined);
   let busy = $state(false);
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
@@ -65,11 +67,19 @@
   async function submitProject(): Promise<void> {
     const path = addPath?.trim();
     if (!path) return;
+    if (!canNavigate()) return;
+    const oldPath = relocateFrom;
     busy = true;
     try {
-      await addProject(basename(path), path);
+      if (oldPath) {
+        await replaceProjectPath(oldPath, path);
+        onNotice('Project folder located.');
+      } else {
+        await addProject(basename(path), path);
+        onNotice('Project added.');
+      }
       addPath = null;
-      onNotice('Project added.');
+      relocateFrom = null;
     } catch (error) {
       onNotice(error instanceof Error ? error.message : String(error));
     } finally {
@@ -83,7 +93,13 @@
       void submitProject();
     } else if (event.key === 'Escape') {
       addPath = null;
+      relocateFrom = null;
     }
+  }
+
+  function closeAddProject(): void {
+    addPath = null;
+    relocateFrom = null;
   }
 
   function openMenu(event: MouseEvent, item: Project): void {
@@ -115,6 +131,7 @@
   }
 
   async function newFolder(): Promise<void> {
+    if (!canNavigate()) return;
     const name = window.prompt('Folder path inside this project', library.folderFilter || '');
     if (!name?.trim()) return;
     try {
@@ -131,6 +148,7 @@
     if (action === 'rename') {
       const next = window.prompt('New folder path', folder);
       if (!next?.trim()) return;
+      if (!canNavigate()) return;
       try {
         await renameFolder(folder, next.trim());
         if (library.folderFilter === folder || library.folderFilter.startsWith(folder + '/')) {
@@ -140,6 +158,7 @@
         onNotice(error instanceof Error ? error.message : String(error));
       }
     } else if (action === 'delete' && window.confirm('Delete empty folder “' + folder + '”?')) {
+      if (!canNavigate()) return;
       try {
         await deleteFolder(folder);
         if (library.folderFilter === folder) library.folderFilter = '';
@@ -152,6 +171,7 @@
   async function forgetMissingProject(): Promise<void> {
     if (!library.activeProjectPath) return;
     if (!window.confirm('Forget this missing project? No files will be deleted.')) return;
+    if (!canNavigate()) return;
     try {
       await forgetProject(library.activeProjectPath);
       onNotice('Project forgotten. Its files were not changed.');
@@ -165,7 +185,7 @@
   <div class="sidebar-section sidebar-section--projects">
     <div class="sidebar-section__heading">
       <span>Projects</span>
-      <button type="button" class="sidebar-icon" aria-label="Add project" title="Add project" onclick={() => (addPath = '')}>＋</button>
+      <button type="button" class="sidebar-icon" aria-label="Add project" title="Add project" onclick={() => { addPath = ''; relocateFrom = null; }}>＋</button>
     </div>
 
     {#if addPath !== null}
@@ -173,8 +193,8 @@
         <input bind:this={pathInput} bind:value={addPath} placeholder="Paste a folder path…" spellcheck="false" onkeydown={onPathKeydown} />
         <div class="add-project-row__actions">
           <button type="button" class="btn btn--ghost btn--sm" onclick={browse} disabled={busy}>Browse</button>
-          <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>Add</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={() => (addPath = null)} disabled={busy}>×</button>
+          <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>{relocateFrom ? 'Locate' : 'Add'}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={closeAddProject} disabled={busy}>×</button>
         </div>
       </div>
     {/if}
@@ -204,7 +224,11 @@
       <strong>Project folder not found</strong>
       <span>{library.activeProjectPath}</span>
       <div>
-        <button type="button" class="btn btn--sm" onclick={() => (addPath = library.activeProjectPath)}>Locate folder</button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          onclick={() => { addPath = library.activeProjectPath; relocateFrom = library.activeProjectPath; }}
+        >Locate folder</button>
         <button type="button" class="btn btn--ghost btn--sm" onclick={forgetMissingProject}>Forget</button>
       </div>
     </div>
@@ -271,5 +295,5 @@
 </aside>
 
 {#if menu}
-  <ProjectMenu project={menu.project} x={menu.x} y={menu.y} onClose={closeMenu} {onNotice} />
+  <ProjectMenu project={menu.project} x={menu.x} y={menu.y} onClose={closeMenu} {onNotice} {canNavigate} />
 {/if}

@@ -126,6 +126,58 @@ pub fn add_project(root: &Path, name: &str, path: &Path) -> Result<Project, Stri
     Ok(project)
 }
 
+/// Rename only the app-local label. Unlike adding a project, this remains
+/// available when the registered folder is currently missing.
+pub fn rename_project_label(root: &Path, path: &Path, name: &str) -> Result<Project, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("project name cannot be empty".to_string());
+    }
+    let mut state = load(root)?;
+    let project = state
+        .projects
+        .iter_mut()
+        .find(|project| project.path == path)
+        .ok_or_else(|| format!("not a known project: {}", path.display()))?;
+    project.name = name.to_string();
+    let updated = project.clone();
+    save(root, &state)?;
+    Ok(updated)
+}
+
+/// Replace a registered project's folder without creating a second roster
+/// entry. This is used by the missing-project "Locate folder" flow; the
+/// presentation name and color stay attached to the registration, and the
+/// project files are never copied or deleted by this operation.
+pub fn replace_project_path(
+    root: &Path,
+    old_path: &Path,
+    new_path: &Path,
+) -> Result<Project, String> {
+    if !new_path.is_dir() {
+        return Err(format!("project folder does not exist: {}", new_path.display()));
+    }
+    let new_path = new_path
+        .canonicalize()
+        .map_err(|e| format!("{}: {e}", new_path.display()))?;
+    let mut state = load(root)?;
+    if state.projects.iter().any(|project| project.path == new_path) {
+        return Err(format!("project folder is already registered: {}", new_path.display()));
+    }
+    let project = state
+        .projects
+        .iter_mut()
+        .find(|project| project.path == old_path)
+        .ok_or_else(|| format!("not a known project: {}", old_path.display()))?;
+    project.path = new_path.clone();
+    if state.active.as_deref() == Some(old_path) {
+        state.active = Some(new_path.clone());
+    }
+    let updated = project.clone();
+    save(root, &state)?;
+    Ok(updated)
+}
+
 /// Set (or clear, with `None`) a project's color. Round 2's restore of the
 /// round-1 cut — see the `Project` doc comment. The backend does not validate
 /// the value against the frontend's fixed swatch; it is an opaque string here,
@@ -230,6 +282,37 @@ mod tests {
     fn a_project_folder_must_exist() {
         let (root, _) = fixture("missing");
         assert!(add_project(&root, "ghost", &root.join("nope")).is_err());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn locating_a_missing_project_replaces_its_path_and_preserves_presentation() {
+        let (root, project) = fixture("locate");
+        let added = add_project(&root, "writing", &project).unwrap();
+        set_project_color(&root, &project, Some("#4f7cff".into())).unwrap();
+        fs::remove_dir_all(&project).unwrap();
+        let replacement = root.join("replacement");
+        fs::create_dir_all(&replacement).unwrap();
+
+        let updated = replace_project_path(&root, &project, &replacement).unwrap();
+        assert_eq!(updated.name, added.name);
+        assert_eq!(updated.path, replacement.canonicalize().unwrap());
+        assert_eq!(updated.color, Some("#4f7cff".into()));
+        let list = list_projects(&root).unwrap();
+        assert_eq!(list.active, Some(updated.path.clone()));
+        assert_eq!(list.projects, vec![updated]);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_missing_project_can_still_have_its_label_renamed() {
+        let (root, project) = fixture("rename-missing-label");
+        add_project(&root, "old", &project).unwrap();
+        fs::remove_dir_all(&project).unwrap();
+
+        let updated = rename_project_label(&root, &project, "new").unwrap();
+        assert_eq!(updated.name, "new");
+        assert_eq!(list_projects(&root).unwrap().projects, vec![updated]);
         fs::remove_dir_all(&root).unwrap();
     }
 

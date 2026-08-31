@@ -8,13 +8,13 @@ the user owns; it is not a prompt execution service.
 
 The data model is deliberately small:
 
-\`\`\`text
+```text
 Application
 └── Projects (app-local registration)
     └── Project (a real folder)
         ├── Folders
         └── Prompts (real .md files)
-\`\`\`
+```
 
 The project path is its identity. A prompt is identified by its /-separated
 relative path without .md, for example coding/github/review-pr. There are no
@@ -35,18 +35,18 @@ prompt; the next scan rebuilds it from Markdown.
 Existing files with no frontmatter remain valid and are loaded unchanged. Their
 entire content is the body and metadata uses these defaults:
 
-\`\`\`text
+```text
 description = ""
 tags = []
 status = active
 favorite = false
 models = []
 created = unknown
-\`\`\`
+```
 
 New metadata is optional YAML frontmatter at the beginning of a file:
 
-\`\`\`markdown
+```markdown
 ---
 description: Review a pull request for regressions and missing tests.
 tags:
@@ -60,7 +60,7 @@ created: 2026-08-28
 ---
 
 Review the pull request for {repository} and {pr_number}.
-\`\`\`
+```
 
 Supported fields are description: string, tags: string[],
 status: draft | active | archived, favorite: boolean, models: string[] and
@@ -91,8 +91,14 @@ renderer; YAML frontmatter is never copied.
 
 scan_project recursively reads visible .md files and returns summaries:
 relative path, display name, folder, parsed metadata, filesystem mtime and
-frontmatter diagnostics. Full bodies are loaded only by read_prompt, except
-while the native search command builds a disposable lexical result.
+frontmatter diagnostics. Full bodies are loaded by read_prompt for the selected
+detail and by the bounded background index pass for search/count derivation.
+
+The library keeps a per-project disposable lexical index outside reactive UI
+state. It reads bodies in a bounded background pass after the summary scan, so
+typing a query does not rescan every Markdown file. A body is still loaded into
+the detail pane only for the selected prompt; the index stores lowercase search
+text and variable counts only for the active library session.
 
 Scanning rules are fail-closed:
 
@@ -105,20 +111,20 @@ Scanning rules are fail-closed:
 - delete removes only the selected .md file and never prunes its folder.
 
 Search is deterministic lexical search over relative path/name, tags,
-description and body. Name/path matches rank above metadata, which ranks above
-body matches. Search is a filter, not a requirement for the library to appear.
-The index is disposable and no model or AI/API key is needed.
+description, model hints and body. Name/path matches rank above metadata, which
+ranks above body matches. Search is a filter, not a requirement for the library
+to appear. The index is disposable and no model or AI/API key is needed.
 
 ## App-local project state
 
 prompts-state.json remains outside user projects:
 
-\`\`\`json
+```json
 {
   "projects": [{ "name": "Work", "path": "/Users/me/Prompts/Work", "color": "blue" }],
   "active": "/Users/me/Prompts/Work"
 }
-\`\`\`
+```
 
 Paths are canonicalized before registration. Re-registering a path changes its
 label rather than creating a duplicate. A missing state file means a fresh
@@ -129,9 +135,11 @@ install; a corrupt existing state file is a loud error, never a silent reset.
 Rust owns path validation and all dangerous filesystem operations. The frontend
 never sends an arbitrary destination to a generic writer. The MVP seam is:
 
-\`\`\`text
+```text
 list_projects() -> ProjectList
 add_project(name, path) -> Project
+rename_project_label(path, name) -> Project
+replace_project_path(old_path, new_path) -> Project
 set_project_color(path, color) -> Project
 remove_project(path)
 set_active_project(path)
@@ -149,7 +157,7 @@ rename_folder(project, folder, new_folder)
 delete_empty_folder(project, folder)
 reveal_in_finder(project, name?)
 search_prompts(project, query) -> PromptSummary[]
-\`\`\`
+```
 
 Git history is a later read-only phase. Git is detected but never initialized
 and edits are never auto-committed.
@@ -159,7 +167,9 @@ and edits are never auto-committed.
 The app refreshes on window focus and on explicit Refresh. A selected document is
 re-read before save. If its on-disk fingerprint changed since it was loaded and
 the editor is dirty, saving is rejected with a conflict; the UI offers Reload
-or Keep editing. A deleted or renamed external file is reflected after refresh.
+or Keep editing. Explicit Refresh while dirty asks whether to Reload from disk
+or Keep editing, so it never replaces the editor buffer silently. A deleted or
+renamed external file is reflected after refresh.
 
 ## Removed old assumptions
 

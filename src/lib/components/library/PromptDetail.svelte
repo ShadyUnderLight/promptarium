@@ -9,18 +9,18 @@
     document: PromptDocument | null;
     loading: boolean;
     onSave: (
-      name: string,
+      document: PromptDocument,
       body: string,
       metadata: PromptMetadata,
       frontmatterPrefix: string | undefined,
       metadataDirty: boolean,
       expectedRaw: string | undefined
     ) => Promise<PromptDocument>;
-    onReload: (name: string) => Promise<void>;
+    onReload: (document: PromptDocument) => Promise<void>;
     onCopy: (body: string) => void;
-    onReveal: (name: string) => void;
-    onRename: (name: string, newName: string) => void;
-    onMove: (name: string, destination: string) => void;
+    onReveal: (document: PromptDocument) => void;
+    onRename: (document: PromptDocument, newName: string) => void;
+    onMove: (document: PromptDocument, destination: string) => void;
     onDuplicate: (document: PromptDocument, name: string) => void;
     onDeleteRequest: (document: PromptDocument) => void;
     onDirtyChange: (dirty: boolean) => void;
@@ -101,13 +101,20 @@
     saveError = '';
   }
 
+  export function discardChanges(): void {
+    if (!document || !originalMetadata) return;
+    body = originalBody;
+    metadata = cloneMetadata(originalMetadata);
+    saveError = '';
+  }
+
   export async function save(): Promise<void> {
     if (!document || !metadata || !dirty || saving) return;
     saving = true;
     saveError = '';
     try {
       const saved = await onSave(
-        document.name,
+        document,
         body,
         cloneMetadata(metadata),
         frontmatterPrefix,
@@ -139,7 +146,7 @@
 
   async function reloadFromDisk(): Promise<void> {
     if (!document) return;
-    await onReload(document.name);
+    await onReload(document);
     saveError = '';
     onNotice('Reloaded the prompt from disk. Local edits were discarded.');
   }
@@ -147,13 +154,13 @@
   function actionRename(): void {
     if (!document) return;
     const next = window.prompt('Rename prompt file', document.name);
-    if (next?.trim() && next.trim() !== document.name) onRename(document.name, next.trim());
+    if (next?.trim() && next.trim() !== document.name) onRename(document, next.trim());
   }
 
   function actionMove(): void {
     if (!document) return;
     const next = window.prompt('Move prompt to relative path', document.name);
-    if (next?.trim() && next.trim() !== document.name) onMove(document.name, next.trim());
+    if (next?.trim() && next.trim() !== document.name) onMove(document, next.trim());
   }
 
   function actionDuplicate(): void {
@@ -186,7 +193,7 @@
       </div>
       <div class="detail-header__actions">
         <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>Copy Prompt</button>
-        <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document.name)}>Reveal</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>Reveal</button>
       </div>
     </div>
 

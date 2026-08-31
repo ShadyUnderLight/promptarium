@@ -11,6 +11,8 @@ import {
   renameFolder as apiRenameFolder,
   renamePrompt as apiRenamePrompt,
   removeProject as apiRemoveProject,
+  renameProjectLabel as apiRenameProjectLabel,
+  replaceProjectPath as apiReplaceProjectPath,
   revealInFinder as apiRevealInFinder,
   savePrompt as apiSavePrompt,
   scanProject as apiScanProject,
@@ -27,6 +29,7 @@ import type {
   PromptSummary,
   PromptViewMode,
 } from './prompts/types';
+import { parseVariables } from './compose/variables';
 import { defaultPromptMetadata } from './prompts/types';
 
 const SEARCH_DEBOUNCE_MS = 100;
@@ -51,12 +54,22 @@ export const library = $state({
   sidebarWidth: 244,
   libraryWidth: 362,
   folderPaths: [] as string[],
+  searchIndexVersion: 0,
 });
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 let loadSerial = 0;
 let documentSerial = 0;
 let searchSerial = 0;
+
+interface SearchEntry {
+  summary: PromptSummary;
+  bodyLower: string;
+  variableCount?: number;
+}
+
+const searchIndexes = new Map<string, Map<string, SearchEntry>>();
+const variableCounts = new Map<string, number>();
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -69,6 +82,90 @@ function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
     models: [...metadata.models],
     extra: { ...metadata.extra },
   };
+}
+
+function summaryOf(document: PromptDocument): PromptSummary {
+  return {
+    projectPath: document.projectPath,
+    relativePath: document.relativePath,
+    name: document.name,
+    folder: document.folder,
+    extension: document.extension,
+    metadata: document.metadata,
+    modifiedAt: document.modifiedAt,
+    hasFrontmatter: document.hasFrontmatter,
+    frontmatterError: document.frontmatterError,
+  };
+}
+
+function promptKey(projectPath: string, name: string): string {
+  return projectPath + '\u0000' + name;
+}
+
+function invalidateSearchIndex(projectPath: string): void {
+  searchIndexes.delete(projectPath);
+  const prefix = projectPath + '\u0000';
+  for (const key of variableCounts.keys()) {
+    if (key.startsWith(prefix)) variableCounts.delete(key);
+  }
+  library.searchIndexVersion++;
+}
+
+function updateSearchEntry(document: PromptDocument): void {
+  const index = searchIndexes.get(document.projectPath);
+  if (!index) return;
+  const variableCount = parseVariables(document.body).length;
+  const entry: SearchEntry = {
+    summary: summaryOf(document),
+    bodyLower: document.body.toLowerCase(),
+    variableCount,
+  };
+  index.set(document.name, entry);
+  variableCounts.set(promptKey(document.projectPath, document.name), variableCount);
+  library.searchIndexVersion++;
+}
+
+async function rebuildSearchIndex(
+  projectPath: string,
+  summaries: PromptSummary[],
+  serial: number
+): Promise<void> {
+  const index = new Map<string, SearchEntry>();
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < summaries.length) {
+      const prompt = summaries[next++];
+      const fallback: SearchEntry = {
+        summary: prompt,
+        bodyLower: '',
+      };
+      try {
+        const document = await apiReadPrompt(projectPath, prompt.name);
+        fallback.summary = summaryOf(document);
+        fallback.bodyLower = document.body.toLowerCase();
+        fallback.variableCount = parseVariables(document.body).length;
+      } catch {
+        // The summary is still useful for name/path/metadata search when a file
+        // disappears between scan and index construction.
+      }
+      index.set(prompt.name, fallback);
+    }
+  };
+  const workers = Math.min(8, Math.max(1, summaries.length));
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+  if (serial !== loadSerial || projectPath !== library.activeProjectPath) return;
+  searchIndexes.set(projectPath, index);
+  const prefix = projectPath + '\u0000';
+  for (const key of variableCounts.keys()) {
+    if (key.startsWith(prefix)) variableCounts.delete(key);
+  }
+  for (const entry of index.values()) {
+    if (entry.variableCount !== undefined) {
+      variableCounts.set(promptKey(projectPath, entry.summary.name), entry.variableCount);
+    }
+  }
+  library.searchIndexVersion++;
+  if (library.searchQuery.trim()) void runSearch();
 }
 
 function saveUiState(): void {
@@ -115,6 +212,11 @@ export async function initLibrary(): Promise<void> {
 export async function refreshProjects(): Promise<void> {
   try {
     const result = await apiListProjects();
+    if (result.active !== library.activeProjectPath) {
+      documentSerial++;
+      library.selectedName = null;
+      library.selected = null;
+    }
     library.projects = result.projects;
     library.activeProjectPath = result.active;
     library.error = null;
@@ -134,6 +236,7 @@ export async function refreshLibrary(): Promise<void> {
   const project = library.activeProjectPath;
   const serial = ++loadSerial;
   if (!project) {
+    documentSerial++;
     library.allPrompts = [];
     library.prompts = [];
     library.folderPaths = [];
@@ -142,12 +245,14 @@ export async function refreshLibrary(): Promise<void> {
     return;
   }
   library.loading = true;
+  invalidateSearchIndex(project);
   try {
     const [summaries, folders] = await Promise.all([apiScanProject(project), apiListFolders(project)]);
     if (serial !== loadSerial) return;
     library.allPrompts = summaries;
     library.folderPaths = folders;
     library.error = null;
+    void rebuildSearchIndex(project, summaries, serial);
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
@@ -158,7 +263,7 @@ export async function refreshLibrary(): Promise<void> {
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
     if (library.selectedName && summaries.some((prompt) => prompt.name === library.selectedName)) {
       const selected = await apiReadPrompt(project, library.selectedName);
-      if (serial !== loadSerial) return;
+      if (serial !== loadSerial || project !== library.activeProjectPath) return;
       library.selected = selected;
     }
     if (library.selectedName && !summaries.some((prompt) => prompt.name === library.selectedName)) {
@@ -166,7 +271,7 @@ export async function refreshLibrary(): Promise<void> {
       library.selected = null;
     }
   } catch (error) {
-    if (serial !== loadSerial) return;
+    if (serial !== loadSerial || project !== library.activeProjectPath) return;
     library.error = errorText(error);
     library.allPrompts = [];
     library.prompts = [];
@@ -180,6 +285,7 @@ export async function refreshLibrary(): Promise<void> {
 
 export async function setActiveProject(path: string): Promise<void> {
   await apiSetActiveProject(path);
+  documentSerial++;
   library.activeProjectPath = path;
   library.selectedName = null;
   library.selected = null;
@@ -193,14 +299,30 @@ export async function addProject(name: string, path: string): Promise<Project> {
   const project = await apiAddProject(name, path);
   const roster = await apiListProjects();
   library.projects = roster.projects;
+  documentSerial++;
   library.activeProjectPath = project.path;
   await apiSetActiveProject(project.path);
   await refreshLibrary();
   return project;
 }
 
+export async function replaceProjectPath(oldPath: string, newPath: string): Promise<Project> {
+  const project = await apiReplaceProjectPath(oldPath, newPath);
+  const roster = await apiListProjects();
+  documentSerial++;
+  library.projects = roster.projects;
+  library.activeProjectPath = roster.active;
+  library.selectedName = null;
+  library.selected = null;
+  library.folderFilter = '';
+  library.tagFilter = '';
+  library.smartView = 'all';
+  await refreshLibrary();
+  return project;
+}
+
 export async function renameProjectLabel(name: string, path: string): Promise<Project> {
-  const project = await apiAddProject(name, path);
+  const project = await apiRenameProjectLabel(name, path);
   library.projects = library.projects.map((item) => (item.path === project.path ? project : item));
   return project;
 }
@@ -216,18 +338,18 @@ export async function forgetProject(path: string): Promise<void> {
   await refreshProjects();
 }
 
-export async function selectPrompt(name: string): Promise<void> {
-  const project = library.activeProjectPath;
-  if (!project) return;
+export async function selectPrompt(project: string, name: string): Promise<void> {
+  if (project !== library.activeProjectPath) return;
   const serial = ++documentSerial;
   library.selectedName = name;
+  library.selected = null;
   library.loadingDocument = true;
   try {
     const document = await apiReadPrompt(project, name);
-    if (serial !== documentSerial) return;
+    if (serial !== documentSerial || project !== library.activeProjectPath) return;
     library.selected = document;
   } catch (error) {
-    if (serial === documentSerial) library.error = errorText(error);
+    if (serial === documentSerial && project === library.activeProjectPath) library.error = errorText(error);
   } finally {
     if (serial === documentSerial) library.loadingDocument = false;
   }
@@ -235,81 +357,110 @@ export async function selectPrompt(name: string): Promise<void> {
 
 function replaceSummary(summary: PromptSummary, oldName = summary.name): void {
   const replace = (items: PromptSummary[]) =>
-    items.map((item) => (item.name === oldName || item.name === summary.name ? summary : item));
+    items.map((item) =>
+      item.projectPath === summary.projectPath &&
+      (item.name === oldName || item.name === summary.name)
+        ? summary
+        : item
+    );
   library.allPrompts = replace(library.allPrompts);
   library.prompts = replace(library.prompts);
 }
 
 export async function saveDocument(
-  name: string,
+  source: PromptDocument,
   body: string,
   metadata: PromptMetadata,
   frontmatterPrefix: string | undefined,
   metadataDirty: boolean,
   expectedRaw: string | undefined
 ): Promise<PromptDocument> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
   const document = await apiSavePrompt(
-    library.activeProjectPath,
-    name,
+    source.projectPath,
+    source.name,
     body,
     metadata,
     frontmatterPrefix,
     metadataDirty,
     expectedRaw
   );
-  library.selected = document;
-  library.selectedName = document.name;
-  replaceSummary(document);
+  if (source.projectPath === library.activeProjectPath && library.selectedName === source.name) {
+    library.selected = document;
+    library.selectedName = document.name;
+    replaceSummary(summaryOf(document));
+    updateSearchEntry(document);
+  }
   return document;
 }
 
 export async function createPrompt(
+  projectPath: string,
   name: string,
   body: string,
   metadata: PromptMetadata
 ): Promise<PromptDocument> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
-  const document = await apiCreatePrompt(library.activeProjectPath, name, body, metadata);
-  await refreshLibrary();
-  library.selectedName = document.name;
-  library.selected = document;
+  const document = await apiCreatePrompt(projectPath, name, body, metadata);
+  if (projectPath === library.activeProjectPath) {
+    await refreshLibrary();
+    if (projectPath === library.activeProjectPath) {
+      library.selectedName = document.name;
+      library.selected = document;
+    }
+  }
   return document;
 }
 
 export async function duplicatePrompt(source: PromptDocument, name: string): Promise<PromptDocument> {
-  return createPrompt(name, source.body, cloneMetadata(source.metadata));
+  return createPrompt(source.projectPath, name, source.body, cloneMetadata(source.metadata));
 }
 
-export async function renamePrompt(name: string, newName: string): Promise<PromptDocument> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
-  const document = await apiRenamePrompt(library.activeProjectPath, name, newName);
-  await refreshLibrary();
-  library.selectedName = document.name;
-  library.selected = document;
+export async function renamePrompt(source: PromptDocument, newName: string): Promise<PromptDocument> {
+  const wasSelected = source.projectPath === library.activeProjectPath && library.selectedName === source.name;
+  const document = await apiRenamePrompt(source.projectPath, source.name, newName);
+  if (wasSelected && source.projectPath === library.activeProjectPath) {
+    await refreshLibrary();
+    if (
+      source.projectPath === library.activeProjectPath &&
+      (library.selectedName === source.name || library.selectedName === null)
+    ) {
+      library.selectedName = document.name;
+      library.selected = document;
+    }
+  }
   return document;
 }
 
-export async function movePrompt(name: string, destination: string): Promise<PromptDocument> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
-  const document = await apiMovePrompt(library.activeProjectPath, name, destination);
-  await refreshLibrary();
-  library.selectedName = document.name;
-  library.selected = document;
+export async function movePrompt(source: PromptDocument, destination: string): Promise<PromptDocument> {
+  const wasSelected = source.projectPath === library.activeProjectPath && library.selectedName === source.name;
+  const document = await apiMovePrompt(source.projectPath, source.name, destination);
+  if (wasSelected && source.projectPath === library.activeProjectPath) {
+    await refreshLibrary();
+    if (
+      source.projectPath === library.activeProjectPath &&
+      (library.selectedName === source.name || library.selectedName === null)
+    ) {
+      library.selectedName = document.name;
+      library.selected = document;
+    }
+  }
   return document;
 }
 
-export async function deletePrompt(name: string): Promise<void> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
-  await apiDeletePrompt(library.activeProjectPath, name);
-  library.selectedName = null;
-  library.selected = null;
-  await refreshLibrary();
+export async function deletePrompt(source: PromptDocument): Promise<void> {
+  await apiDeletePrompt(source.projectPath, source.name);
+  if (source.projectPath === library.activeProjectPath) {
+    documentSerial++;
+    if (library.selected?.projectPath === source.projectPath && library.selected.name === source.name) {
+      library.selectedName = null;
+      library.selected = null;
+    }
+    await refreshLibrary();
+  }
 }
 
-export async function revealPrompt(name?: string): Promise<void> {
-  if (!library.activeProjectPath) return;
-  await apiRevealInFinder(library.activeProjectPath, name);
+export async function revealPrompt(source?: PromptDocument): Promise<void> {
+  if (!source) return;
+  await apiRevealInFinder(source.projectPath, source.name);
 }
 
 export async function createFolder(folder: string): Promise<void> {
@@ -337,6 +488,51 @@ export function setSearchQuery(query: string): void {
   searchTimer = setTimeout(() => void runSearch(), SEARCH_DEBOUNCE_MS);
 }
 
+function searchFieldScore(token: string, value: string, weight: number): number | null {
+  const lower = value.toLowerCase();
+  if (!lower.includes(token)) return null;
+  let score = weight;
+  if (lower === token) score += weight;
+  else if (lower.startsWith(token)) score += weight * 0.55;
+  else if (lower.split(/[^\p{L}\p{N}]+/u).some((word) => word === token)) score += weight * 0.35;
+  return score;
+}
+
+function searchIndexed(project: string, query: string): PromptSummary[] | null {
+  const index = searchIndexes.get(project);
+  if (!index) return null;
+  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return library.allPrompts;
+  const matches: Array<{ summary: PromptSummary; score: number }> = [];
+  for (const entry of index.values()) {
+    const fields = [
+      [entry.summary.name, 100],
+      [entry.summary.relativePath, 95],
+      [entry.summary.metadata.tags.join(' '), 60],
+      [entry.summary.metadata.description, 45],
+      [entry.summary.metadata.models.join(' '), 35],
+      [entry.bodyLower, 20],
+    ] as const;
+    let total = 0;
+    let matched = true;
+    for (const token of tokens) {
+      let best = 0;
+      for (const [value, weight] of fields) {
+        best = Math.max(best, searchFieldScore(token, value, weight) ?? 0);
+      }
+      if (!best) {
+        matched = false;
+        break;
+      }
+      total += best;
+    }
+    if (matched) matches.push({ summary: entry.summary, score: total / tokens.length });
+  }
+  return matches
+    .sort((a, b) => b.score - a.score || a.summary.name.localeCompare(b.summary.name))
+    .map((match) => match.summary);
+}
+
 async function runSearch(): Promise<void> {
   searchTimer = null;
   const serial = searchSerial;
@@ -347,7 +543,8 @@ async function runSearch(): Promise<void> {
   }
   const query = library.searchQuery.trim();
   try {
-    const results = query ? await apiSearchPrompts(project, query) : library.allPrompts;
+    const indexed = query ? searchIndexed(project, query) : library.allPrompts;
+    const results = indexed ?? (query ? await apiSearchPrompts(project, query) : library.allPrompts);
     if (serial !== searchSerial || project !== library.activeProjectPath) return;
     library.prompts = results;
   } catch (error) {
@@ -415,6 +612,18 @@ export function tagCounts(prompts: PromptSummary[]): Array<{ tag: string; count:
     .sort((a, b) => a.tag.localeCompare(b.tag));
 }
 
+export function promptVariableCount(prompt: PromptSummary): number | null {
+  // Reading the version makes this helper reactive when the background index
+  // finishes without putting every prompt body into Svelte state.
+  library.searchIndexVersion;
+  const cached = variableCounts.get(promptKey(prompt.projectPath, prompt.name));
+  if (cached !== undefined) return cached;
+  if (library.selected?.projectPath === prompt.projectPath && library.selected.name === prompt.name) {
+    return parseVariables(library.selected.body).length;
+  }
+  return null;
+}
+
 export function visiblePrompts(): PromptSummary[] {
   const filtered = library.prompts.filter((prompt) => {
     const viewMatches =
@@ -470,12 +679,11 @@ export async function batchUpdate(
   update: (metadata: PromptMetadata) => PromptMetadata
 ): Promise<string[]> {
   const failures: string[] = [];
-  if (!library.activeProjectPath) return prompts.map((prompt) => prompt.name);
   for (const prompt of prompts) {
     try {
-      const document = await apiReadPrompt(library.activeProjectPath, prompt.name);
+      const document = await apiReadPrompt(prompt.projectPath, prompt.name);
       await apiSavePrompt(
-        library.activeProjectPath,
+        prompt.projectPath,
         prompt.name,
         document.body,
         update(cloneMetadata(document.metadata)),
@@ -491,20 +699,23 @@ export async function batchUpdate(
   return failures;
 }
 
-export async function batchDelete(names: string[]): Promise<string[]> {
-  if (!library.activeProjectPath) return [...names];
+export async function batchDelete(prompts: PromptSummary[]): Promise<string[]> {
   const failures: string[] = [];
-  for (const name of names) {
+  for (const prompt of prompts) {
     try {
-      await apiDeletePrompt(library.activeProjectPath, name);
+      await apiDeletePrompt(prompt.projectPath, prompt.name);
     } catch {
-      failures.push(name);
+      failures.push(prompt.name);
     }
   }
-  await refreshLibrary();
-  if (library.selectedName && names.includes(library.selectedName)) {
-    library.selectedName = null;
-    library.selected = null;
+  if (prompts.some((prompt) => prompt.projectPath === library.activeProjectPath)) {
+    await refreshLibrary();
+    const selected = library.selected;
+    if (selected && prompts.some((prompt) => prompt.projectPath === selected.projectPath && prompt.name === selected.name)) {
+      documentSerial++;
+      library.selectedName = null;
+      library.selected = null;
+    }
   }
   return failures;
 }

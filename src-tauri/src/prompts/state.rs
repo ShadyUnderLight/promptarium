@@ -73,6 +73,16 @@ pub async fn add_project(name: String, path: String) -> Result<Project, String> 
 }
 
 #[tauri::command]
+pub async fn rename_project_label(path: String, name: String) -> Result<Project, String> {
+    appstate::rename_project_label(&root()?, Path::new(&path), &name)
+}
+
+#[tauri::command]
+pub async fn replace_project_path(old_path: String, new_path: String) -> Result<Project, String> {
+    appstate::replace_project_path(&root()?, Path::new(&old_path), Path::new(&new_path))
+}
+
+#[tauri::command]
 pub async fn set_project_color(path: String, color: Option<String>) -> Result<Project, String> {
     appstate::set_project_color(&root()?, Path::new(&path), color)
 }
