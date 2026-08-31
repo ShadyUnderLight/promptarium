@@ -1,4 +1,4 @@
-//! Prompt Compose — the native shell.
+//! Promptarium — the native shell.
 //!
 //! Rust owns the filesystem (the Markdown prompt store and the app-local
 //! roster). The SvelteKit frontend owns rendering and the variable grammar.

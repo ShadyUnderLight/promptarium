@@ -86,7 +86,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
-          releaseName: 'Prompt Compose ${{ github.event.inputs.tag || github.ref_name }}'
+          releaseName: 'Promptarium ${{ github.event.inputs.tag || github.ref_name }}'
           releaseBody: 'Download the installer for your platform below. 100% offline — your snippets never leave your machine. Unsigned builds: on first launch, Windows may show a SmartScreen prompt (More info → Run anyway) and macOS may require right-click → Open.'
           releaseDraft: false
           prerelease: false

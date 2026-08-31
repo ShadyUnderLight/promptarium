@@ -1,4 +1,4 @@
-import { variableSpans } from '$lib/compose/variables';
+import { variableSpans } from '$lib/variables/variables';
 
 function escapeHtml(value: string): string {
   return value

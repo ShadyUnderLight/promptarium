@@ -248,7 +248,7 @@ mod tests {
 
     fn tmp_dir(name: &str) -> PathBuf {
         let d = std::env::temp_dir()
-            .join(format!("prompt-compose-appstate-test-{name}-{}", uuid::Uuid::new_v4()));
+            .join(format!("promptarium-appstate-test-{name}-{}", uuid::Uuid::new_v4()));
         fs::create_dir_all(&d).unwrap();
         d
     }

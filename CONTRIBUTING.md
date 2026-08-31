@@ -10,7 +10,7 @@
 Rust owns the registered-project roster, frontmatter parsing and every
 filesystem operation that can write user data. The frontend owns rendering, UI
 state, Markdown preview and the one variable grammar in
-src/lib/compose/variables.ts.
+src/lib/variables/variables.ts.
 
 ## Setup and run
 
@@ -38,7 +38,7 @@ Run all four checks before committing:
   orchestration and remembered UI preferences.
 - src/lib/api.ts and src/lib/prompts/types.ts — the TypeScript mirror of the
   Tauri command seam.
-- src/lib/compose/variables.ts — the only variable parser, retained for prompt
+- src/lib/variables/variables.ts — the only variable parser, retained for prompt
   inspection and copy behavior.
 - src-tauri/src/prompts/store.rs — frontmatter parser, scanner and safe file
   operations.

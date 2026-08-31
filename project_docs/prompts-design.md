@@ -25,8 +25,8 @@ The project folder is canonical user data. The app may perform an explicitly
 requested prompt or folder operation, but opening, scanning, indexing and
 forgetting a project must not create or modify files inside it.
 
-App-owned derived state lives under ~/.prompt-compose (or the
-PROMPT_COMPOSE_DATA_DIR test override): registered projects, the active path,
+App-owned derived state lives under ~/.promptarium (or the
+PROMPTARIUM_DATA_DIR test override): registered projects, the active path,
 UI preferences and disposable indexes. Deleting derived state must never lose a
 prompt; the next scan rebuilds it from Markdown.
 
@@ -80,7 +80,7 @@ body refresh must not do so.
 
 ## Variables
 
-src/lib/compose/variables.ts is the only variable parser. Rust treats the body
+src/lib/variables/variables.ts is the only variable parser. Rust treats the body
 as opaque text and must not grow a second implementation. {name} uses the
 existing [A-Za-z0-9_-]+ grammar, {{name}} escapes it, and repeated names are
 one variable. The prompt detail view derives and displays the names with this
@@ -173,9 +173,9 @@ renamed external file is reflected after refresh.
 
 ## Removed old assumptions
 
-The horizontal project-tab/compose box is no longer the main information
+The horizontal project-tab assembly UI is no longer the main information
 architecture. Tags are not removed: they are now optional frontmatter metadata
 and are derived from files. In-app editing, delete, rename, move and metadata
-management are first-class operations. The old compose parser remains only as
-the reusable variable grammar; compose UI-specific behavior is not a required
+management are first-class operations. The old variable parser remains only as
+the reusable variable grammar; legacy UI-specific behavior is not a required
 library workflow.

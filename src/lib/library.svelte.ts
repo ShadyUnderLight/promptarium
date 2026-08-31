@@ -29,7 +29,7 @@ import type {
   PromptSummary,
   PromptViewMode,
 } from './prompts/types';
-import { parseVariables } from './compose/variables';
+import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 
 const SEARCH_DEBOUNCE_MS = 100;

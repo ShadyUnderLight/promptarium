@@ -43,7 +43,7 @@ let pending: Update | null = null;
 // One key, read/written directly, following src/lib/theme.ts's convention —
 // there is no storage wrapper module in this app and this does not justify one.
 
-const STORAGE_KEY = 'promptcompose-update-seen';
+const STORAGE_KEY = 'promptarium-update-seen';
 
 function getSeen(): string {
   if (typeof localStorage === 'undefined') return '';

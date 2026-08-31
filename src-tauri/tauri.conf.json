@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Prompt Compose",
+  "productName": "Promptarium",
   "version": "0.3.3",
-  "identifier": "com.zhangxingeng.promptcompose",
+  "identifier": "com.shadyunderlight.promptarium",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Prompt Compose",
+        "title": "Promptarium",
         "width": 1440,
         "height": 900,
         "minWidth": 900,
@@ -29,7 +29,7 @@
     },
     "updater": {
       "endpoints": [
-        "https://github.com/zhangxingeng/prompt-compose/releases/latest/download/latest.json"
+        "https://github.com/ShadyUnderLight/promptarium/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1QzM1NURFMTY5MDBDOUMKUldTY0RKQVczbFhEWlIvQ0F4d08yZXdsOFhlL1U0M2dvYXlSbWpvY1pPbmVWWkhVV0JlRm5FUVoK"
     }
@@ -40,9 +40,9 @@
     "createUpdaterArtifacts": true,
     "category": "Productivity",
     "shortDescription": "Local-first Markdown prompt library organized by projects and folders.",
-    "longDescription": "Prompt Compose is a local-first macOS Prompt Library for browsing, editing and organizing Markdown prompts. A project is a real folder and each prompt is a normal Markdown file, so users can keep libraries in Finder, VS Code, Obsidian or Git. Optional YAML frontmatter adds descriptions, tags, lifecycle status, favorites and model hints. Search, preview, safe atomic editing and copying work without a cloud account, AI API key or Accessibility permission.",
-    "publisher": "zhangxingeng",
-    "copyright": "Copyright (c) 2026 zhangxingeng. MIT licensed.",
+    "longDescription": "Promptarium is a local-first macOS Prompt Library for browsing, editing and organizing Markdown prompts. A project is a real folder and each prompt is a normal Markdown file, so users can keep libraries in Finder, VS Code, Obsidian or Git. Optional YAML frontmatter adds descriptions, tags, lifecycle status, favorites and model hints. Search, preview, safe atomic editing and copying work without a cloud account, AI API key or Accessibility permission.",
+    "publisher": "ShadyUnderLight",
+    "copyright": "Copyright (c) 2026 ShadyUnderLight. MIT licensed.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

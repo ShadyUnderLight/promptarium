@@ -2,7 +2,7 @@
 
 ## What changes
 
-Prompt Compose is being rebuilt as a local-first Prompt Library / Prompt Vault:
+Promptarium is being rebuilt as a local-first Prompt Library / Prompt Vault:
 projects are real folders, prompts are Markdown files, and the primary workflow
 is browse → inspect → edit/manage → optionally copy. The main UI is now a
 resizable three-pane library with project navigation, smart views, folders,
@@ -22,11 +22,11 @@ tags, search and a prompt inspector.
 ## Intentionally replaced assumptions
 
 The old product treated the complete Markdown file as opaque prompt content and
-centered a compose box. The new product accepts optional YAML frontmatter,
+centered an assembly editor. The new product accepts optional YAML frontmatter,
 supports tags/status/favorite/model hints, edits Markdown in-app, and uses a
-library browser as its primary surface. The old compose box, insertion matcher,
+library browser as its primary surface. The old assembly editor, insertion matcher,
 voice-dictation controls and semantic-search model path were removed from the
-desktop product because they only served the retired compose workflow. Variable
+desktop product because they only served the retired assembly workflow. Variable
 parsing is retained for prompt inspection and copy.
 
 ## File compatibility
@@ -61,7 +61,7 @@ automatic rewrite of existing prompt libraries are required.
 
 ## Replaced tests
 
-The former compose-box/contenteditable smoke vectors were intentionally removed
+The former assembly-editor/contenteditable smoke vectors were intentionally removed
 with that UI. They are replaced by variable grammar/copy/span vectors and Rust
 tests for frontmatter, plain-file compatibility, path safety, CRUD, search,
 folder discovery and external-save conflict handling.

@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * +page.svelte — top-level SPA shell for Prompt Compose.
+   * +page.svelte — top-level SPA shell for Promptarium.
    *
    * There is exactly one view: the Prompt Library (PromptsView). The shell owns
    * only the app chrome — title, theme toggle and footer. The library workspace
@@ -54,7 +54,7 @@
 
 <header class="app-header" bind:this={headerEl}>
   <div>
-    <h1>Prompt Compose</h1>
+    <h1>Promptarium</h1>
   </div>
   <div class="app-header__actions">
     <button class="btn btn--ghost btn--sm" onclick={handleToggleTheme} type="button">
@@ -68,7 +68,7 @@
 </main>
 
 <footer class="app-footer">
-  <a href="https://github.com/zhangxingeng/prompt-compose" target="_blank" rel="noopener noreferrer">
+  <a href="https://github.com/ShadyUnderLight/promptarium" target="_blank" rel="noopener noreferrer">
     Prompt Library{appVersion ? ` v${appVersion}` : ''} — local-first Markdown prompts, organized by project
   </a>
   <!--

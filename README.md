@@ -1,6 +1,6 @@
-# Prompt Compose
+# Promptarium
 
-Prompt Compose is a local-first Prompt Library for macOS: a project-based
+Promptarium is a local-first Prompt Library for macOS: a project-based
 Markdown vault for browsing, editing, tagging, favoriting and organizing large
 prompt collections.
 
@@ -16,7 +16,7 @@ prompt collections.
 - The app can search prompt names, paths, metadata and bodies, preview Markdown,
   edit files atomically, and copy a prompt body without its frontmatter.
 
-The application state and disposable indexes live under ~/.prompt-compose,
+The application state and disposable indexes live under ~/.promptarium,
 never inside a user project. Forgetting a project only forgets its registration;
 it never deletes the folder. See
 project_docs/library-redesign.md for migration notes and

@@ -1,7 +1,7 @@
 /**
  * Pure smoke vectors for the one frontend variable grammar.
  *
- * The old compose-box node model was intentionally removed when the product
+ * The old assembly-editor node model was intentionally removed when the product
  * became a library-first editor. Prompt variables remain useful in previews
  * and are still tested here; there is no second Rust implementation.
  */
@@ -10,7 +10,7 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { parseVariables, variableSpans, copyText, UNSET_VALUE } = await import(
-  join(root, 'src/lib/compose/variables.ts')
+  join(root, 'src/lib/variables/variables.ts')
 );
 
 let failures = 0;

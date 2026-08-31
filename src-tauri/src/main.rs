@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    prompt_compose_lib::run()
+    promptarium_lib::run()
 }

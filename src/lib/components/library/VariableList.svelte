@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { parseVariables } from '$lib/compose/variables';
+  import { parseVariables } from '$lib/variables/variables';
 
   interface Props {
     body: string;

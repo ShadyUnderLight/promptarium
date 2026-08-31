@@ -1,4 +1,4 @@
-//! Prompt Compose's own data root: `~/.prompt-compose/`.
+//! Promptarium's own data root: `~/.promptarium/`.
 //!
 //! Everything the *app* owns — the project roster and active project
 //! (`prompts-state.json`) and any rebuildable indexes — lives under this root,
@@ -11,17 +11,17 @@
 
 use std::path::PathBuf;
 
-/// Resolve the data root: `PROMPT_COMPOSE_DATA_DIR` env override (tests use
-/// this), else `~/.prompt-compose`. Does NOT require the directory to exist —
+/// Resolve the data root: `PROMPTARIUM_DATA_DIR` env override (tests use
+/// this), else `~/.promptarium`. Does NOT require the directory to exist —
 /// writers create what they need under it.
 pub fn data_root() -> Result<PathBuf, String> {
-    if let Ok(dir) = std::env::var("PROMPT_COMPOSE_DATA_DIR") {
+    if let Ok(dir) = std::env::var("PROMPTARIUM_DATA_DIR") {
         if !dir.trim().is_empty() {
             return Ok(PathBuf::from(dir));
         }
     }
     dirs::home_dir()
-        .map(|h| h.join(".prompt-compose"))
+        .map(|h| h.join(".promptarium"))
         .ok_or_else(|| "Cannot determine home directory".to_string())
 }
 
@@ -32,17 +32,17 @@ mod tests {
     #[test]
     fn env_override_wins_when_set() {
         // Save/restore around the test so we don't leak env state to siblings.
-        let prev = std::env::var("PROMPT_COMPOSE_DATA_DIR").ok();
-        std::env::set_var("PROMPT_COMPOSE_DATA_DIR", "/tmp/pc-test-root");
-        assert_eq!(data_root().unwrap(), PathBuf::from("/tmp/pc-test-root"));
+        let prev = std::env::var("PROMPTARIUM_DATA_DIR").ok();
+        std::env::set_var("PROMPTARIUM_DATA_DIR", "/tmp/promptarium-test-root");
+        assert_eq!(data_root().unwrap(), PathBuf::from("/tmp/promptarium-test-root"));
 
         // A blank override is ignored — falls back to the home-dir default.
-        std::env::set_var("PROMPT_COMPOSE_DATA_DIR", "   ");
-        assert!(data_root().unwrap().ends_with(".prompt-compose"));
+        std::env::set_var("PROMPTARIUM_DATA_DIR", "   ");
+        assert!(data_root().unwrap().ends_with(".promptarium"));
 
         match prev {
-            Some(v) => std::env::set_var("PROMPT_COMPOSE_DATA_DIR", v),
-            None => std::env::remove_var("PROMPT_COMPOSE_DATA_DIR"),
+            Some(v) => std::env::set_var("PROMPTARIUM_DATA_DIR", v),
+            None => std::env::remove_var("PROMPTARIUM_DATA_DIR"),
         }
     }
 }

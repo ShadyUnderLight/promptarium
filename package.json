@@ -1,7 +1,7 @@
 {
-  "name": "prompt-compose",
+  "name": "promptarium",
   "version": "0.3.3",
-  "description": "Prompt Compose — a local-first Markdown prompt library organized by folder-based projects.",
+  "description": "Promptarium — a local-first Markdown prompt library organized by folder-based projects.",
   "type": "module",
   "packageManager": "pnpm@11.9.0",
   "scripts": {

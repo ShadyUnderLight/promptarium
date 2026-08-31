@@ -574,7 +574,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
         .ok_or_else(|| "prompt has no parent directory".to_string())?;
     fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     let tmp_name = format!(
-        ".prompt-compose-tmp-{}-{}",
+        ".promptarium-tmp-{}-{}",
         std::process::id(),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -837,7 +837,7 @@ mod tests {
 
     fn tmp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "prompt-compose-library-test-{name}-{}",
+            "promptarium-library-test-{name}-{}",
             uuid::Uuid::new_v4()
         ));
         fs::create_dir_all(&dir).unwrap();

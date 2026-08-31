@@ -1,10 +1,10 @@
 /**
- * Theme helpers — read/write the promptcompose-theme preference that controls
+ * Theme helpers — read/write the promptarium-theme preference that controls
  * the [data-theme] attribute on <html>.  The initial bootstrap is already
  * done by a tiny inline <script> in app.html so there is no FOUC.
  */
 
-const STORAGE_KEY = 'promptcompose-theme';
+const STORAGE_KEY = 'promptarium-theme';
 
 export type Theme = 'light' | 'dark';
 

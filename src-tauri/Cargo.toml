@@ -1,15 +1,15 @@
 [package]
-name = "prompt-compose"
+name = "promptarium"
 version = "0.3.3"
 description = "Local-first desktop library for Markdown prompts"
-authors = ["zhangxingeng"]
+authors = ["ShadyUnderLight"]
 edition = "2021"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary to make the lib name
 # unique so it wouldn't conflict with the bin name. This seems to be only an
 # issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "prompt_compose_lib"
+name = "promptarium_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

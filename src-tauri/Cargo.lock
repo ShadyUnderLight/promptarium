@@ -2679,7 +2679,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "prompt-compose"
+name = "promptarium"
 version = "0.3.3"
 dependencies = [
  "dirs",
