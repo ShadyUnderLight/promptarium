@@ -57,6 +57,11 @@ pub struct GitFileDiff {
     pub patch: String,
 }
 
+struct PromptGitContext {
+    repo_root: PathBuf,
+    git_path: String,
+}
+
 pub fn git_available() -> bool {
     Command::new("git")
         .arg("--version")
@@ -97,14 +102,11 @@ pub fn file_history(
     if !git_available() {
         return Ok(empty_history_page(false));
     }
-    let repo_root = match repository_root_for_project(project)? {
-        Some(root) => root,
+    let ctx = match prompt_git_context(project, name)? {
+        Some(ctx) => ctx,
         None => return Ok(empty_history_page(false)),
     };
-    let file_path = store::prompt_absolute_path(project, name)?;
-    let git_path = path_to_git_relative(&repo_root, &file_path)?;
-    let tracked = is_tracked(&repo_root, &git_path)?;
-    if !tracked {
+    if !is_tracked(&ctx.repo_root, &ctx.git_path)? {
         return Ok(empty_history_page(false));
     }
     let limit = limit.unwrap_or(DEFAULT_HISTORY_LIMIT).clamp(1, 100);
@@ -114,24 +116,7 @@ pub fn file_history(
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
     let fetch_count = skip.saturating_add(limit).saturating_add(1);
-    let format = format!(
-        "{COMMIT_PREFIX}%H{sep}%h{sep}%an{sep}%ae{sep}%at{sep}%s",
-        sep = FIELD_SEP
-    );
-    let output = run_git_in_repo(
-        &repo_root,
-        &[
-            "log",
-            "--follow",
-            "--name-status",
-            &format!("--format={format}"),
-            "-n",
-            &fetch_count.to_string(),
-            "--",
-            git_path.as_str(),
-        ],
-    )?;
-    let all_commits = parse_log_with_paths(&output)?;
+    let all_commits = fetch_follow_log(&ctx.repo_root, &ctx.git_path, Some(fetch_count), None)?;
     let has_more = all_commits.len() > skip + limit;
     let commits = all_commits
         .into_iter()
@@ -150,47 +135,50 @@ pub fn file_history(
     })
 }
 
-pub fn file_diff(
-    project: &Path,
-    name: &str,
-    commit: &str,
-    path_at_commit: Option<&str>,
-    previous_path_at_commit: Option<&str>,
-) -> Result<GitFileDiff, String> {
+pub fn file_diff(project: &Path, name: &str, commit: &str) -> Result<GitFileDiff, String> {
     validate_commit_ref(commit)?;
-    let repo_root = repository_root_for_project(project)?
+    let ctx = prompt_git_context(project, name)?
         .ok_or_else(|| "project is not in a git repository".to_string())?;
-    let file_path = store::prompt_absolute_path(project, name)?;
-    let current_git_path = path_to_git_relative(&repo_root, &file_path)?;
-    let path = path_at_commit
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(current_git_path.as_str());
-    validate_git_path(path)?;
-    if let Some(previous) = previous_path_at_commit {
-        validate_git_path(previous)?;
-    }
-    let parent = resolve_parent(&repo_root, commit)?;
+    let full_hash = resolve_commit_hash(&ctx.repo_root, commit)?;
+    let (path, previous_path) = lookup_commit_paths(&ctx.repo_root, &ctx.git_path, &full_hash)?;
+    let parent = resolve_parent(&ctx.repo_root, &full_hash)?;
     let patch = match parent.as_deref() {
-        None => run_git_in_repo(&repo_root, &["diff", EMPTY_TREE, commit, "--", path])?,
+        None => run_git_in_repo(
+            &ctx.repo_root,
+            &["diff", EMPTY_TREE, &full_hash, "--", path.as_str()],
+        )?,
         Some(parent) => {
-            let rename_aware = if let Some(previous) = previous_path_at_commit {
+            let rename_aware = if let Some(previous) = previous_path.as_deref() {
                 run_git_in_repo(
-                    &repo_root,
-                    &["diff", "-M100%", parent, commit, "--", previous, path],
+                    &ctx.repo_root,
+                    &[
+                        "diff",
+                        "-M",
+                        parent,
+                        &full_hash,
+                        "--",
+                        previous,
+                        path.as_str(),
+                    ],
                 )?
             } else {
-                run_git_in_repo(&repo_root, &["diff", "-M100%", parent, commit, "--", path])?
+                run_git_in_repo(
+                    &ctx.repo_root,
+                    &["diff", "-M", parent, &full_hash, "--", path.as_str()],
+                )?
             };
             if rename_aware.trim().is_empty() {
-                run_git_in_repo(&repo_root, &["show", "--format=", commit, "--", path])?
+                run_git_in_repo(
+                    &ctx.repo_root,
+                    &["show", "--format=", &full_hash, "--", path.as_str()],
+                )?
             } else {
                 rename_aware
             }
         }
     };
     Ok(GitFileDiff {
-        commit: commit.to_string(),
+        commit: full_hash,
         parent,
         patch,
     })
@@ -202,6 +190,22 @@ fn empty_history_page(tracked: bool) -> GitFileHistoryPage {
         next_cursor: None,
         tracked,
     }
+}
+
+fn prompt_git_context(project: &Path, name: &str) -> Result<Option<PromptGitContext>, String> {
+    if !git_available() {
+        return Ok(None);
+    }
+    let repo_root = match repository_root_for_project(project)? {
+        Some(root) => root,
+        None => return Ok(None),
+    };
+    let file_path = store::prompt_absolute_path(project, name)?;
+    let git_path = path_to_git_relative(&repo_root, &file_path)?;
+    Ok(Some(PromptGitContext {
+        repo_root,
+        git_path,
+    }))
 }
 
 fn repository_root_for_project(project: &Path) -> Result<Option<PathBuf>, String> {
@@ -252,19 +256,6 @@ fn path_to_git_relative(repo_root: &Path, file_path: &Path) -> Result<String, St
     }
 }
 
-fn validate_git_path(path: &str) -> Result<(), String> {
-    if path.is_empty() {
-        return Err("git path cannot be empty".to_string());
-    }
-    if path.starts_with('-') {
-        return Err(format!("invalid git path: {path}"));
-    }
-    if path.contains('\\') || path.contains('\0') {
-        return Err(format!("invalid git path: {path}"));
-    }
-    Ok(())
-}
-
 fn is_tracked(repo_root: &Path, git_path: &str) -> Result<bool, String> {
     let status = Command::new("git")
         .arg("-C")
@@ -276,6 +267,67 @@ fn is_tracked(repo_root: &Path, git_path: &str) -> Result<bool, String> {
         .status()
         .map_err(|error| format!("git command failed: {error}"))?;
     Ok(status.success())
+}
+
+fn resolve_commit_hash(repo_root: &Path, commit: &str) -> Result<String, String> {
+    let output = run_git_in_repo(repo_root, &["rev-parse", "--verify", commit])?;
+    let hash = output.trim().to_string();
+    if hash.is_empty() {
+        return Err(format!("invalid commit hash: {commit}"));
+    }
+    Ok(hash)
+}
+
+fn lookup_commit_paths(
+    repo_root: &Path,
+    git_path: &str,
+    commit: &str,
+) -> Result<(String, Option<String>), String> {
+    let commits = fetch_follow_log(repo_root, git_path, None, None)?;
+    let found = commits
+        .into_iter()
+        .find(|entry| entry.hash == commit)
+        .ok_or_else(|| format!("commit not in prompt history: {commit}"))?;
+    Ok((found.path, found.previous_path))
+}
+
+fn fetch_follow_log(
+    repo_root: &Path,
+    git_path: &str,
+    limit: Option<usize>,
+    commit: Option<&str>,
+) -> Result<Vec<GitFileCommit>, String> {
+    let format = format!(
+        "{COMMIT_PREFIX}%H{sep}%h{sep}%an{sep}%ae{sep}%at{sep}%s",
+        sep = FIELD_SEP
+    );
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(repo_root)
+        .arg("log")
+        .arg("-z")
+        .arg("--follow")
+        .arg("--name-status")
+        .arg(format!("--format={format}"));
+    if let Some(limit) = limit {
+        command.arg("-n").arg(limit.to_string());
+    }
+    if let Some(commit) = commit {
+        command.arg(commit);
+    }
+    command.arg("--").arg(git_path);
+    let output = command
+        .output()
+        .map_err(|error| format!("git command failed: {error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            return Err("git command failed".to_string());
+        }
+        return Err(stderr);
+    }
+    parse_log_records_from_z(&output.stdout, git_path)
 }
 
 fn resolve_parent(repo_root: &Path, commit: &str) -> Result<Option<String>, String> {
@@ -317,6 +369,11 @@ fn validate_commit_ref(commit: &str) -> Result<(), String> {
 }
 
 fn run_git_in_repo(repo_root: &Path, args: &[&str]) -> Result<String, String> {
+    let bytes = run_git_in_repo_bytes(repo_root, args)?;
+    String::from_utf8(bytes).map_err(|error| format!("git output was not valid UTF-8: {error}"))
+}
+
+fn run_git_in_repo_bytes(repo_root: &Path, args: &[&str]) -> Result<Vec<u8>, String> {
     let mut command = Command::new("git");
     command.arg("-C").arg(repo_root);
     for arg in args {
@@ -332,55 +389,151 @@ fn run_git_in_repo(repo_root: &Path, args: &[&str]) -> Result<String, String> {
         }
         return Err(stderr);
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(output.stdout)
 }
 
-fn parse_log_with_paths(output: &str) -> Result<Vec<GitFileCommit>, String> {
-    let mut commits = Vec::new();
-    let mut pending: Option<GitFileCommit> = None;
+#[derive(Debug, Clone)]
+struct NameStatusEntry {
+    status: String,
+    path: String,
+    previous_path: Option<String>,
+}
 
-    for line in output.lines() {
-        if let Some(rest) = line.strip_prefix(COMMIT_PREFIX) {
-            if let Some(commit) = pending.take() {
-                if commit.path.is_empty() {
-                    return Err(format!(
-                        "commit {} is missing a name-status path",
-                        commit.hash
-                    ));
-                }
-                commits.push(commit);
-            }
-            pending = Some(parse_commit_fields(rest)?);
-            continue;
+fn parse_log_records_from_z(
+    output: &[u8],
+    head_git_path: &str,
+) -> Result<Vec<GitFileCommit>, String> {
+    let tokens = split_nul_tokens(output);
+    let mut commits = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        while index < tokens.len() && tokens[index].is_empty() {
+            index += 1;
         }
-        if line.is_empty() {
-            continue;
+        if index >= tokens.len() {
+            break;
         }
-        let Some(commit) = pending.as_mut() else {
-            return Err(format!("unexpected git log line: {line}"));
-        };
-        if !commit.path.is_empty() {
-            return Err(format!("commit {} has multiple path entries", commit.hash));
+
+        let format_line = token_to_str(tokens[index])?;
+        index += 1;
+        let commit = parse_commit_fields(&format_line)?;
+        let entries = parse_name_status_entries(&tokens, &mut index)?;
+        commits.push((commit, entries));
+
+        while index < tokens.len() && tokens[index].is_empty() {
+            index += 1;
         }
-        let (path, previous_path) = parse_name_status_line(line)?;
-        commit.path = path;
-        commit.previous_path = previous_path;
     }
 
-    if let Some(commit) = pending {
-        if commit.path.is_empty() {
-            return Err(format!(
-                "commit {} is missing a name-status path",
-                commit.hash
-            ));
+    resolve_commit_paths_from_entries(commits, head_git_path)
+}
+
+fn normalize_name_status(status: String) -> String {
+    status.trim_start_matches('\n').to_string()
+}
+
+fn parse_name_status_entries(
+    tokens: &[&[u8]],
+    index: &mut usize,
+) -> Result<Vec<NameStatusEntry>, String> {
+    let mut entries = Vec::new();
+    while *index < tokens.len() && !tokens[*index].is_empty() {
+        let raw_status = token_to_str(tokens[*index])?;
+        if raw_status.starts_with(COMMIT_PREFIX) {
+            break;
+        }
+        let status = normalize_name_status(raw_status);
+        *index += 1;
+        if status.starts_with('R') || status.starts_with('C') {
+            let previous = token_to_str(tokens[*index])?;
+            *index += 1;
+            let path = token_to_str(tokens[*index])?;
+            *index += 1;
+            entries.push(NameStatusEntry {
+                status,
+                path,
+                previous_path: Some(previous),
+            });
+        } else {
+            let path = token_to_str(tokens[*index])?;
+            *index += 1;
+            entries.push(NameStatusEntry {
+                status,
+                path,
+                previous_path: None,
+            });
+        }
+    }
+    Ok(entries)
+}
+
+fn resolve_commit_paths_from_entries(
+    raw_commits: Vec<(GitFileCommit, Vec<NameStatusEntry>)>,
+    head_git_path: &str,
+) -> Result<Vec<GitFileCommit>, String> {
+    let mut commits = Vec::with_capacity(raw_commits.len());
+    let mut current_path = head_git_path.to_string();
+
+    for (mut commit, entries) in raw_commits {
+        let selected = select_path_entry(&entries, &current_path).ok_or_else(|| {
+            format!(
+                "commit {} has no name-status entry for prompt path {}",
+                commit.hash, current_path
+            )
+        })?;
+        commit.path = selected.path.clone();
+        commit.previous_path = selected.previous_path.clone();
+        if let Some(previous) = &selected.previous_path {
+            current_path = previous.clone();
         }
         commits.push(commit);
     }
+
     Ok(commits)
 }
 
+fn select_path_entry(entries: &[NameStatusEntry], current_path: &str) -> Option<NameStatusEntry> {
+    for entry in entries {
+        if entry.path == current_path && entry.previous_path.is_some() {
+            return Some(entry.clone());
+        }
+    }
+    for entry in entries {
+        if entry.path != current_path {
+            continue;
+        }
+        if entry.status.starts_with('A') {
+            if let Some(deleted) = entries.iter().find(|other| other.status.starts_with('D')) {
+                return Some(NameStatusEntry {
+                    status: entry.status.clone(),
+                    path: entry.path.clone(),
+                    previous_path: Some(deleted.path.clone()),
+                });
+            }
+        }
+        return Some(entry.clone());
+    }
+    None
+}
+
+fn split_nul_tokens(output: &[u8]) -> Vec<&[u8]> {
+    output.split(|byte| *byte == 0).collect()
+}
+
+fn token_to_str(token: &[u8]) -> Result<String, String> {
+    if token.is_empty() {
+        return Ok(String::new());
+    }
+    String::from_utf8(token.to_vec())
+        .map_err(|error| format!("git log token was not valid UTF-8: {error}"))
+}
+
 fn parse_commit_fields(line: &str) -> Result<GitFileCommit, String> {
-    let parts: Vec<&str> = line.split(FIELD_SEP).collect();
+    let rest = line
+        .strip_prefix(COMMIT_PREFIX)
+        .ok_or_else(|| format!("unexpected git log format: {line}"))?;
+    let parts: Vec<&str> = rest.split(FIELD_SEP).collect();
     if parts.len() != 6 {
         return Err(format!("unexpected git log format: {line}"));
     }
@@ -397,36 +550,6 @@ fn parse_commit_fields(line: &str) -> Result<GitFileCommit, String> {
         path: String::new(),
         previous_path: None,
     })
-}
-
-fn parse_name_status_line(line: &str) -> Result<(String, Option<String>), String> {
-    let mut parts = line.split('\t');
-    let status = parts
-        .next()
-        .ok_or_else(|| format!("invalid name-status line: {line}"))?;
-    if status.starts_with('R') {
-        let previous = parts
-            .next()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| format!("rename line is missing a source path: {line}"))?;
-        let path = parts
-            .next()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| format!("rename line is missing a destination path: {line}"))?;
-        Ok((path, Some(previous)))
-    } else {
-        let path = parts
-            .next()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .ok_or_else(|| format!("name-status line is missing a path: {line}"))?;
-        Ok((path, None))
-    }
 }
 
 #[cfg(test)]
@@ -462,7 +585,7 @@ mod tests {
     }
 
     fn init_repo(root: &Path) {
-        let template = root.join("_empty_git_template");
+        let template = std::env::temp_dir().join(format!("empty-git-template-{}", Uuid::new_v4()));
         fs::create_dir_all(&template).unwrap();
         let status = Command::new("git")
             .current_dir(root)
@@ -473,6 +596,7 @@ mod tests {
         assert!(status.success(), "git init failed in {}", root.display());
         run_git(root, &["config", "user.email", "test@example.com"]);
         run_git(root, &["config", "user.name", "Test User"]);
+        fs::remove_dir_all(&template).ok();
     }
 
     fn write_prompt(root: &Path, relative: &str, content: &str) {
@@ -526,16 +650,33 @@ mod tests {
         assert_eq!(page.commits[0].subject, "Refine review criteria");
         assert_eq!(page.commits[0].path, "review.md");
 
-        let diff = file_diff(
-            &dir,
-            "review",
-            &page.commits[0].hash,
-            Some(&page.commits[0].path),
-            page.commits[0].previous_path.as_deref(),
-        )
-        .unwrap();
+        let diff = file_diff(&dir, "review", &page.commits[0].hash).unwrap();
         assert!(diff.patch.contains('-'));
         assert!(diff.patch.contains('+'));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unicode_prompt_filename_history_and_diff_work() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("unicode");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "中文提示.md", "第一版内容。");
+        commit_all(&dir, "Add unicode prompt");
+        write_prompt(&dir, "中文提示.md", "第二版内容。");
+        commit_all(&dir, "Edit unicode prompt");
+
+        let page = file_history(&dir, "中文提示", None, None).unwrap();
+        assert!(page.tracked);
+        assert_eq!(page.commits.len(), 2);
+        assert_eq!(page.commits[0].path, "中文提示.md");
+
+        let diff = file_diff(&dir, "中文提示", &page.commits[0].hash).unwrap();
+        assert!(diff.patch.contains('+'));
+        assert!(diff.patch.contains("第二版内容。"));
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -585,14 +726,7 @@ mod tests {
         commit_all(&dir, "Root commit");
         let page = file_history(&dir, "first", None, None).unwrap();
         let first = &page.commits[0];
-        let diff = file_diff(
-            &dir,
-            "first",
-            &first.hash,
-            Some(&first.path),
-            first.previous_path.as_deref(),
-        )
-        .unwrap();
+        let diff = file_diff(&dir, "first", &first.hash).unwrap();
         assert!(diff.parent.is_none());
         assert!(diff.patch.contains('+'));
         assert!(diff.patch.contains("First version."));
@@ -619,35 +753,79 @@ mod tests {
         assert_eq!(page.commits.len(), 3);
         assert_eq!(page.commits[2].path, "old-name.md");
 
-        let first_diff = file_diff(
-            &dir,
-            "new-name",
-            &page.commits[2].hash,
-            Some(&page.commits[2].path),
-            page.commits[2].previous_path.as_deref(),
-        )
-        .unwrap();
+        let first_diff = file_diff(&dir, "new-name", &page.commits[2].hash).unwrap();
         assert!(
             first_diff.patch.contains("Version one."),
             "first commit diff should show the original content"
         );
-        assert!(
-            !first_diff.patch.trim().is_empty(),
-            "first commit diff must not be empty after rename"
-        );
+        assert!(!first_diff.patch.trim().is_empty());
 
-        let rename_diff = file_diff(
-            &dir,
-            "new-name",
-            &page.commits[1].hash,
-            Some(&page.commits[1].path),
-            page.commits[1].previous_path.as_deref(),
-        )
-        .unwrap();
+        let rename_diff = file_diff(&dir, "new-name", &page.commits[1].hash).unwrap();
         assert!(
             rename_diff.patch.contains("old-name.md") || rename_diff.patch.contains("rename"),
             "rename commit diff should reflect the rename, got: {}",
             rename_diff.patch
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn rename_and_edit_in_same_commit_preserves_rename_diff() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("rename-edit");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        let mut body = String::new();
+        for line in 1..=20 {
+            body.push_str(&format!("line {line}\n"));
+        }
+        write_prompt(&dir, "old.md", &body);
+        commit_all(&dir, "Add prompt");
+        fs::rename(dir.join("old.md"), dir.join("new.md")).unwrap();
+        let edited = body.replace("line 10\n", "line TEN edited\n");
+        write_prompt(&dir, "new.md", &edited);
+        commit_all(&dir, "Rename and edit");
+
+        let page = file_history(&dir, "new", None, None).unwrap();
+        assert_eq!(page.commits.len(), 2);
+        assert_eq!(page.commits[0].previous_path.as_deref(), Some("old.md"));
+        assert_eq!(page.commits[0].path, "new.md");
+
+        let diff = file_diff(&dir, "new", &page.commits[0].hash).unwrap();
+        assert!(
+            diff.patch.contains("rename from old.md") || diff.patch.contains("rename to new.md"),
+            "rename+edit diff should preserve rename semantics, got: {}",
+            diff.patch
+        );
+        assert!(
+            diff.patch.contains("line TEN edited") || diff.patch.contains('+'),
+            "rename+edit diff should include the edited line"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn commit_outside_prompt_history_is_rejected() {
+        if !git_ready() {
+            return;
+        }
+        let dir = tmp_dir("foreign-commit");
+        fs::create_dir_all(&dir).unwrap();
+        init_repo(&dir);
+        write_prompt(&dir, "private.md", "secret");
+        commit_all(&dir, "Add private");
+        let private_page = file_history(&dir, "private", None, None).unwrap();
+        let foreign_hash = private_page.commits[0].hash.clone();
+
+        write_prompt(&dir, "prompts/review.md", "Review");
+        commit_all(&dir, "Add review");
+        let prompts = dir.join("prompts");
+        let error = file_diff(&prompts, "review", &foreign_hash).unwrap_err();
+        assert!(
+            error.contains("commit not in prompt history"),
+            "unexpected error: {error}"
         );
         fs::remove_dir_all(&dir).ok();
     }
@@ -722,7 +900,7 @@ mod tests {
         init_repo(&dir);
         write_prompt(&dir, "review.md", "Body");
         commit_all(&dir, "Initial");
-        let error = file_diff(&dir, "review", "--help", None, None).unwrap_err();
+        let error = file_diff(&dir, "review", "--help").unwrap_err();
         assert!(error.contains("invalid commit hash"));
         fs::remove_dir_all(&dir).ok();
     }

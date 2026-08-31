@@ -123,8 +123,8 @@ function promptKey(projectPath: string, name: string): string {
   return projectPath + '\u0000' + name;
 }
 
-function diffCacheKey(projectPath: string, name: string, commit: string, pathAtCommit: string): string {
-  return promptKey(projectPath, name) + '\u0000' + commit + '\u0000' + pathAtCommit;
+function diffCacheKey(projectPath: string, name: string, commit: string): string {
+  return promptKey(projectPath, name) + '\u0000' + commit;
 }
 
 function resetHistoryState(): void {
@@ -494,17 +494,9 @@ export async function selectHistoryCommit(
   library.historyDiffLoading = true;
   library.historyError = null;
   try {
-    const cacheKey = diffCacheKey(project, name, commit.hash, commit.path);
+    const cacheKey = diffCacheKey(project, name, commit.hash);
     const cached = diffCache.get(cacheKey);
-    const diff =
-      cached ??
-      (await apiGitFileDiff(
-        project,
-        name,
-        commit.hash,
-        commit.path,
-        commit.previousPath
-      ));
+    const diff = cached ?? (await apiGitFileDiff(project, name, commit.hash));
     if (
       isStaleHistoryDiffResponse(
         requestSerial,

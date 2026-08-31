@@ -180,18 +180,10 @@ export async function gitFileHistory(
 export async function gitFileDiff(
   project: string,
   name: string,
-  commit: string,
-  pathAtCommit?: string,
-  previousPathAtCommit?: string
+  commit: string
 ): Promise<GitFileDiff> {
   if (!isTauri()) return { commit, patch: '' };
-  return call<GitFileDiff>('git_file_diff', {
-    project,
-    name,
-    commit,
-    pathAtCommit,
-    previousPathAtCommit,
-  });
+  return call<GitFileDiff>('git_file_diff', { project, name, commit });
 }
 
 interface DevPrompt {

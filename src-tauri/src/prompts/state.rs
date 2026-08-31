@@ -255,18 +255,7 @@ pub async fn git_file_diff(
     project: String,
     name: String,
     commit: String,
-    path_at_commit: Option<String>,
-    previous_path_at_commit: Option<String>,
 ) -> Result<GitFileDiff, String> {
     let project = registered_project(&project)?;
-    blocking(move || {
-        git::file_diff(
-            &project,
-            &name,
-            &commit,
-            path_at_commit.as_deref(),
-            previous_path_at_commit.as_deref(),
-        )
-    })
-    .await
+    blocking(move || git::file_diff(&project, &name, &commit)).await
 }
