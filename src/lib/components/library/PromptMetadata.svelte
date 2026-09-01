@@ -7,10 +7,14 @@
     metadata: Metadata;
     body: string;
     editing: boolean;
+    /** Names of every prompt in the current project (for the Related picker). */
+    promptNames?: string[];
+    /** Name of the prompt being edited (never offered as a related target). */
+    currentName?: string;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, body, editing, onChange }: Props = $props();
+  let { metadata, body, editing, promptNames = [], currentName = '', onChange }: Props = $props();
 
   // Variable names come live from the body parser. The editor never creates or
   // renames variables in frontmatter; a body edit immediately surfaces a new
@@ -30,6 +34,7 @@
       ...metadata,
       tags: [...metadata.tags],
       models: [...metadata.models],
+      related: [...metadata.related],
       extra: { ...metadata.extra },
       ...(variables ? { variables } : {}),
     };
@@ -68,6 +73,25 @@
     if (variables) next.variables = variables;
     else delete next.variables;
     onChange(next);
+  }
+
+  // Related prompts: the picker only offers prompts in the current project,
+  // never the prompt being edited, and never entries already linked.
+  const addableRelated = $derived(
+    promptNames.filter((name) => name !== currentName && !metadata.related.includes(name))
+  );
+  let relatedPick = $state('');
+
+  function addRelated(): void {
+    if (!relatedPick) return;
+    if (!metadata.related.includes(relatedPick)) {
+      setField('related', [...metadata.related, relatedPick]);
+    }
+    relatedPick = '';
+  }
+
+  function removeRelated(path: string): void {
+    setField('related', metadata.related.filter((item) => item !== path));
   }
 </script>
 
@@ -150,6 +174,33 @@
       {/if}
       {#if !variableNames.length && !staleNames.length}
         <p class="detail-muted">No variables detected in the prompt body.</p>
+      {/if}
+    </div>
+    <div class="related-editor">
+      <span class="variables-editor__heading">Related prompts</span>
+      {#if metadata.related.length}
+        <div class="related-edit-list">
+          {#each metadata.related as path (path)}
+            <div class="variable-doc-edit">
+              <div class="variable-doc-edit__name">
+                <span class="variable-token">{path}</span>
+                <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(path)}>Remove</button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if addableRelated.length}
+        <div class="related-picker">
+          <select bind:value={relatedPick} onchange={addRelated} aria-label="Add a related prompt">
+            <option value="" disabled>Add a related prompt…</option>
+            {#each addableRelated as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </div>
+      {:else}
+        <p class="detail-muted">No other prompt in this project is available to link.</p>
       {/if}
     </div>
   </div>

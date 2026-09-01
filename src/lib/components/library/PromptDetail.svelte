@@ -13,6 +13,7 @@
   import PromptPreview from './PromptPreview.svelte';
   import PromptHistory from './PromptHistory.svelte';
   import VariableList from './VariableList.svelte';
+  import RelatedList from './RelatedList.svelte';
 
   interface Props {
     document: PromptDocument | null;
@@ -35,6 +36,7 @@
     onDirtyChange: (dirty: boolean) => void;
     onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
+    onNavigate: (projectPath: string, name: string) => void;
   }
 
   let {
@@ -51,6 +53,7 @@
     onDirtyChange,
     onDismissExternalChange,
     onNotice,
+    onNavigate,
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
@@ -70,6 +73,14 @@
   );
   const metadataDirty = $derived(
     Boolean(metadata && originalMetadata && JSON.stringify(metadata) !== JSON.stringify(originalMetadata))
+  );
+  // Names of every prompt in the selected prompt's project, for the Related
+  // picker. In All Projects scope `library.allPrompts` spans all projects, so
+  // filter to the current project to keep relations project-local.
+  const projectPromptNames = $derived(
+    library.allPrompts
+      .filter((prompt) => prompt.projectPath === document?.projectPath)
+      .map((prompt) => prompt.name)
   );
 
   $effect(() => {
@@ -111,6 +122,7 @@
       ...value,
       tags: [...value.tags],
       models: [...value.models],
+      related: [...value.related],
       extra: { ...value.extra },
       ...(variables ? { variables } : {}),
     };
@@ -299,7 +311,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} body={body} editing={false} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -309,7 +321,7 @@
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} onChange={updateMetadata} />
         </div>
       </div>
     {/if}
@@ -317,6 +329,7 @@
     <div class="detail-footer">
       {#if mode !== 'history'}
         <VariableList body={body} annotations={metadata.variables} />
+        <RelatedList document={document} summaries={library.allPrompts} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}
     </div>

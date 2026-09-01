@@ -99,6 +99,11 @@
     void selectPrompt(prompt.projectPath, prompt.name);
   }
 
+  function handleNavigateRelation(projectPath: string, name: string): void {
+    if (!canNavigate()) return;
+    void selectPrompt(projectPath, name);
+  }
+
   async function handleCreate(
     projectPath: string,
     name: string,
@@ -217,6 +222,7 @@
         ...metadata,
         tags: [...metadata.tags],
         models: [...metadata.models],
+        related: [...metadata.related],
         extra: { ...metadata.extra },
         ...(variables ? { variables } : {}),
       };
@@ -363,6 +369,7 @@
       onDirtyChange={(dirty) => (detailDirty = dirty)}
       onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
+      onNavigate={handleNavigateRelation}
     />
   </div>
 </div>

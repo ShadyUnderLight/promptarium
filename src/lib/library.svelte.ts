@@ -192,6 +192,7 @@ function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
     ...metadata,
     tags: [...metadata.tags],
     models: [...metadata.models],
+    related: [...metadata.related],
     extra: { ...metadata.extra },
     ...(variables ? { variables } : {}),
   };

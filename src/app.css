@@ -1519,6 +1519,99 @@ body {
   color: var(--accent-result-err);
 }
 
+.related-inspector {
+  margin-top: 1.3rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.related-inspector__heading {
+  margin-top: 0.85rem;
+}
+
+.related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.relation-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.relation-row--missing,
+.relation-row--invalid,
+.relation-row--self {
+  cursor: default;
+}
+
+.relation-row--ok:hover,
+.relation-row--backlink:hover {
+  background: var(--bg-subtle);
+}
+
+.relation-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relation-row--missing .relation-name,
+.relation-row--invalid .relation-name,
+.relation-row--self .relation-name {
+  opacity: 0.75;
+}
+
+.relation-status {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.relation-arrow {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+
+.related-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.related-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.related-picker select {
+  width: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
 .detail-footer {
   max-width: 54rem;
 }

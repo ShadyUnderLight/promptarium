@@ -33,6 +33,9 @@ export interface PromptMetadata {
   /** Variable annotations keyed by variable name; never the source of a
    *  variable's existence (that is `parseVariables(body)`). */
   variables?: Record<string, VariableDoc>;
+  /** Explicit links to other prompts in this project, as project-relative
+   *  prompt paths without `.md`. Backlinks are derived, never stored. */
+  related: string[];
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }
@@ -44,6 +47,7 @@ export function defaultPromptMetadata(): PromptMetadata {
     status: 'active',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   };
 }
