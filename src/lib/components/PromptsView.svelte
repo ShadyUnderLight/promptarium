@@ -296,6 +296,12 @@
     <div class="library-error" role="alert">{library.error}</div>
   {/if}
 
+  {#if !library.fsWatchAvailable && library.fsWatchMessage && !selectedProjectMissing}
+    <div class="library-error" role="status">
+      Automatic refresh unavailable: {library.fsWatchMessage}. Focus or manual Refresh still works.
+    </div>
+  {/if}
+
   <div
     class="library-workspace"
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}

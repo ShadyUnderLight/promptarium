@@ -10,7 +10,7 @@ use tauri::AppHandle;
 use super::appstate::{self, Project, ProjectList};
 use super::git::{self, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo};
 use super::store::{self, PromptDocument, PromptMetadata, PromptSummary};
-use super::watcher::ProjectFsWatcher;
+use super::watcher::{ProjectFsWatcher, ProjectWatcherStatus};
 
 pub struct PromptsState {
     watcher: Mutex<ProjectFsWatcher>,
@@ -23,21 +23,40 @@ impl PromptsState {
         }
     }
 
-    fn sync_watcher_for_active(&self) -> Result<(), String> {
-        let root = root()?;
-        let state = appstate::list_projects(&root)?;
+    fn sync_watcher_for_active(&self) -> ProjectWatcherStatus {
+        let root = match root() {
+            Ok(root) => root,
+            Err(error) => {
+                return ProjectWatcherStatus {
+                    project_path: None,
+                    available: false,
+                    message: Some(error),
+                };
+            }
+        };
+        let state = match appstate::list_projects(&root) {
+            Ok(state) => state,
+            Err(error) => {
+                return ProjectWatcherStatus {
+                    project_path: None,
+                    available: false,
+                    message: Some(error),
+                };
+            }
+        };
         let project = state.active.map(PathBuf::from);
-        self.watcher
-            .lock()
-            .map_err(|_| "project watcher lock poisoned".to_string())?
-            .sync_project(project)
+        self.sync_watcher(project)
     }
 
-    fn sync_watcher(&self, project: Option<PathBuf>) -> Result<(), String> {
+    fn sync_watcher(&self, project: Option<PathBuf>) -> ProjectWatcherStatus {
         self.watcher
             .lock()
-            .map_err(|_| "project watcher lock poisoned".to_string())?
-            .sync_project(project)
+            .map(|watcher| watcher.sync_project(project))
+            .unwrap_or_else(|_| ProjectWatcherStatus {
+                project_path: None,
+                available: false,
+                message: Some("project watcher lock poisoned".into()),
+            })
     }
 }
 
@@ -94,7 +113,7 @@ pub async fn add_project(
     path: String,
 ) -> Result<Project, String> {
     let project = appstate::add_project(&root()?, &name, Path::new(&path))?;
-    state.sync_watcher_for_active()?;
+    state.sync_watcher_for_active();
     Ok(project)
 }
 
@@ -111,7 +130,7 @@ pub async fn replace_project_path(
 ) -> Result<Project, String> {
     let project =
         appstate::replace_project_path(&root()?, Path::new(&old_path), Path::new(&new_path))?;
-    state.sync_watcher_for_active()?;
+    state.sync_watcher_for_active();
     Ok(project)
 }
 
@@ -126,7 +145,7 @@ pub async fn remove_project(
     path: String,
 ) -> Result<(), String> {
     appstate::remove_project(&root()?, Path::new(&path))?;
-    state.sync_watcher_for_active()?;
+    state.sync_watcher_for_active();
     Ok(())
 }
 
@@ -136,7 +155,7 @@ pub async fn set_active_project(
     path: String,
 ) -> Result<(), String> {
     appstate::set_active_project(&root()?, Path::new(&path))?;
-    state.sync_watcher(Some(PathBuf::from(path)))?;
+    state.sync_watcher(Some(PathBuf::from(path)));
     Ok(())
 }
 
@@ -144,12 +163,12 @@ pub async fn set_active_project(
 pub async fn sync_project_watcher(
     state: tauri::State<'_, PromptsState>,
     project: Option<String>,
-) -> Result<(), String> {
+) -> Result<ProjectWatcherStatus, String> {
     let path = match project {
         Some(path) => Some(registered_project(&path)?),
         None => None,
     };
-    state.sync_watcher(path)
+    Ok(state.sync_watcher(path))
 }
 
 #[tauri::command]

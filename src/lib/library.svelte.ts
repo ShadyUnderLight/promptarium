@@ -24,7 +24,10 @@ import {
   setProjectColor as apiSetProjectColor,
   syncProjectWatcher as apiSyncProjectWatcher,
   listenProjectFsChanged,
+  listenProjectFsWatchError,
+  type ProjectWatcherStatus,
 } from './api';
+import { toasts } from './prompts/toasts.svelte';
 import type {
   FolderNode,
   Project,
@@ -89,6 +92,8 @@ export const library = $state({
   historyError: null as string | null,
   historyLoadingMore: false,
   externalChangeState: null as ExternalChangeState,
+  fsWatchAvailable: true,
+  fsWatchMessage: null as string | null,
 });
 
 export interface RefreshLibraryOptions {
@@ -113,6 +118,8 @@ const fsRefreshScheduler = new FsRefreshScheduler(300);
 let selectedOpenedFingerprint: ReturnType<typeof summaryFingerprint> | null = null;
 let editorDirtyProvider: (() => boolean) | null = null;
 let fsUnlisten: (() => void) | null = null;
+let fsErrorUnlisten: (() => void) | null = null;
+let lastFsWatchNotice = '';
 
 function searchIndexRevision(projectPath: string): number {
   return searchIndexRevisions.get(projectPath) ?? 0;
@@ -300,14 +307,35 @@ export function dismissExternalChange(): void {
   library.externalChangeState = null;
 }
 
+function applyWatcherStatus(status: ProjectWatcherStatus): void {
+  library.fsWatchAvailable = status.available;
+  library.fsWatchMessage = status.message ?? null;
+  if (!status.available && status.message) {
+    notifyFsWatchUnavailable(status.message);
+  }
+}
+
+function notifyFsWatchUnavailable(message: string): void {
+  if (message === lastFsWatchNotice) return;
+  lastFsWatchNotice = message;
+  toasts.push('Automatic filesystem refresh is unavailable. Focus or Refresh still works.');
+}
+
 export async function startFilesystemWatch(): Promise<void> {
   await stopFilesystemWatch();
-  await apiSyncProjectWatcher(library.activeProjectPath);
+  lastFsWatchNotice = '';
+  applyWatcherStatus(await apiSyncProjectWatcher(library.activeProjectPath));
   fsUnlisten = await listenProjectFsChanged((event) => {
     if (event.projectPath !== library.activeProjectPath) return;
     fsRefreshScheduler.notify(async () => {
       await refreshLibrary({ editorDirty: editorDirtyProvider?.() ?? false });
     });
+  });
+  fsErrorUnlisten = await listenProjectFsWatchError((event) => {
+    if (event.projectPath && event.projectPath !== library.activeProjectPath) return;
+    library.fsWatchAvailable = false;
+    library.fsWatchMessage = event.message;
+    notifyFsWatchUnavailable(event.message);
   });
 }
 
@@ -315,6 +343,10 @@ export async function stopFilesystemWatch(): Promise<void> {
   if (fsUnlisten) {
     fsUnlisten();
     fsUnlisten = null;
+  }
+  if (fsErrorUnlisten) {
+    fsErrorUnlisten();
+    fsErrorUnlisten = null;
   }
 }
 
