@@ -59,16 +59,32 @@ import {
   decideSelectedRefresh,
   type ExternalChangeState,
 } from './library/refresh-selected';
+import {
+  ALL_PROJECTS_CONCURRENCY,
+  aggregateScanResults,
+  mapWithConcurrency,
+  mergeSearchResults,
+  searchProjectIndex,
+  summariesContainIdentity,
+} from './library/all-projects';
+import {
+  isAllProjectsScope,
+  promptKey,
+  type LibraryScope,
+} from './library/scope';
 
 const SEARCH_DEBOUNCE_MS = 100;
 
 export const library = $state({
   projects: [] as Project[],
   activeProjectPath: null as string | null,
+  libraryScope: { kind: 'all-projects' } as LibraryScope,
   allPrompts: [] as PromptSummary[],
   prompts: [] as PromptSummary[],
+  selectedProjectPath: null as string | null,
   selectedName: null as string | null,
   selected: null as PromptDocument | null,
+  allProjectsWarnings: [] as Array<{ projectPath: string; error: string }>,
   loading: false,
   loadingDocument: false,
   error: null as string | null,
@@ -133,6 +149,25 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export function isAllProjects(): boolean {
+  return isAllProjectsScope(library.libraryScope);
+}
+
+function scopeStillCurrent(serial: number, scope: LibraryScope): boolean {
+  return serial === loadSerial && library.libraryScope.kind === scope.kind &&
+    (scope.kind === 'all-projects' ||
+      (library.libraryScope.kind === 'project' && library.libraryScope.projectPath === scope.projectPath));
+}
+
+function selectedIdentityMatches(project: string, name: string): boolean {
+  return library.selectedProjectPath === project && library.selectedName === name;
+}
+
+async function refreshCurrentScope(options: RefreshLibraryOptions = {}): Promise<void> {
+  if (isAllProjects()) await refreshAllProjects(options);
+  else await refreshLibrary(options);
+}
+
 function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
   return {
     ...metadata,
@@ -155,10 +190,6 @@ function summaryOf(document: PromptDocument): PromptSummary {
     hasFrontmatter: document.hasFrontmatter,
     frontmatterError: document.frontmatterError,
   };
-}
-
-function promptKey(projectPath: string, name: string): string {
-  return projectPath + '\u0000' + name;
 }
 
 function diffCacheKey(projectPath: string, name: string, commit: string): string {
@@ -228,7 +259,8 @@ async function refreshSearchIndex(
     },
   });
 
-  if (serial !== loadSerial || projectPath !== library.activeProjectPath) return;
+  if (serial !== loadSerial) return;
+  if (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath) return;
 
   if (isStaleSearchIndexSwap(revisionAtStart, searchIndexRevision(projectPath))) {
     if (import.meta.env.DEV) {
@@ -248,7 +280,7 @@ async function refreshSearchIndex(
     );
   }
 
-  if (library.searchQuery.trim()) void runSearch();
+  if (library.searchQuery.trim() && !isAllProjects()) void runSearch();
 }
 
 function saveUiState(): void {
@@ -355,22 +387,30 @@ export async function refreshProjects(): Promise<void> {
     const result = await apiListProjects();
     if (result.active !== library.activeProjectPath) {
       invalidateDocumentLoad();
+      library.selectedProjectPath = null;
       library.selectedName = null;
       library.selected = null;
     }
     library.projects = result.projects;
     library.activeProjectPath = result.active;
+    library.libraryScope = result.active
+      ? { kind: 'project', projectPath: result.active }
+      : { kind: 'all-projects' };
     library.error = null;
-    await refreshLibrary();
+    if (isAllProjects()) await refreshAllProjects();
+    else await refreshLibrary();
   } catch (error) {
     invalidateDocumentLoad();
     library.error = errorText(error);
     library.projects = [];
     library.activeProjectPath = null;
+    library.libraryScope = { kind: 'all-projects' };
     library.allPrompts = [];
     library.prompts = [];
     library.folderPaths = [];
     library.selected = null;
+    library.selectedProjectPath = null;
+    library.selectedName = null;
   }
 }
 
@@ -385,9 +425,14 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     library.prompts = [];
     library.folderPaths = [];
     library.selected = null;
+    library.selectedProjectPath = null;
     library.selectedName = null;
     selectedOpenedFingerprint = null;
     library.externalChangeState = null;
+    return;
+  }
+  if (library.libraryScope.kind === 'all-projects') {
+    await refreshAllProjects(options);
     return;
   }
   library.loading = true;
@@ -423,19 +468,27 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     }
 
     const selectedName = library.selectedName;
+    const selectedProject = library.selectedProjectPath;
     const selectedDocumentSerial = documentSerial;
     if (decision.clearSelection) {
+      library.selectedProjectPath = null;
       library.selectedName = null;
       library.selected = null;
       selectedOpenedFingerprint = null;
       library.externalChangeState = null;
-    } else if (decision.reloadSelected && selectedName && summaries.some((prompt) => prompt.name === selectedName)) {
+    } else if (
+      decision.reloadSelected &&
+      selectedName &&
+      selectedProject === project &&
+      summaries.some((prompt) => prompt.name === selectedName)
+    ) {
       const selected = await apiReadPrompt(project, selectedName);
       if (
         serial !== loadSerial ||
         project !== library.activeProjectPath ||
         selectedDocumentSerial !== documentSerial ||
-        library.selectedName !== selectedName
+        library.selectedName !== selectedName ||
+        library.selectedProjectPath !== selectedProject
       ) return;
       library.selected = selected;
       selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
@@ -449,6 +502,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     if (library.error.toLowerCase().includes('not found')) {
       if (!editorDirty) {
         library.selected = null;
+        library.selectedProjectPath = null;
         library.selectedName = null;
         selectedOpenedFingerprint = null;
       } else {
@@ -460,10 +514,102 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
   }
 }
 
+export async function refreshAllProjects(options: RefreshLibraryOptions = {}): Promise<void> {
+  const editorDirty = options.editorDirty ?? false;
+  const reloadSelected = options.reloadSelected ?? !editorDirty;
+  const scope: LibraryScope = { kind: 'all-projects' };
+  const serial = ++loadSerial;
+  if (library.projects.length === 0) {
+    library.allPrompts = [];
+    library.prompts = [];
+    library.folderPaths = [];
+    library.allProjectsWarnings = [];
+    return;
+  }
+  library.loading = true;
+  const warnings: Array<{ projectPath: string; error: string }> = [];
+  try {
+    const scanResults = await mapWithConcurrency(library.projects, ALL_PROJECTS_CONCURRENCY, async (project) => {
+      try {
+        const summaries = await apiScanProject(project.path);
+        await refreshSearchIndex(project.path, summaries, serial);
+        return { projectPath: project.path, summaries };
+      } catch (error) {
+        warnings.push({ projectPath: project.path, error: errorText(error) });
+        return null;
+      }
+    });
+    if (!scopeStillCurrent(serial, scope)) return;
+
+    const healthy = scanResults.filter((result): result is NonNullable<typeof result> => result !== null);
+    const summaries = aggregateScanResults(healthy);
+    library.allPrompts = summaries;
+    library.folderPaths = [];
+    library.allProjectsWarnings = warnings;
+    library.error = null;
+
+    const query = library.searchQuery;
+    const querySerial = searchSerial;
+    if (library.searchQuery.trim()) {
+      library.prompts = mergeSearchResults(library.projects, searchIndexes, query);
+    } else {
+      library.prompts = summaries;
+    }
+    if (!scopeStillCurrent(serial, scope) || querySerial !== searchSerial || query !== library.searchQuery) return;
+
+    const selectedName = library.selectedName;
+    const selectedProject = library.selectedProjectPath;
+    const selectedDocumentSerial = documentSerial;
+    if (
+      reloadSelected &&
+      selectedName &&
+      selectedProject &&
+      summariesContainIdentity(summaries, selectedProject, selectedName)
+    ) {
+      const selected = await apiReadPrompt(selectedProject, selectedName);
+      if (
+        !scopeStillCurrent(serial, scope) ||
+        selectedDocumentSerial !== documentSerial ||
+        library.selectedName !== selectedName ||
+        library.selectedProjectPath !== selectedProject
+      ) return;
+      library.selected = selected;
+      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
+      library.externalChangeState = null;
+    } else if (!editorDirty && selectedProject && selectedName && !summariesContainIdentity(summaries, selectedProject, selectedName)) {
+      library.selectedProjectPath = null;
+      library.selectedName = null;
+      library.selected = null;
+      selectedOpenedFingerprint = null;
+      library.externalChangeState = null;
+    }
+  } catch (error) {
+    if (!scopeStillCurrent(serial, scope)) return;
+    library.error = errorText(error);
+    library.allPrompts = [];
+    library.prompts = [];
+  } finally {
+    if (serial === loadSerial && isAllProjects()) library.loading = false;
+  }
+}
+
+export async function setAllProjectsScope(): Promise<void> {
+  library.libraryScope = { kind: 'all-projects' };
+  library.folderFilter = '';
+  library.error = null;
+  await refreshAllProjects();
+}
+
+export function projectDisplayName(projectPath: string): string {
+  return library.projects.find((project) => project.path === projectPath)?.name ?? projectPath;
+}
+
 export async function setActiveProject(path: string): Promise<void> {
   await apiSetActiveProject(path);
   invalidateDocumentLoad();
   library.activeProjectPath = path;
+  library.libraryScope = { kind: 'project', projectPath: path };
+  library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
   selectedOpenedFingerprint = null;
@@ -471,6 +617,7 @@ export async function setActiveProject(path: string): Promise<void> {
   library.folderFilter = '';
   library.tagFilter = '';
   library.smartView = 'all';
+  library.allProjectsWarnings = [];
   await refreshLibrary();
   await startFilesystemWatch();
 }
@@ -481,6 +628,7 @@ export async function addProject(name: string, path: string): Promise<Project> {
   library.projects = roster.projects;
   invalidateDocumentLoad();
   library.activeProjectPath = project.path;
+  library.libraryScope = { kind: 'project', projectPath: project.path };
   await apiSetActiveProject(project.path);
   await refreshLibrary();
   await startFilesystemWatch();
@@ -493,6 +641,10 @@ export async function replaceProjectPath(oldPath: string, newPath: string): Prom
   invalidateDocumentLoad();
   library.projects = roster.projects;
   library.activeProjectPath = roster.active;
+  library.libraryScope = roster.active
+    ? { kind: 'project', projectPath: roster.active }
+    : { kind: 'all-projects' };
+  library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
   selectedOpenedFingerprint = null;
@@ -524,27 +676,28 @@ export async function forgetProject(path: string): Promise<void> {
 }
 
 export async function selectPrompt(project: string, name: string): Promise<void> {
-  if (project !== library.activeProjectPath) return;
+  if (library.libraryScope.kind === 'project' && project !== library.activeProjectPath) return;
   const serial = ++documentSerial;
   invalidateHistoryLoad();
+  library.selectedProjectPath = project;
   library.selectedName = name;
   library.selected = null;
   library.loadingDocument = true;
   try {
     const document = await apiReadPrompt(project, name);
-    if (serial !== documentSerial || project !== library.activeProjectPath) return;
+    if (serial !== documentSerial || !selectedIdentityMatches(project, name)) return;
     library.selected = document;
     selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
     library.externalChangeState = null;
   } catch (error) {
-    if (serial === documentSerial && project === library.activeProjectPath) library.error = errorText(error);
+    if (serial === documentSerial && selectedIdentityMatches(project, name)) library.error = errorText(error);
   } finally {
     if (serial === documentSerial) library.loadingDocument = false;
   }
 }
 
 export async function loadPromptHistory(project: string, name: string): Promise<void> {
-  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  if (!selectedIdentityMatches(project, name)) return;
   const serial = ++historySerial;
   resetHistoryState();
   library.historyLoading = true;
@@ -552,7 +705,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
     const cacheKey = promptKey(project, name);
     const cached = historyCache.get(cacheKey);
     const repo = await apiGitRepositoryInfo(project);
-    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
     library.historyRepo = repo;
@@ -561,7 +714,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
       return;
     }
     const page = cached ?? (await apiGitFileHistory(project, name));
-    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
     if (!cached) historyCache.set(cacheKey, page);
@@ -571,13 +724,13 @@ export async function loadPromptHistory(project: string, name: string): Promise<
     }
   } catch (error) {
     if (
-      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
       library.historyError = errorText(error);
     }
   } finally {
     if (
-      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
       library.historyLoading = false;
     }
@@ -585,7 +738,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
 }
 
 export async function loadMorePromptHistory(project: string, name: string): Promise<void> {
-  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  if (!selectedIdentityMatches(project, name)) return;
   const page = library.historyPage;
   if (!page?.nextCursor || library.historyLoadingMore) return;
   const serial = historySerial;
@@ -593,7 +746,7 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
   library.historyError = null;
   try {
     const next = await apiGitFileHistory(project, name, undefined, page.nextCursor);
-    if (isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)) {
+    if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
     const merged = appendHistoryPage(page, next);
@@ -601,13 +754,13 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
     historyCache.set(promptKey(project, name), merged);
   } catch (error) {
     if (
-      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
       library.historyError = errorText(error);
     }
   } finally {
     if (
-      !isStaleHistoryResponse(serial, historySerial, project, name, library.activeProjectPath, library.selectedName)
+      !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
       library.historyLoadingMore = false;
     }
@@ -620,7 +773,7 @@ export async function selectHistoryCommit(
   commit: GitFileCommit,
   requestSerial = historySerial
 ): Promise<void> {
-  if (project !== library.activeProjectPath || library.selectedName !== name) return;
+  if (!selectedIdentityMatches(project, name)) return;
   library.historySelectedCommit = commit.hash;
   library.historyDiff = null;
   library.historyDiffLoading = true;
@@ -636,7 +789,7 @@ export async function selectHistoryCommit(
         project,
         name,
         commit.hash,
-        library.activeProjectPath,
+        library.selectedProjectPath,
         library.selectedName,
         library.historySelectedCommit
       )
@@ -653,7 +806,7 @@ export async function selectHistoryCommit(
         project,
         name,
         commit.hash,
-        library.activeProjectPath,
+        library.selectedProjectPath,
         library.selectedName,
         library.historySelectedCommit
       )
@@ -668,7 +821,7 @@ export async function selectHistoryCommit(
         project,
         name,
         commit.hash,
-        library.activeProjectPath,
+        library.selectedProjectPath,
         library.selectedName,
         library.historySelectedCommit
       )
@@ -717,13 +870,18 @@ export async function saveDocument(
     metadataDirty,
     expectedRaw
   );
-  if (source.projectPath === library.activeProjectPath && library.selectedName === source.name) {
+  if (selectedIdentityMatches(source.projectPath, source.name)) {
     library.selected = document;
+    library.selectedProjectPath = document.projectPath;
     library.selectedName = document.name;
     selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
     library.externalChangeState = null;
     replaceSummary(summaryOf(document));
     updateSearchEntry(document);
+    if (isAllProjects()) void runSearch();
+  } else if (isAllProjects()) {
+    updateSearchEntry(document);
+    void refreshAllProjects();
   }
   return document;
 }
@@ -735,9 +893,15 @@ export async function createPrompt(
   metadata: PromptMetadata
 ): Promise<PromptDocument> {
   const document = await apiCreatePrompt(projectPath, name, body, metadata);
-  if (projectPath === library.activeProjectPath) {
+  if (isAllProjects()) {
+    await refreshAllProjects();
+    library.selectedProjectPath = document.projectPath;
+    library.selectedName = document.name;
+    library.selected = document;
+  } else if (projectPath === library.activeProjectPath) {
     await refreshLibrary();
     if (projectPath === library.activeProjectPath) {
+      library.selectedProjectPath = document.projectPath;
       library.selectedName = document.name;
       library.selected = document;
     }
@@ -750,47 +914,38 @@ export async function duplicatePrompt(source: PromptDocument, name: string): Pro
 }
 
 export async function renamePrompt(source: PromptDocument, newName: string): Promise<PromptDocument> {
-  const wasSelected = source.projectPath === library.activeProjectPath && library.selectedName === source.name;
+  const wasSelected = selectedIdentityMatches(source.projectPath, source.name);
   const document = await apiRenamePrompt(source.projectPath, source.name, newName);
-  if (wasSelected && source.projectPath === library.activeProjectPath) {
-    await refreshLibrary();
-    if (
-      source.projectPath === library.activeProjectPath &&
-      (library.selectedName === source.name || library.selectedName === null)
-    ) {
-      library.selectedName = document.name;
-      library.selected = document;
-    }
+  if (wasSelected) {
+    library.selectedProjectPath = document.projectPath;
+    library.selectedName = document.name;
   }
+  await refreshCurrentScope();
+  if (wasSelected) library.selected = document;
   return document;
 }
 
 export async function movePrompt(source: PromptDocument, destination: string): Promise<PromptDocument> {
-  const wasSelected = source.projectPath === library.activeProjectPath && library.selectedName === source.name;
+  const wasSelected = selectedIdentityMatches(source.projectPath, source.name);
   const document = await apiMovePrompt(source.projectPath, source.name, destination);
-  if (wasSelected && source.projectPath === library.activeProjectPath) {
-    await refreshLibrary();
-    if (
-      source.projectPath === library.activeProjectPath &&
-      (library.selectedName === source.name || library.selectedName === null)
-    ) {
-      library.selectedName = document.name;
-      library.selected = document;
-    }
+  if (wasSelected) {
+    library.selectedProjectPath = document.projectPath;
+    library.selectedName = document.name;
   }
+  await refreshCurrentScope();
+  if (wasSelected) library.selected = document;
   return document;
 }
 
 export async function deletePrompt(source: PromptDocument): Promise<void> {
   await apiDeletePrompt(source.projectPath, source.name);
-  if (source.projectPath === library.activeProjectPath) {
+  if (selectedIdentityMatches(source.projectPath, source.name)) {
     invalidateDocumentLoad();
-    if (library.selected?.projectPath === source.projectPath && library.selected.name === source.name) {
-      library.selectedName = null;
-      library.selected = null;
-    }
-    await refreshLibrary();
+    library.selectedProjectPath = null;
+    library.selectedName = null;
+    library.selected = null;
   }
+  await refreshCurrentScope();
 }
 
 export async function revealPrompt(source?: PromptDocument): Promise<void> {
@@ -823,60 +978,36 @@ export function setSearchQuery(query: string): void {
   searchTimer = setTimeout(() => void runSearch(), SEARCH_DEBOUNCE_MS);
 }
 
-function searchFieldScore(token: string, value: string, weight: number): number | null {
-  const lower = value.toLowerCase();
-  if (!lower.includes(token)) return null;
-  let score = weight;
-  if (lower === token) score += weight;
-  else if (lower.startsWith(token)) score += weight * 0.55;
-  else if (lower.split(/[^\p{L}\p{N}]+/u).some((word) => word === token)) score += weight * 0.35;
-  return score;
-}
-
 function searchIndexed(project: string, query: string): PromptSummary[] | null {
-  const index = searchIndexes.get(project);
-  if (!index) return null;
-  const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return library.allPrompts;
-  const matches: Array<{ summary: PromptSummary; score: number }> = [];
-  for (const entry of index.values()) {
-    const fields = [
-      [entry.summary.name, 100],
-      [entry.summary.relativePath, 95],
-      [entry.summary.metadata.tags.join(' '), 60],
-      [entry.summary.metadata.description, 45],
-      [entry.summary.metadata.models.join(' '), 35],
-      [entry.bodyLower, 20],
-    ] as const;
-    let total = 0;
-    let matched = true;
-    for (const token of tokens) {
-      let best = 0;
-      for (const [value, weight] of fields) {
-        best = Math.max(best, searchFieldScore(token, value, weight) ?? 0);
-      }
-      if (!best) {
-        matched = false;
-        break;
-      }
-      total += best;
-    }
-    if (matched) matches.push({ summary: entry.summary, score: total / tokens.length });
-  }
-  return matches
-    .sort((a, b) => b.score - a.score || a.summary.name.localeCompare(b.summary.name))
-    .map((match) => match.summary);
+  return searchProjectIndex(searchIndexes.get(project), query);
 }
 
 async function runSearch(): Promise<void> {
   searchTimer = null;
   const serial = searchSerial;
+  const query = library.searchQuery.trim();
+  if (isAllProjects()) {
+    if (!library.projects.length) {
+      library.prompts = [];
+      return;
+    }
+    try {
+      const results = query
+        ? mergeSearchResults(library.projects, searchIndexes, query)
+        : library.allPrompts;
+      if (serial !== searchSerial || !isAllProjects()) return;
+      library.prompts = results;
+    } catch (error) {
+      library.error = errorText(error);
+      library.prompts = [];
+    }
+    return;
+  }
   const project = library.activeProjectPath;
   if (!project) {
     library.prompts = [];
     return;
   }
-  const query = library.searchQuery.trim();
   try {
     const indexed = query ? searchIndexed(project, query) : library.allPrompts;
     const results = indexed ?? (query ? await apiSearchPrompts(project, query) : library.allPrompts);
@@ -960,12 +1091,14 @@ export function promptVariableCount(prompt: PromptSummary): number | null {
 }
 
 export function visiblePrompts(): PromptSummary[] {
+  const allProjects = isAllProjects();
   const filtered = library.prompts.filter((prompt) => {
     const viewMatches =
       library.smartView === 'all' ||
       (library.smartView === 'favorites' && prompt.metadata.favorite) ||
       (library.smartView === prompt.metadata.status);
     const folderMatches =
+      allProjects ||
       !library.folderFilter ||
       prompt.folder === library.folderFilter ||
       prompt.folder.startsWith(library.folderFilter + '/');
@@ -1027,10 +1160,10 @@ export async function batchUpdate(
         document.raw
       );
     } catch {
-      failures.push(prompt.name);
+      failures.push(promptKey(prompt.projectPath, prompt.name));
     }
   }
-  await refreshLibrary();
+  await refreshCurrentScope();
   return failures;
 }
 
@@ -1040,19 +1173,19 @@ export async function batchDelete(prompts: PromptSummary[]): Promise<string[]> {
     try {
       await apiDeletePrompt(prompt.projectPath, prompt.name);
     } catch {
-      failures.push(prompt.name);
+      failures.push(promptKey(prompt.projectPath, prompt.name));
     }
   }
-  if (prompts.some((prompt) => prompt.projectPath === library.activeProjectPath)) {
-    await refreshLibrary();
-    const selected = library.selected;
-    if (selected && prompts.some((prompt) => prompt.projectPath === selected.projectPath && prompt.name === selected.name)) {
-      invalidateDocumentLoad();
-      library.selectedName = null;
-      library.selected = null;
-    }
+  if (prompts.some((prompt) => selectedIdentityMatches(prompt.projectPath, prompt.name))) {
+    invalidateDocumentLoad();
+    library.selectedProjectPath = null;
+    library.selectedName = null;
+    library.selected = null;
   }
+  await refreshCurrentScope();
   return failures;
 }
+
+export { promptKey };
 
 export { defaultPromptMetadata };

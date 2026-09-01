@@ -4,6 +4,7 @@
 
   interface Props {
     prompt: PromptSummary;
+    projectLabel?: string | null;
     selected: boolean;
     checked: boolean;
     variableCount: number | null;
@@ -11,7 +12,7 @@
     onToggle: (event: MouseEvent) => void;
   }
 
-  let { prompt, selected, checked, variableCount, onSelect, onToggle }: Props = $props();
+  let { prompt, projectLabel = null, selected, checked, variableCount, onSelect, onToggle }: Props = $props();
 </script>
 
 <div
@@ -34,6 +35,7 @@
     </div>
     <p class="prompt-list-item__description">{prompt.metadata.description || 'No description yet'}</p>
     <div class="prompt-list-item__meta">
+      {#if projectLabel}<span class="prompt-list-item__project">{projectLabel}</span>{/if}
       <span class="prompt-list-item__path">{prompt.folder || 'Project root'}</span>
       {#each prompt.metadata.tags.slice(0, 3) as tag (tag)}<span class="tag-chip">#{tag}</span>{/each}
       <span class={'status-chip status-chip--' + prompt.metadata.status}>{prompt.metadata.status}</span>

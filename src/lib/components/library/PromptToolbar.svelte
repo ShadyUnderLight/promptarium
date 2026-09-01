@@ -4,6 +4,7 @@
 
   interface Props {
     selectedCount: number;
+    batchEnabled?: boolean;
     onSelectAll: () => void;
     onClearSelection: () => void;
     onBatch: (action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete', tag?: string) => void;

@@ -403,6 +403,14 @@ body {
   background: var(--project-color);
 }
 
+.project-row__dot--all {
+  background: linear-gradient(135deg, var(--accent-user) 0%, color-mix(in srgb, var(--accent-user) 55%, white) 100%);
+}
+
+.missing-project--warning {
+  border-color: color-mix(in srgb, #d4a017 35%, transparent);
+}
+
 .project-row__name,
 .sidebar-nav__item span:first-child {
   overflow: hidden;
@@ -741,6 +749,14 @@ body {
 
 .prompt-list-item__path {
   max-width: 8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.prompt-list-item__project {
+  font-weight: 600;
+  color: var(--text-muted);
+  max-width: 10rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }

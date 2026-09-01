@@ -8,8 +8,11 @@
     duplicatePrompt,
     dismissExternalChange,
     initLibrary,
+    isAllProjects,
     library,
     movePrompt,
+    projectDisplayName,
+    refreshAllProjects,
     refreshLibrary,
     renamePrompt,
     revealPrompt,
@@ -19,7 +22,6 @@
     setSearchQuery,
     setPaneWidth,
     stopFilesystemWatch,
-    visiblePrompts,
   } from '$lib/library.svelte';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { copyToClipboard } from '$lib/copy';
@@ -36,7 +38,16 @@
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
   let detailDirty = $state(false);
-  let selectedProjectMissing = $derived(Boolean(library.error?.toLowerCase().includes('project folder not found')));
+  let selectedProjectMissing = $derived(
+    !isAllProjects() && Boolean(library.error?.toLowerCase().includes('project folder not found'))
+  );
+  let scopeTitle = $derived(
+    isAllProjects()
+      ? 'All Projects'
+      : library.activeProjectPath
+        ? (library.projects.find((item) => item.path === library.activeProjectPath)?.name ?? 'Project')
+        : 'Local Markdown workspace'
+  );
 
   onMount(() => {
     setEditorDirtyProvider(() => detailDirty);
@@ -63,7 +74,7 @@
 
   function isCurrentDocument(document: PromptDocument): boolean {
     return (
-      library.activeProjectPath === document.projectPath &&
+      library.selectedProjectPath === document.projectPath &&
       library.selectedName === document.name &&
       library.selected?.projectPath === document.projectPath &&
       library.selected.name === document.name
@@ -71,7 +82,11 @@
   }
 
   function openNewPrompt(): void {
-    if (!library.activeProjectPath) {
+    if (!library.projects.length) {
+      notice('Add a prompt project first.');
+      return;
+    }
+    if (!isAllProjects() && !library.activeProjectPath) {
       notice('Add a prompt project first.');
       return;
     }
@@ -84,9 +99,12 @@
     void selectPrompt(prompt.projectPath, prompt.name);
   }
 
-  async function handleCreate(name: string, body: string, metadata: PromptMetadata): Promise<PromptDocument> {
-    const projectPath = library.activeProjectPath;
-    if (!projectPath) throw new Error('Add a prompt project first.');
+  async function handleCreate(
+    projectPath: string,
+    name: string,
+    body: string,
+    metadata: PromptMetadata
+  ): Promise<PromptDocument> {
     const created = await createPrompt(projectPath, name, body, metadata);
     newPromptOpen = false;
     notice('Prompt created.');
@@ -126,7 +144,7 @@
     if (detailDirty && !canNavigate()) return;
     void renamePrompt(document, newName)
       .then(() => {
-        if (library.activeProjectPath === document.projectPath && library.selectedName === newName) detailDirty = false;
+        if (isCurrentDocument({ ...document, name: newName })) detailDirty = false;
         notice('Prompt renamed.');
       })
       .catch((error) => notice(errorText(error)));
@@ -136,7 +154,7 @@
     if (detailDirty && !canNavigate()) return;
     void movePrompt(document, destination)
       .then(() => {
-        if (library.activeProjectPath === document.projectPath && library.selectedName === destination) detailDirty = false;
+        if (isCurrentDocument({ ...document, name: destination })) detailDirty = false;
         notice('Prompt moved.');
       })
       .catch((error) => notice(errorText(error)));
@@ -146,7 +164,7 @@
     if (detailDirty && !canNavigate()) return;
     void duplicatePrompt(document, name)
       .then(() => {
-        if (library.activeProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
+        if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
         notice('Prompt duplicated.');
       })
       .catch((error) => notice(errorText(error)));
@@ -167,10 +185,7 @@
       return;
     }
     deleteTarget = null;
-    if (library.activeProjectPath === document.projectPath &&
-        (library.selectedName === null || library.selectedName === document.name)) {
-      detailDirty = false;
-    }
+    if (isCurrentDocument(document)) detailDirty = false;
     notice('Deleted ' + document.name + '.md.');
   }
 
@@ -182,7 +197,9 @@
     if (!prompts.length) return false;
     if (detailDirty && !canNavigate()) return false;
     if (action === 'delete') {
-      const listed = prompts.map((prompt) => '• ' + prompt.name + '.md').join('\n');
+      const listed = prompts
+        .map((prompt) => '• ' + projectDisplayName(prompt.projectPath) + ' — ' + prompt.name + '.md')
+        .join('\n');
       if (!window.confirm('Delete these Markdown files?\n\n' + listed + '\n\nThis cannot be undone.')) return false;
       const failures = await batchDelete(prompts);
       reportBatchResult(failures, prompts.length - failures.length);
@@ -206,8 +223,14 @@
     return true;
   }
 
+  function formatFailureKey(key: string): string {
+    const split = key.split('\u0000');
+    if (split.length !== 2) return key;
+    return projectDisplayName(split[0]) + ' — ' + split[1];
+  }
+
   function reportBatchResult(failures: string[], succeeded: number): void {
-    if (failures.length) notice(succeeded + ' updated; failed: ' + failures.join(', '));
+    if (failures.length) notice(succeeded + ' updated; failed: ' + failures.map(formatFailureKey).join(', '));
     else notice(succeeded + ' prompt' + (succeeded === 1 ? '' : 's') + ' updated.');
   }
 
@@ -230,9 +253,14 @@
     }
   }
 
+  function refreshCurrentView(options?: { editorDirty?: boolean; reloadSelected?: boolean }): void {
+    if (isAllProjects()) void refreshAllProjects(options);
+    else void refreshLibrary(options);
+  }
+
   function onWindowFocus(): void {
-    if (!detailDirty) void refreshLibrary();
-    else void refreshLibrary({ editorDirty: true, reloadSelected: false });
+    if (!detailDirty) refreshCurrentView();
+    else refreshCurrentView({ editorDirty: true, reloadSelected: false });
   }
 
   function handleRefresh(): void {
@@ -240,7 +268,7 @@
       refreshPending = true;
       return;
     }
-    void refreshLibrary();
+    refreshCurrentView();
   }
 
   async function confirmRefresh(): Promise<void> {
@@ -248,7 +276,8 @@
     detail?.discardChanges();
     detailDirty = false;
     dismissExternalChange();
-    await refreshLibrary();
+    if (isAllProjects()) await refreshAllProjects();
+    else await refreshLibrary();
   }
 
   function errorText(error: unknown): string {
@@ -278,7 +307,7 @@
       <span class="app-mark">✦</span>
       <div>
         <h1>Prompt Library</h1>
-        <span>{library.activeProjectPath ? (library.projects.find((item) => item.path === library.activeProjectPath)?.name ?? 'Project') : 'Local Markdown workspace'}</span>
+        <span>{scopeTitle}</span>
       </div>
     </div>
     <label class="global-search">
@@ -308,7 +337,7 @@
   >
     <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
     <button type="button" class="pane-resizer" aria-label="Resize project sidebar" onpointerdown={(event) => startResize('sidebar', event)}></button>
-    <PromptLibrary projectPath={library.activeProjectPath} onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
+    <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer" aria-label="Resize prompt library" onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail
       bind:this={detail}
@@ -330,13 +359,19 @@
 </div>
 
 {#if newPromptOpen}
-  <NewPromptDialog defaultFolder={library.folderFilter} onCreate={handleCreate} onClose={() => (newPromptOpen = false)} />
+  <NewPromptDialog
+    projects={library.projects}
+    defaultProjectPath={library.activeProjectPath ?? library.projects[0]?.path ?? ''}
+    defaultFolder={isAllProjects() ? '' : library.folderFilter}
+    onCreate={handleCreate}
+    onClose={() => (newPromptOpen = false)}
+  />
 {/if}
 
 {#if deleteTarget}
   <ConfirmDialog
     title="Delete prompt file?"
-    message={'Delete “' + deleteTarget.name + '.md” from ' + deleteTarget.relativePath + '? The Markdown file will be permanently deleted.'}
+    message={'Delete “' + deleteTarget.name + '.md” from ' + projectDisplayName(deleteTarget.projectPath) + ' / ' + deleteTarget.relativePath + '? The Markdown file will be permanently deleted.'}
     confirmLabel="Delete file"
     destructive={true}
     onConfirm={confirmDelete}
