@@ -9,6 +9,7 @@ const {
   allProjectsRefreshFlagsAtStart,
   finalizeAllProjectsRefreshFlags,
   projectScopeRefreshFlags,
+  resolveLibraryScope,
   resolveLibraryScopeAfterRosterRefresh,
 } = await import(join(root, 'src/lib/library/scope-refresh.ts'));
 
@@ -32,12 +33,20 @@ const projects = [
   { name: 'Personal', path: '/personal' },
 ];
 
+console.log('resolveLibraryScope initial roster load restores active project');
+eq(
+  resolveLibraryScope({ kind: 'all-projects' }, projects, '/work', { preserveScope: false }),
+  { kind: 'project', projectPath: '/work' },
+  'first init ignores default all-projects scope and opens active project'
+);
+
 console.log('resolveLibraryScopeAfterRosterRefresh preserves All Projects');
 eq(
-  resolveLibraryScopeAfterRosterRefresh(
+  resolveLibraryScope(
     { kind: 'all-projects' },
     projects,
-    '/work'
+    '/work',
+    { preserveScope: true }
   ),
   { kind: 'all-projects' },
   'forget project while browsing all projects stays in all projects'

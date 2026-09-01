@@ -45,3 +45,15 @@ export function resolveLibraryScopeAfterRosterRefresh(
   }
   return { kind: 'all-projects' };
 }
+
+export function resolveLibraryScope(
+  previousScope: LibraryScope,
+  projects: Project[],
+  activePath: string | null,
+  options: { preserveScope: boolean }
+): LibraryScope {
+  if (!options.preserveScope) {
+    return activePath ? { kind: 'project', projectPath: activePath } : { kind: 'all-projects' };
+  }
+  return resolveLibraryScopeAfterRosterRefresh(previousScope, projects, activePath);
+}

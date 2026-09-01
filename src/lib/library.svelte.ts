@@ -76,7 +76,7 @@ import {
   allProjectsRefreshFlagsAtStart,
   finalizeAllProjectsRefreshFlags,
   projectScopeRefreshFlags,
-  resolveLibraryScopeAfterRosterRefresh,
+  resolveLibraryScope,
 } from './library/scope-refresh';
 
 const SEARCH_DEBOUNCE_MS = 100;
@@ -395,7 +395,12 @@ export async function stopFilesystemWatch(): Promise<void> {
   }
 }
 
-export async function refreshProjects(): Promise<void> {
+export interface RefreshProjectsOptions {
+  preserveScope?: boolean;
+}
+
+export async function refreshProjects(options: RefreshProjectsOptions = {}): Promise<void> {
+  const preserveScope = options.preserveScope ?? false;
   try {
     const previousScope = library.libraryScope;
     const result = await apiListProjects();
@@ -407,11 +412,9 @@ export async function refreshProjects(): Promise<void> {
     }
     library.projects = result.projects;
     library.activeProjectPath = result.active;
-    library.libraryScope = resolveLibraryScopeAfterRosterRefresh(
-      previousScope,
-      result.projects,
-      result.active
-    );
+    library.libraryScope = resolveLibraryScope(previousScope, result.projects, result.active, {
+      preserveScope,
+    });
     library.error = null;
     if (isAllProjects()) await refreshAllProjects();
     else await refreshLibrary();
@@ -721,7 +724,7 @@ export async function setProjectColor(path: string, color: string | null): Promi
 
 export async function forgetProject(path: string): Promise<void> {
   await apiRemoveProject(path);
-  await refreshProjects();
+  await refreshProjects({ preserveScope: true });
   await startFilesystemWatch();
 }
 
