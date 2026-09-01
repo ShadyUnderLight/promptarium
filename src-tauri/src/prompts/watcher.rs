@@ -132,7 +132,8 @@ impl ProjectFsWatcher {
                 Err(error) => {
                     report_watch_error(
                         coordinator.clone(),
-                        Some(watched.clone()),
+                        generation,
+                        watched.clone(),
                         error.to_string(),
                     );
                 }
@@ -309,7 +310,8 @@ pub fn path_triggers_refresh(path: &Path, targets: &WatchTargets) -> bool {
 
 fn report_watch_error(
     coordinator: Arc<Mutex<WatcherInner>>,
-    project_path: Option<PathBuf>,
+    generation: u64,
+    project_path: PathBuf,
     message: String,
 ) {
     let app = {
@@ -317,11 +319,19 @@ fn report_watch_error(
             Ok(inner) => inner,
             Err(_) => return,
         };
+        if !should_schedule_refresh(
+            generation,
+            inner.generation,
+            &project_path,
+            inner.watched_path.as_deref(),
+        ) {
+            return;
+        }
         inner.available = false;
         inner.last_error = Some(message.clone());
         inner.app.clone()
     };
-    emit_watch_error(&app, project_path.as_ref(), &message);
+    emit_watch_error(&app, Some(&project_path), &message);
 }
 
 fn emit_watch_error(app: &AppHandle, project_path: Option<&PathBuf>, message: &str) {
@@ -388,7 +398,8 @@ fn schedule_refresh(coordinator: Arc<Mutex<WatcherInner>>, project_path: PathBuf
         {
             report_watch_error(
                 coordinator,
-                Some(project_path.clone()),
+                generation,
+                project_path.clone(),
                 "could not deliver filesystem refresh event to frontend".into(),
             );
         }
@@ -415,10 +426,9 @@ mod tests {
 
     #[test]
     fn hidden_ancestors_do_not_disable_project_events() {
-        let project = std::env::temp_dir().join(format!(
-            ".prompts/promptarium-hidden-root-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let hidden_parent =
+            std::env::temp_dir().join(format!(".promptarium-hidden-{}", uuid::Uuid::new_v4()));
+        let project = hidden_parent.join("my-project");
         std::fs::create_dir_all(&project).unwrap();
         let file = project.join("review.md");
         std::fs::write(&file, "body").unwrap();
@@ -434,7 +444,7 @@ mod tests {
         ));
 
         std::fs::remove_file(file).ok();
-        std::fs::remove_dir_all(project.parent().unwrap()).ok();
+        std::fs::remove_dir_all(hidden_parent).ok();
     }
 
     #[test]
@@ -488,6 +498,12 @@ mod tests {
             &watch
         ));
         std::fs::remove_dir_all(parent).ok();
+    }
+
+    #[test]
+    fn stale_error_from_old_generation_is_ignored() {
+        let project = Path::new("/tmp/project-a");
+        assert!(!should_schedule_refresh(1, 3, project, Some(project)));
     }
 
     #[test]

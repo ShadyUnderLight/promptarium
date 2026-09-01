@@ -520,6 +520,7 @@ export async function setProjectColor(path: string, color: string | null): Promi
 export async function forgetProject(path: string): Promise<void> {
   await apiRemoveProject(path);
   await refreshProjects();
+  await startFilesystemWatch();
 }
 
 export async function selectPrompt(project: string, name: string): Promise<void> {
