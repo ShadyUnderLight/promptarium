@@ -564,7 +564,8 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
           project.path,
           apiScanProject,
           (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
-          searchIndexRevision
+          searchIndexRevision,
+          () => !scopeStillCurrent(serial, scope)
         );
       } catch (error) {
         warnings.push({ projectPath: project.path, error: errorText(error) });
@@ -574,31 +575,38 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     if (!scopeStillCurrent(serial, scope)) return;
 
     const healthy = scanResults.filter((result): result is ProjectScanResult => result !== null);
-    const finalized = await finalizeAllProjectsScanResults({
+    const committed = await finalizeAllProjectsScanResults({
       results: healthy,
       getRevision: searchIndexRevision,
       shouldAbort: () => !scopeStillCurrent(serial, scope),
-      refreshProjects: async (projectPaths) =>
-        mapWithConcurrency(projectPaths, ALL_PROJECTS_CONCURRENCY, async (projectPath) =>
+      refreshProjects: async (projectPaths) => {
+        const refreshed = await mapWithConcurrency(projectPaths, ALL_PROJECTS_CONCURRENCY, async (projectPath) =>
           refreshAllProjectsProjectScan(
             projectPath,
             apiScanProject,
             (path, summaries) => refreshSearchIndex(path, summaries, serial),
-            searchIndexRevision
+            searchIndexRevision,
+            () => !scopeStillCurrent(serial, scope)
           )
-        ),
+        );
+        return refreshed.filter((result): result is ProjectScanResult => result !== null);
+      },
+      commit: (finalized) => {
+        const healthyProjects = library.projects.filter((project) =>
+          finalized.some((result) => result.projectPath === project.path)
+        );
+        library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
+        const summaries = aggregateScanResults(finalized);
+        library.allPrompts = summaries;
+        library.folderPaths = [];
+        library.allProjectsWarnings = warnings;
+        library.error = null;
+        return { summaries, healthyProjects };
+      },
     });
-    if (!finalized || !scopeStillCurrent(serial, scope)) return;
+    if (!committed || !scopeStillCurrent(serial, scope)) return;
 
-    const healthyProjects = library.projects.filter((project) =>
-      finalized.some((result) => result.projectPath === project.path)
-    );
-    library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
-    const summaries = aggregateScanResults(finalized);
-    library.allPrompts = summaries;
-    library.folderPaths = [];
-    library.allProjectsWarnings = warnings;
-    library.error = null;
+    const { summaries, healthyProjects } = committed;
 
     const query = library.searchQuery;
     const querySerial = searchSerial;

@@ -162,8 +162,9 @@ const tieSameLabel = compareSearchHits(
 );
 assert(tieSameLabel !== 0, 'same label and prompt name still tie-breaks by projectPath');
 
-console.log('refreshAllProjectsProjectScan rescans summaries after index retry');
+console.log('refreshAllProjectsProjectScan retries when mutation happens after index refresh');
 {
+  let revision = 5;
   let scanCount = 0;
   const draft = summary('/project-a', 'foo', 'draft body', [], 'draft');
   const active = summary('/project-a', 'foo', 'active body', ['new-tag'], 'active');
@@ -174,17 +175,19 @@ console.log('refreshAllProjectsProjectScan rescans summaries after index retry')
       scanCount++;
       return scanCount === 1 ? [draft] : [active];
     },
-    async () => ({ retried: true }),
-    () => 1
+    async () => {
+      if (scanCount === 1) revision = 6;
+    },
+    () => revision
   );
 
-  eq(scanCount, 2, 'stale index retry triggers a second summary scan');
-  eq(result.revision, 1, 'project scan records revision at completion');
-  eq(result.summaries[0].metadata.status, 'active', 'aggregated summaries match post-save scan');
-  eq(result.summaries[0].metadata.tags, ['new-tag'], 'aggregated tag metadata matches post-save scan');
+  eq(scanCount, 2, 'mutation after index refresh triggers full project rescan');
+  eq(result?.revision, 6, 'returned revision matches bound snapshot interval');
+  eq(result?.summaries[0].metadata.status, 'active', 'summaries and revision stay paired after mutation');
+  eq(result?.summaries[0].metadata.tags, ['new-tag'], 'tag metadata matches post-mutation scan');
 }
 
-console.log('refreshAllProjectsProjectScan keeps first scan when index did not retry');
+console.log('refreshAllProjectsProjectScan keeps first scan when revision stays stable');
 {
   let scanCount = 0;
   const stable = summary('/project-a', 'foo', 'stable body');
@@ -195,12 +198,13 @@ console.log('refreshAllProjectsProjectScan keeps first scan when index did not r
       scanCount++;
       return [stable];
     },
-    async () => ({ retried: false }),
+    async () => {},
     () => 5
   );
 
-  eq(scanCount, 1, 'no retry avoids redundant rescan');
-  eq(result.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
+  eq(scanCount, 1, 'stable revision avoids redundant rescan');
+  eq(result?.revision, 5, 'snapshot revision is captured at loop start');
+  eq(result?.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
 }
 
 console.log('finalizeAllProjectsScanResults refreshes project mutated after its scan completed');
@@ -229,15 +233,15 @@ console.log('finalizeAllProjectsScanResults refreshes project mutated after its 
     refreshProjects: async (paths) => {
       refreshCount++;
       eq(paths, ['/project-a'], 'only stale project is refreshed before global commit');
-      return [{ projectPath: '/project-a', summaries: [active], revision: revisions.get('/project-a') ?? 0 }];
+      return [{ projectPath: '/project-a', summaries: [active], revision: 6 }];
     },
+    commit: (results) => aggregateScanResults(results),
   });
 
-  const summaries = aggregateScanResults(committed ?? []);
   eq(refreshCount, 1, 'one revision validation refresh round');
-  eq(summaries.find((item) => item.name === 'foo')?.metadata.status, 'active', 'global commit keeps post-save status');
-  eq(summaries.find((item) => item.name === 'foo')?.metadata.tags, ['new-tag'], 'global commit keeps post-save tags');
-  eq(summaries.find((item) => item.name === 'bar')?.metadata.description, 'stable body', 'unaffected project stays stable');
+  eq(committed?.find((item) => item.name === 'foo')?.metadata.status, 'active', 'global commit keeps post-save status');
+  eq(committed?.find((item) => item.name === 'foo')?.metadata.tags, ['new-tag'], 'global commit keeps post-save tags');
+  eq(committed?.find((item) => item.name === 'bar')?.metadata.description, 'stable body', 'unaffected project stays stable');
 }
 
 console.log('finalizeAllProjectsScanResults skips refresh when all revisions match');
@@ -253,10 +257,36 @@ console.log('finalizeAllProjectsScanResults skips refresh when all revisions mat
       refreshCount++;
       return [];
     },
+    commit: (results) => aggregateScanResults(results),
   });
 
   eq(refreshCount, 0, 'matching revisions commit without extra refresh');
-  eq(aggregateScanResults(committed ?? [])[0].metadata.description, 'stable body', 'initial snapshot is committed');
+  eq(committed?.[0].metadata.description, 'stable body', 'initial snapshot is committed');
+}
+
+console.log('finalizeAllProjectsScanResults commits before helper resolves');
+{
+  const revisions = new Map([['/project-a', 5]]);
+  const order = [];
+  let committedSummaries = null;
+
+  const outcome = await finalizeAllProjectsScanResults({
+    results: [{ projectPath: '/project-a', summaries: [summary('/project-a', 'foo', 'stable@5')], revision: 5 }],
+    getRevision: (path) => revisions.get(path) ?? 0,
+    shouldAbort: () => false,
+    refreshProjects: async () => [],
+    commit: (results) => {
+      order.push('commit');
+      committedSummaries = aggregateScanResults(results);
+      return committedSummaries;
+    },
+  });
+
+  order.push('resolved');
+  eq(order, ['commit', 'resolved'], 'global commit runs before promise resolves');
+  eq(outcome?.[0]?.metadata.description, 'stable@5', 'committed snapshot is available from helper result');
+  revisions.set('/project-a', 6);
+  eq(committedSummaries?.[0]?.metadata.description, 'stable@5', 'post-resolve mutation must not retroactively change committed snapshot');
 }
 
 if (failures) {

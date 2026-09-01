@@ -147,18 +147,21 @@ export function replaceProjectScanResults(
   return results.map((result) => byPath.get(result.projectPath) ?? result);
 }
 
-/** Re-refresh mutated projects until every snapshot revision matches before global aggregation. */
-export async function finalizeAllProjectsScanResults(options: {
+/** Re-refresh mutated projects until every snapshot revision matches, then commit synchronously. */
+export async function finalizeAllProjectsScanResults<T>(options: {
   results: ProjectScanResult[];
   getRevision: (projectPath: string) => number;
   refreshProjects: (projectPaths: string[]) => Promise<ProjectScanResult[]>;
   shouldAbort: () => boolean;
-}): Promise<ProjectScanResult[] | null> {
+  commit: (results: ProjectScanResult[]) => T;
+}): Promise<T | null> {
   let results = options.results;
   while (true) {
     if (options.shouldAbort()) return null;
     const stale = staleProjectScanResults(results, options.getRevision);
-    if (stale.length === 0) return results;
+    if (stale.length === 0) {
+      return options.commit(results);
+    }
     const stalePaths = [...new Set(stale.map((result) => result.projectPath))];
     const refreshed = await options.refreshProjects(stalePaths);
     if (options.shouldAbort()) return null;
@@ -166,20 +169,26 @@ export async function finalizeAllProjectsScanResults(options: {
   }
 }
 
-/** Scan + index refresh for one project; re-scan summaries when index rebuild retried after a mutation. */
+/** Scan + index refresh for one project; summaries and revision share one stable revision interval. */
 export async function refreshAllProjectsProjectScan(
   projectPath: string,
   scanProject: (projectPath: string) => Promise<PromptSummary[]>,
-  refreshSearchIndex: (
-    projectPath: string,
-    summaries: PromptSummary[]
-  ) => Promise<{ retried: boolean }>,
-  getRevision: (projectPath: string) => number
-): Promise<ProjectScanResult> {
-  const summaries = await scanProject(projectPath);
-  const { retried } = await refreshSearchIndex(projectPath, summaries);
-  const stableSummaries = retried ? await scanProject(projectPath) : summaries;
-  return { projectPath, summaries: stableSummaries, revision: getRevision(projectPath) };
+  refreshSearchIndex: (projectPath: string, summaries: PromptSummary[]) => Promise<unknown>,
+  getRevision: (projectPath: string) => number,
+  shouldAbort?: () => boolean
+): Promise<ProjectScanResult | null> {
+  while (true) {
+    if (shouldAbort?.()) return null;
+    const revisionAtStart = getRevision(projectPath);
+    const summaries = await scanProject(projectPath);
+    if (shouldAbort?.()) return null;
+    await refreshSearchIndex(projectPath, summaries);
+    if (shouldAbort?.()) return null;
+    if (revisionAtStart !== getRevision(projectPath)) {
+      continue;
+    }
+    return { projectPath, summaries, revision: revisionAtStart };
+  }
 }
 
 export async function mapWithConcurrency<T, R>(
