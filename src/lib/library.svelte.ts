@@ -22,7 +22,12 @@ import {
   searchPrompts as apiSearchPrompts,
   setActiveProject as apiSetActiveProject,
   setProjectColor as apiSetProjectColor,
+  syncProjectWatcher as apiSyncProjectWatcher,
+  listenProjectFsChanged,
+  listenProjectFsWatchError,
+  type ProjectWatcherStatus,
 } from './api';
+import { toasts } from './prompts/toasts.svelte';
 import type {
   FolderNode,
   Project,
@@ -49,6 +54,11 @@ import {
   summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
+import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
+import {
+  decideSelectedRefresh,
+  type ExternalChangeState,
+} from './library/refresh-selected';
 
 const SEARCH_DEBOUNCE_MS = 100;
 
@@ -81,7 +91,15 @@ export const library = $state({
   historyDiffLoading: false,
   historyError: null as string | null,
   historyLoadingMore: false,
+  externalChangeState: null as ExternalChangeState,
+  fsWatchAvailable: true,
+  fsWatchMessage: null as string | null,
 });
+
+export interface RefreshLibraryOptions {
+  editorDirty?: boolean;
+  reloadSelected?: boolean;
+}
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 let loadSerial = 0;
@@ -95,6 +113,13 @@ const diffCache = new Map<string, GitFileDiff>();
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
 const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
+const fsRefreshScheduler = new FsRefreshScheduler(300);
+
+let selectedOpenedFingerprint: ReturnType<typeof summaryFingerprint> | null = null;
+let editorDirtyProvider: (() => boolean) | null = null;
+let fsUnlisten: (() => void) | null = null;
+let fsErrorUnlisten: (() => void) | null = null;
+let lastFsWatchNotice = '';
 
 function searchIndexRevision(projectPath: string): number {
   return searchIndexRevisions.get(projectPath) ?? 0;
@@ -271,6 +296,58 @@ export function activeProject(): Project | null {
 export async function initLibrary(): Promise<void> {
   loadUiState();
   await refreshProjects();
+  await startFilesystemWatch();
+}
+
+export function setEditorDirtyProvider(provider: (() => boolean) | null): void {
+  editorDirtyProvider = provider;
+}
+
+export function dismissExternalChange(): void {
+  library.externalChangeState = null;
+}
+
+function applyWatcherStatus(status: ProjectWatcherStatus): void {
+  library.fsWatchAvailable = status.available;
+  library.fsWatchMessage = status.message ?? null;
+  if (!status.available && status.message) {
+    notifyFsWatchUnavailable(status.message);
+  }
+}
+
+function notifyFsWatchUnavailable(message: string): void {
+  if (message === lastFsWatchNotice) return;
+  lastFsWatchNotice = message;
+  toasts.push('Automatic filesystem refresh is unavailable. Focus or Refresh still works.');
+}
+
+export async function startFilesystemWatch(): Promise<void> {
+  await stopFilesystemWatch();
+  lastFsWatchNotice = '';
+  applyWatcherStatus(await apiSyncProjectWatcher(library.activeProjectPath));
+  fsUnlisten = await listenProjectFsChanged((event) => {
+    if (event.projectPath !== library.activeProjectPath) return;
+    fsRefreshScheduler.notify(async () => {
+      await refreshLibrary({ editorDirty: editorDirtyProvider?.() ?? false });
+    });
+  });
+  fsErrorUnlisten = await listenProjectFsWatchError((event) => {
+    if (event.projectPath && event.projectPath !== library.activeProjectPath) return;
+    library.fsWatchAvailable = false;
+    library.fsWatchMessage = event.message;
+    notifyFsWatchUnavailable(event.message);
+  });
+}
+
+export async function stopFilesystemWatch(): Promise<void> {
+  if (fsUnlisten) {
+    fsUnlisten();
+    fsUnlisten = null;
+  }
+  if (fsErrorUnlisten) {
+    fsErrorUnlisten();
+    fsErrorUnlisten = null;
+  }
 }
 
 export async function refreshProjects(): Promise<void> {
@@ -297,7 +374,9 @@ export async function refreshProjects(): Promise<void> {
   }
 }
 
-export async function refreshLibrary(): Promise<void> {
+export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promise<void> {
+  const editorDirty = options.editorDirty ?? false;
+  const reloadSelected = options.reloadSelected ?? !editorDirty;
   const project = library.activeProjectPath;
   const serial = ++loadSerial;
   if (!project) {
@@ -307,6 +386,8 @@ export async function refreshLibrary(): Promise<void> {
     library.folderPaths = [];
     library.selected = null;
     library.selectedName = null;
+    selectedOpenedFingerprint = null;
+    library.externalChangeState = null;
     return;
   }
   library.loading = true;
@@ -326,9 +407,29 @@ export async function refreshLibrary(): Promise<void> {
       library.prompts = summaries;
     }
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
+
+    const decision = decideSelectedRefresh({
+      selectedName: library.selectedName,
+      summaries,
+      editorDirty,
+      openedFingerprint: selectedOpenedFingerprint,
+      reloadSelected,
+    });
+
+    if (decision.externalChange) {
+      library.externalChangeState = decision.externalChange;
+    } else if (decision.reloadSelected) {
+      library.externalChangeState = null;
+    }
+
     const selectedName = library.selectedName;
     const selectedDocumentSerial = documentSerial;
-    if (selectedName && summaries.some((prompt) => prompt.name === selectedName)) {
+    if (decision.clearSelection) {
+      library.selectedName = null;
+      library.selected = null;
+      selectedOpenedFingerprint = null;
+      library.externalChangeState = null;
+    } else if (decision.reloadSelected && selectedName && summaries.some((prompt) => prompt.name === selectedName)) {
       const selected = await apiReadPrompt(project, selectedName);
       if (
         serial !== loadSerial ||
@@ -337,10 +438,8 @@ export async function refreshLibrary(): Promise<void> {
         library.selectedName !== selectedName
       ) return;
       library.selected = selected;
-    }
-    if (library.selectedName && !summaries.some((prompt) => prompt.name === library.selectedName)) {
-      library.selectedName = null;
-      library.selected = null;
+      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
+      library.externalChangeState = null;
     }
   } catch (error) {
     if (serial !== loadSerial || project !== library.activeProjectPath) return;
@@ -348,7 +447,13 @@ export async function refreshLibrary(): Promise<void> {
     library.allPrompts = [];
     library.prompts = [];
     if (library.error.toLowerCase().includes('not found')) {
-      library.selected = null;
+      if (!editorDirty) {
+        library.selected = null;
+        library.selectedName = null;
+        selectedOpenedFingerprint = null;
+      } else {
+        library.externalChangeState = 'file_missing';
+      }
     }
   } finally {
     if (serial === loadSerial) library.loading = false;
@@ -361,10 +466,13 @@ export async function setActiveProject(path: string): Promise<void> {
   library.activeProjectPath = path;
   library.selectedName = null;
   library.selected = null;
+  selectedOpenedFingerprint = null;
+  library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';
   library.smartView = 'all';
   await refreshLibrary();
+  await startFilesystemWatch();
 }
 
 export async function addProject(name: string, path: string): Promise<Project> {
@@ -375,6 +483,7 @@ export async function addProject(name: string, path: string): Promise<Project> {
   library.activeProjectPath = project.path;
   await apiSetActiveProject(project.path);
   await refreshLibrary();
+  await startFilesystemWatch();
   return project;
 }
 
@@ -386,10 +495,13 @@ export async function replaceProjectPath(oldPath: string, newPath: string): Prom
   library.activeProjectPath = roster.active;
   library.selectedName = null;
   library.selected = null;
+  selectedOpenedFingerprint = null;
+  library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';
   library.smartView = 'all';
   await refreshLibrary();
+  await startFilesystemWatch();
   return project;
 }
 
@@ -408,6 +520,7 @@ export async function setProjectColor(path: string, color: string | null): Promi
 export async function forgetProject(path: string): Promise<void> {
   await apiRemoveProject(path);
   await refreshProjects();
+  await startFilesystemWatch();
 }
 
 export async function selectPrompt(project: string, name: string): Promise<void> {
@@ -421,6 +534,8 @@ export async function selectPrompt(project: string, name: string): Promise<void>
     const document = await apiReadPrompt(project, name);
     if (serial !== documentSerial || project !== library.activeProjectPath) return;
     library.selected = document;
+    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
+    library.externalChangeState = null;
   } catch (error) {
     if (serial === documentSerial && project === library.activeProjectPath) library.error = errorText(error);
   } finally {
@@ -605,6 +720,8 @@ export async function saveDocument(
   if (source.projectPath === library.activeProjectPath && library.selectedName === source.name) {
     library.selected = document;
     library.selectedName = document.name;
+    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
+    library.externalChangeState = null;
     replaceSummary(summaryOf(document));
     updateSearchEntry(document);
   }

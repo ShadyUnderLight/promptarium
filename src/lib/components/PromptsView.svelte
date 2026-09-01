@@ -6,6 +6,7 @@
     createPrompt,
     deletePrompt,
     duplicatePrompt,
+    dismissExternalChange,
     initLibrary,
     library,
     movePrompt,
@@ -14,8 +15,10 @@
     revealPrompt,
     saveDocument,
     selectPrompt,
+    setEditorDirtyProvider,
     setSearchQuery,
     setPaneWidth,
+    stopFilesystemWatch,
     visiblePrompts,
   } from '$lib/library.svelte';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
@@ -36,12 +39,15 @@
   let selectedProjectMissing = $derived(Boolean(library.error?.toLowerCase().includes('project folder not found')));
 
   onMount(() => {
+    setEditorDirtyProvider(() => detailDirty);
     void initLibrary();
     window.addEventListener('keydown', onGlobalKeydown);
     window.addEventListener('focus', onWindowFocus);
   });
 
   onDestroy(() => {
+    setEditorDirtyProvider(null);
+    void stopFilesystemWatch();
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
@@ -102,7 +108,10 @@
 
   async function handleReload(document: PromptDocument): Promise<void> {
     await selectPrompt(document.projectPath, document.name);
-    if (isCurrentDocument(document)) detailDirty = false;
+    if (isCurrentDocument(document)) {
+      detailDirty = false;
+      dismissExternalChange();
+    }
   }
 
   function handleCopy(body: string): void {
@@ -223,6 +232,7 @@
 
   function onWindowFocus(): void {
     if (!detailDirty) void refreshLibrary();
+    else void refreshLibrary({ editorDirty: true, reloadSelected: false });
   }
 
   function handleRefresh(): void {
@@ -237,6 +247,7 @@
     refreshPending = false;
     detail?.discardChanges();
     detailDirty = false;
+    dismissExternalChange();
     await refreshLibrary();
   }
 
@@ -285,6 +296,12 @@
     <div class="library-error" role="alert">{library.error}</div>
   {/if}
 
+  {#if !library.fsWatchAvailable && library.fsWatchMessage && !selectedProjectMissing}
+    <div class="library-error" role="status">
+      Automatic refresh unavailable: {library.fsWatchMessage}. Focus or manual Refresh still works.
+    </div>
+  {/if}
+
   <div
     class="library-workspace"
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
@@ -306,6 +323,7 @@
       onDuplicate={handleDuplicate}
       onDeleteRequest={requestDelete}
       onDirtyChange={(dirty) => (detailDirty = dirty)}
+      onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
     />
   </div>

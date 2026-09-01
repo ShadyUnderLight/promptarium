@@ -64,6 +64,51 @@ export async function setActiveProject(path: string): Promise<void> {
   await call<null>('set_active_project', { path });
 }
 
+export interface ProjectFsChangedEvent {
+  projectPath: string;
+  sequence: number;
+}
+
+export interface ProjectFsWatchErrorEvent {
+  projectPath: string | null;
+  message: string;
+}
+
+export interface ProjectWatcherStatus {
+  projectPath: string | null;
+  available: boolean;
+  message?: string | null;
+}
+
+export async function syncProjectWatcher(project: string | null): Promise<ProjectWatcherStatus> {
+  if (!isTauri()) {
+    return { projectPath: project, available: true, message: null };
+  }
+  return call<ProjectWatcherStatus>('sync_project_watcher', { project });
+}
+
+export async function listenProjectFsChanged(
+  listener: (event: ProjectFsChangedEvent) => void
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  const unlisten = await listen<ProjectFsChangedEvent>('project-fs-changed', (payload) => {
+    listener(payload.payload);
+  });
+  return unlisten;
+}
+
+export async function listenProjectFsWatchError(
+  listener: (event: ProjectFsWatchErrorEvent) => void
+): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  const { listen } = await import('@tauri-apps/api/event');
+  const unlisten = await listen<ProjectFsWatchErrorEvent>('project-fs-watch-error', (payload) => {
+    listener(payload.payload);
+  });
+  return unlisten;
+}
+
 export async function scanProject(project: string): Promise<PromptSummary[]> {
   if (!isTauri()) return devScanProject(project);
   return call<PromptSummary[]>('scan_project', { project });
