@@ -63,11 +63,13 @@ import {
 import {
   ALL_PROJECTS_CONCURRENCY,
   aggregateScanResults,
+  finalizeAllProjectsScanResults,
   mapWithConcurrency,
   mergeSearchResults,
   refreshAllProjectsProjectScan,
   searchProjectIndex,
   summariesContainIdentity,
+  type ProjectScanResult,
 } from './library/all-projects';
 import {
   isAllProjectsScope,
@@ -561,7 +563,8 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
         return await refreshAllProjectsProjectScan(
           project.path,
           apiScanProject,
-          (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial)
+          (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
+          searchIndexRevision
         );
       } catch (error) {
         warnings.push({ projectPath: project.path, error: errorText(error) });
@@ -570,12 +573,28 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     });
     if (!scopeStillCurrent(serial, scope)) return;
 
-    const healthy = scanResults.filter((result): result is NonNullable<typeof result> => result !== null);
+    const healthy = scanResults.filter((result): result is ProjectScanResult => result !== null);
+    const finalized = await finalizeAllProjectsScanResults({
+      results: healthy,
+      getRevision: searchIndexRevision,
+      shouldAbort: () => !scopeStillCurrent(serial, scope),
+      refreshProjects: async (projectPaths) =>
+        mapWithConcurrency(projectPaths, ALL_PROJECTS_CONCURRENCY, async (projectPath) =>
+          refreshAllProjectsProjectScan(
+            projectPath,
+            apiScanProject,
+            (path, summaries) => refreshSearchIndex(path, summaries, serial),
+            searchIndexRevision
+          )
+        ),
+    });
+    if (!finalized || !scopeStillCurrent(serial, scope)) return;
+
     const healthyProjects = library.projects.filter((project) =>
-      healthy.some((result) => result.projectPath === project.path)
+      finalized.some((result) => result.projectPath === project.path)
     );
     library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
-    const summaries = aggregateScanResults(healthy);
+    const summaries = aggregateScanResults(finalized);
     library.allPrompts = summaries;
     library.folderPaths = [];
     library.allProjectsWarnings = warnings;
