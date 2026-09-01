@@ -63,10 +63,17 @@ export function isCanonicalRelationPath(value: string): boolean {
  * `summaries` may be the current project's summaries or an All Projects
  * aggregate; resolution filters to the target's own project either way, which
  * is what keeps same-named prompts in different projects from cross-wiring.
+ *
+ * `relatedOverride` lets the caller drive the source's outgoing list from
+ * in-editor state (a dirty metadata copy) instead of the scanned summaries.
+ * Backlinks are unaffected: they come from other prompts' `related` on disk,
+ * so a local edit never fabricates a reference from a prompt that did not
+ * write it. When omitted, the source's own summary is used.
  */
 export function resolveRelations(
   summaries: PromptSummary[],
-  target: { projectPath: string; name: string }
+  target: { projectPath: string; name: string },
+  relatedOverride?: string[]
 ): RelationResolution {
   const project = new Map<string, PromptSummary>();
   const sources: PromptSummary[] = [];
@@ -76,10 +83,10 @@ export function resolveRelations(
     if (summary.name !== target.name) sources.push(summary);
   }
 
-  const targetSummary = project.get(target.name);
+  const sourceRelated = relatedOverride ?? project.get(target.name)?.metadata.related ?? [];
   const related: RelationLink[] = [];
   const seen = new Set<string>();
-  for (const path of targetSummary?.metadata.related ?? []) {
+  for (const path of sourceRelated) {
     if (seen.has(path)) continue;
     seen.add(path);
     if (path === target.name) {
@@ -111,4 +118,25 @@ export function resolveRelations(
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return { related, referencedBy };
+}
+
+/**
+ * Append a relation to the editor's list only when it is not already present.
+ * The picker never writes duplicates; duplicates only ever come from a file
+ * hand-edited outside the app and must be preserved verbatim.
+ */
+export function addRelatedEntry(related: string[], path: string): string[] {
+  if (!path || related.includes(path)) return related;
+  return [...related, path];
+}
+
+/**
+ * Remove exactly one relation by index. The editor renders the raw list
+ * (including verbatim duplicates), so a value-based filter would delete every
+ * copy at once; removing by index keeps the other copies intact. Out-of-range
+ * indexes are a no-op.
+ */
+export function removeRelatedEntry(related: string[], index: number): string[] {
+  if (index < 0 || index >= related.length) return related;
+  return related.slice(0, index).concat(related.slice(index + 1));
 }

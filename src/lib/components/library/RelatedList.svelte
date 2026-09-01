@@ -7,11 +7,19 @@
     document: PromptDocument;
     summaries: PromptSummary[];
     onNavigate: (projectPath: string, name: string) => void;
+    /** In-editor `related` for the selected prompt; when provided it drives the
+     *  outgoing list so the footer never disagrees with a dirty metadata editor.
+     *  Backlinks always come from disk summaries. */
+    relatedOverride?: string[];
   }
 
-  let { document, summaries, onNavigate }: Props = $props();
+  let { document, summaries, onNavigate, relatedOverride }: Props = $props();
   const resolution = $derived(
-    resolveRelations(summaries, { projectPath: document.projectPath, name: document.name })
+    resolveRelations(
+      summaries,
+      { projectPath: document.projectPath, name: document.name },
+      relatedOverride
+    )
   );
 
   function linkLabel(link: RelationLink): string {

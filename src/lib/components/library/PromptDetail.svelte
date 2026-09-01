@@ -329,7 +329,7 @@
     <div class="detail-footer">
       {#if mode !== 'history'}
         <VariableList body={body} annotations={metadata.variables} />
-        <RelatedList document={document} summaries={library.allPrompts} onNavigate={onNavigate} />
+        <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}
     </div>

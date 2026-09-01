@@ -2,6 +2,7 @@
   import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
   import { setVariableDoc } from '$lib/variables/contract';
+  import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
 
   interface Props {
     metadata: Metadata;
@@ -84,14 +85,15 @@
 
   function addRelated(): void {
     if (!relatedPick) return;
-    if (!metadata.related.includes(relatedPick)) {
-      setField('related', [...metadata.related, relatedPick]);
-    }
+    setField('related', addRelatedEntry(metadata.related, relatedPick));
     relatedPick = '';
   }
 
-  function removeRelated(path: string): void {
-    setField('related', metadata.related.filter((item) => item !== path));
+  // The raw list is rendered verbatim — including duplicates that came from a
+  // hand-edited file — so removal is by index (value-based removal would wipe
+  // every duplicate at once). See removeRelatedEntry().
+  function removeRelated(index: number): void {
+    setField('related', removeRelatedEntry(metadata.related, index));
   }
 </script>
 
@@ -180,11 +182,11 @@
       <span class="variables-editor__heading">Related prompts</span>
       {#if metadata.related.length}
         <div class="related-edit-list">
-          {#each metadata.related as path (path)}
+          {#each metadata.related as path, index (index)}
             <div class="variable-doc-edit">
               <div class="variable-doc-edit__name">
                 <span class="variable-token">{path}</span>
-                <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(path)}>Remove</button>
+                <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(index)}>Remove</button>
               </div>
             </div>
           {/each}

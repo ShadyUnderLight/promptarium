@@ -10,9 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { resolveRelations, isCanonicalRelationPath } = await import(
-  join(root, 'src/lib/relations/relations.ts')
-);
+const {
+  resolveRelations,
+  isCanonicalRelationPath,
+  addRelatedEntry,
+  removeRelatedEntry,
+} = await import(join(root, 'src/lib/relations/relations.ts'));
+const { aggregateScanResults } = await import(join(root, 'src/lib/library/all-projects.ts'));
 
 let failures = 0;
 function assert(condition, message) {
@@ -174,6 +178,123 @@ console.log('resolveRelations — backlinks');
   ];
   const resolved = resolveRelations(summaries, { projectPath: '/p/A', name: 'b' });
   eq(backlinkNames(resolved), [], 'non-canonical relation values do not become backlinks');
+}
+
+console.log('related editor helpers — add / remove by index');
+{
+  assert(
+    JSON.stringify(addRelatedEntry(['a'], 'b')) === JSON.stringify(['a', 'b']),
+    'add appends a new path'
+  );
+  assert(
+    JSON.stringify(addRelatedEntry(['a', 'b'], 'b')) === JSON.stringify(['a', 'b']),
+    'add is a no-op for an already-present path'
+  );
+  assert(
+    JSON.stringify(addRelatedEntry(['a'], '')) === JSON.stringify(['a']),
+    'add ignores an empty path'
+  );
+  // The backend preserves verbatim duplicates from hand-edited files, so the
+  // editor renders the raw list and removal is by index: removing one copy
+  // must leave the other intact (the P2 duplicate-key / value-based-removal
+  // regression that a pure resolver test cannot see).
+  assert(
+    JSON.stringify(removeRelatedEntry(['coding/a', 'coding/a'], 0)) === JSON.stringify(['coding/a']),
+    'removing index 0 of a duplicate pair keeps the remaining copy'
+  );
+  assert(
+    JSON.stringify(removeRelatedEntry(['coding/a', 'coding/a'], 1)) === JSON.stringify(['coding/a']),
+    'removing index 1 of a duplicate pair keeps the leading copy'
+  );
+  assert(
+    JSON.stringify(removeRelatedEntry(['a', 'b', 'c'], 1)) === JSON.stringify(['a', 'c']),
+    'removes exactly the entry at the given index'
+  );
+  assert(
+    JSON.stringify(removeRelatedEntry(['a'], 5)) === JSON.stringify(['a']),
+    'out-of-range index is a no-op'
+  );
+  assert(
+    JSON.stringify(removeRelatedEntry([], 0)) === JSON.stringify([]),
+    'removal from an empty list is a no-op'
+  );
+}
+
+console.log('resolveRelations — relatedOverride drives outgoing, backlinks stay on disk');
+{
+  const summaries = [
+    summary('/p/A', 'a', ['b', 'gone']),
+    summary('/p/A', 'b'),
+    summary('/p/A', 'c', ['b']),
+  ];
+  // The editor's local copy says `a` now links only to `c`, while the disk
+  // summary still says ['b', 'gone']. The override must win for the outgoing
+  // list; backlinks are computed from other prompts on disk.
+  const resolved = resolveRelations(summaries, { projectPath: '/p/A', name: 'a' }, ['c']);
+  eq(linkTargets(resolved), ['c'], 'override replaces the source outgoing list');
+  eq(linkStatuses(resolved), ['ok'], 'override entries are still resolved and classified');
+  eq(backlinkNames(resolved), [], 'backlinks never come from the override');
+}
+{
+  // An empty override hides outgoing while the disk copy still carries links
+  // (dirty editor removed all relations, not yet saved).
+  const summaries = [summary('/p/A', 'a', ['b']), summary('/p/A', 'b')];
+  const edited = resolveRelations(summaries, { projectPath: '/p/A', name: 'a' }, []);
+  eq(linkStatuses(edited), [], 'empty override shows no outgoing while unsaved');
+  const diskView = resolveRelations(summaries, { projectPath: '/p/A', name: 'b' });
+  eq(backlinkNames(diskView), ['a'], 'disk summaries still provide backlinks for other prompts');
+}
+
+console.log('integration — scan -> allPrompts rebuild -> backlinks update');
+{
+  // scan v1: foo -> shared/review, committed through the real All Projects
+  // aggregation before the relation resolver runs.
+  let all = aggregateScanResults([
+    {
+      projectPath: '/p/A',
+      revision: 1,
+      summaries: [
+        summary('/p/A', 'shared/review'),
+        summary('/p/A', 'foo', ['shared/review']),
+      ],
+    },
+  ]);
+  let resolved = resolveRelations(all, { projectPath: '/p/A', name: 'shared/review' });
+  eq(backlinkNames(resolved), ['foo'], 'backlink derives from the committed scan');
+
+  // External edit removes the relation; the project is re-scanned and the
+  // rebuilt allPrompts no longer produce the backlink.
+  all = aggregateScanResults([
+    {
+      projectPath: '/p/A',
+      revision: 2,
+      summaries: [
+        summary('/p/A', 'shared/review'),
+        summary('/p/A', 'foo'),
+      ],
+    },
+  ]);
+  resolved = resolveRelations(all, { projectPath: '/p/A', name: 'shared/review' });
+  eq(backlinkNames(resolved), [], 're-scan with changed metadata rebuilds backlinks');
+
+  // A forgotten project is dropped from the roster, so its scan never enters
+  // the aggregate and its relation index cannot pollute a registered project.
+  const forgotten = {
+    projectPath: '/p/GONE',
+    revision: 1,
+    summaries: [
+      summary('/p/GONE', 'shared/review'),
+      summary('/p/GONE', 'foo', ['shared/review']),
+    ],
+  };
+  const registered = resolveRelations(all, { projectPath: '/p/A', name: 'shared/review' });
+  eq(backlinkNames(registered), [], 'forgotten project (excluded from aggregate) does not pollute All Projects');
+  // When a scan is present, resolution still stays inside that project only.
+  const gone = resolveRelations(aggregateScanResults([forgotten]), {
+    projectPath: '/p/GONE',
+    name: 'shared/review',
+  });
+  eq(backlinkNames(gone), ['foo'], 'included scan resolves within its own project only');
 }
 
 console.log('isCanonicalRelationPath');
