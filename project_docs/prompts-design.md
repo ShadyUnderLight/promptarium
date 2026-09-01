@@ -30,6 +30,16 @@ PROMPTARIUM_DATA_DIR test override): registered projects, the active path,
 UI preferences and disposable indexes. Deleting derived state must never lose a
 prompt; the next scan rebuilds it from Markdown.
 
+## Prompt-specific capabilities contract
+
+The reserved data format for the next phase — the `variables`, `related`,
+`variantOf` and `notes` frontmatter fields — and the invariants those
+capabilities must preserve are defined in prompt-specific-capabilities.md.
+Prompt-specific user data follows the same filesystem-truth rule as everything
+else here: the real `.md` file in the user's Project is the single source of
+truth, and nothing under ~/.promptarium may become a second source of truth for
+it.
+
 ## Prompt Markdown format
 
 Existing files with no frontmatter remain valid and are loaded unchanged. Their

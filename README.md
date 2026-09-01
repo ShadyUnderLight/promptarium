@@ -2,7 +2,8 @@
 
 Promptarium is a local-first Prompt Library for macOS: a project-based
 Markdown vault for browsing, editing, tagging, favoriting and organizing large
-prompt collections.
+prompt collections. It manages and organizes prompts — it is not a prompt
+execution, chat, playground or deployment platform.
 
 ## What it is
 
