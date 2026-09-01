@@ -18,6 +18,7 @@
     tagCounts,
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
+  import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
   import ProjectMenu from './ProjectMenu.svelte';
 
   interface Props {
@@ -146,16 +147,22 @@
     menu = null;
   }
 
+  /** Apply a sidebar navigation transition and commit the result to the library
+   *  state. Only Needs Attention composes with folder/tag filters; the other
+   *  smart views and the Folder/Tag navigation keep their original semantics
+   *  (see applyNavigationAction). */
+  function applyNav(action: NavigationAction): void {
+    const next = applyNavigationAction(
+      { smartView: library.smartView, folderFilter: library.folderFilter, tagFilter: library.tagFilter },
+      action
+    );
+    library.smartView = next.smartView;
+    library.folderFilter = next.folderFilter;
+    library.tagFilter = next.tagFilter;
+  }
+
   function selectView(view: typeof library.smartView): void {
-    library.smartView = view;
-    // Only the "All prompts" reset clears the tag/folder filters. Every other
-    // smart view (Needs Attention, Favorites, Draft, Archived) combines with
-    // whichever tag/folder filter is already active (Issue #13 requires
-    // Needs Attention to compose with Search and Tag/Folder filters).
-    if (view === 'all') {
-      library.folderFilter = '';
-      library.tagFilter = '';
-    }
+    applyNav({ kind: 'select-view', view });
   }
 
   async function newFolder(): Promise<void> {
@@ -317,7 +324,7 @@
               class:sidebar-nav__item--active={library.folderFilter === folder.path}
               class="sidebar-nav__item"
               style={'--depth:' + folder.depth}
-              onclick={() => { library.folderFilter = folder.path; }}
+              onclick={() => applyNav({ kind: 'select-folder', folder: folder.path })}
               oncontextmenu={(event) => folderMenu(event, folder.path)}
               title="Right-click to rename or delete an empty folder"
             >
@@ -334,7 +341,7 @@
       <div class="sidebar-section__heading"><span>Tags</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
-          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => { library.tagFilter = item.tag; }}>
+          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}

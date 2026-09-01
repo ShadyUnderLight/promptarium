@@ -1,6 +1,5 @@
 import type { PromptSummary } from '$lib/prompts/types';
-
-export type SmartView = 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention';
+import type { SmartView } from './navigation-state';
 
 export interface LibraryFilterState {
   smartView: SmartView;
