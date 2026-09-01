@@ -70,6 +70,27 @@ detail view can show raw content and never silently repairs it. If the file
 changes externally while editing, the UI shows a conflict and offers Reload or
 Keep editing rather than overwriting the external edit.
 
+## Prompt-specific sections
+
+Prompt-specific information — variables, related prompts, usage notes, health —
+is surfaced as sections inside the existing Preview/Inspector, never as new
+permanent main tabs:
+
+```text
+Prompt body
+
+Variables
+Related
+Usage Notes
+Needs Attention
+```
+
+The three-pane workspace and the Preview | Edit | History structure stay the
+main information architecture. Compare uses a temporary view/sheet and does not
+take a permanent main tab. Derived state such as health is a read-only section;
+it is never written back as the source of truth. The section contract lives in
+prompt-specific-capabilities.md.
+
 ## Prompt operations
 
 New Prompt chooses the active project and optional folder, validates the
