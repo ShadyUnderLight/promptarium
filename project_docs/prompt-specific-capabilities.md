@@ -29,7 +29,9 @@ reference and must obey it.
 7. Existing plain Markdown files keep working with zero migration.
 8. Every new frontmatter field is optional and additive; reading never
    rewrites the file.
-9. Unknown YAML fields must continue to round-trip untouched.
+9. Unknown YAML fields must continue to be semantically preserved across
+   supported metadata edits and serialization; lexical formatting (key order,
+   quoting, block style, comments) is not part of the preservation contract.
 10. Prompt bodies are never automatically normalized, trimmed, reflowed or
     rewritten.
 11. Rust continues to own dangerous filesystem / path validation; TypeScript
@@ -78,10 +80,17 @@ Review {repository} pull request #{pr_number}.
 
 ### Field semantics
 
-- `variables`: documents `{name}` variables that actually exist in the body.
-  It cannot define a runtime variable that does not appear in the body.
+- `variables`: only annotates `{name}` variables and never creates a runtime
+  variable; the body parser is the sole source of the active variable set. A
+  `variables` key whose name no longer appears in the body may still exist in
+  frontmatter: it must be preserved and treated as stale documentation, not
+  silently discarded or interpreted as an active variable.
 - `related`: a list of Prompt relative paths inside the current Project.
 - `variantOf`: the relative path of a parent Prompt inside the current Project.
+  It expresses relationship / family membership only. It does not imply
+  inheritance, composition, metadata merging, runtime resolution or automatic
+  parent/child synchronization; a variant is always a complete, independent
+  Markdown Prompt.
 - `notes`: usage notes that are not part of the Prompt body; Copy Prompt does
   not copy them.
 
@@ -112,6 +121,26 @@ The following must never be written into a Prompt file as a relation identity:
 
 When the All Projects view resolves a relation, the source Prompt's
 `projectPath` decides which Project the relation belongs to.
+
+### Relation error semantics
+
+The canonical identity rules above must be paired with a defined behavior for
+values that are not a clean, resolvable canonical path:
+
+- Canonical relation values never include `.md`; a value with an explicit
+  `.md` suffix is invalid, not silently normalized.
+- Invalid relation metadata never hides the Prompt and is never silently
+  repaired.
+- A syntactically valid value whose target file does not exist is a broken
+  relation, not an invalid one.
+- Relation path validation reuses the existing Prompt relative-path safety
+  rules (a validated Project-relative path, no path escape).
+- Invalid, broken and self relations are preserved sufficiently to surface
+  deterministic derived diagnostics (for example a Health / Needs Attention
+  finding); they are not dropped from the parsed document.
+
+Deduplication of duplicate relation entries is left to the later Related
+Prompts item.
 
 ## UX principles
 
