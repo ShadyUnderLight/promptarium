@@ -45,6 +45,7 @@ export interface PromptSummary {
   extension: '.md';
   metadata: PromptMetadata;
   modifiedAt: number;
+  sizeBytes: number;
   hasFrontmatter: boolean;
   frontmatterError?: string;
 }

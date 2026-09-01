@@ -53,6 +53,7 @@ pub struct PromptSummary {
     pub extension: String,
     pub metadata: PromptMetadata,
     pub modified_at: u64,
+    pub size_bytes: u64,
     pub has_frontmatter: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frontmatter_error: Option<String>,
@@ -243,6 +244,12 @@ fn modified_at(path: &Path) -> u64 {
         .unwrap_or(0)
 }
 
+fn file_size(path: &Path) -> u64 {
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
+}
+
 fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, ParsedPrompt)> {
     let relative = path.strip_prefix(project).ok()?;
     let file_name = relative.file_name()?.to_str()?;
@@ -270,6 +277,7 @@ fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, Par
         extension: ".md".to_string(),
         metadata: parsed.metadata.clone(),
         modified_at: modified_at(path),
+        size_bytes: file_size(path),
         has_frontmatter: parsed.has_frontmatter,
         frontmatter_error: parsed.frontmatter_error.clone(),
     };
@@ -862,6 +870,7 @@ mod tests {
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].name, "coding/review");
         assert_eq!(prompts[0].folder, "coding");
+        assert!(prompts[0].size_bytes > 0);
         assert!(!prompts[0].has_frontmatter);
         let document = read_prompt(&dir, "coding/review").unwrap();
         assert_eq!(

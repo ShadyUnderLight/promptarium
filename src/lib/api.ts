@@ -445,6 +445,7 @@ function devSummary(project: string, snippet: DevPrompt): PromptSummary {
     extension: '.md',
     metadata,
     modifiedAt: devMtimes[key],
+    sizeBytes: new TextEncoder().encode(snippet.content).length,
     hasFrontmatter: hasMetadata(metadata),
   };
 }
