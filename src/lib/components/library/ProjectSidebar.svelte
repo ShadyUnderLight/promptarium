@@ -10,6 +10,7 @@
     isAllProjects,
     library,
     projectDisplayName,
+    promptHealth,
     renameFolder,
     replaceProjectPath,
     setActiveProject,
@@ -17,6 +18,7 @@
     tagCounts,
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
+  import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
   import ProjectMenu from './ProjectMenu.svelte';
 
   interface Props {
@@ -45,9 +47,10 @@
     return nodes.flatMap((node) => [{ ...node, depth }, ...flattenFolders(node.children, depth + 1)]);
   }
 
-  function viewCount(view: 'all' | 'favorites' | 'draft' | 'archived'): number {
+  function viewCount(view: 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention'): number {
     if (view === 'all') return library.allPrompts.length;
     if (view === 'favorites') return library.allPrompts.filter((item) => item.metadata.favorite).length;
+    if (view === 'needs-attention') return library.allPrompts.filter((item) => promptHealth(item).length > 0).length;
     return library.allPrompts.filter((item) => item.metadata.status === view).length;
   }
 
@@ -144,10 +147,22 @@
     menu = null;
   }
 
+  /** Apply a sidebar navigation transition and commit the result to the library
+   *  state. Only Needs Attention composes with folder/tag filters; the other
+   *  smart views and the Folder/Tag navigation keep their original semantics
+   *  (see applyNavigationAction). */
+  function applyNav(action: NavigationAction): void {
+    const next = applyNavigationAction(
+      { smartView: library.smartView, folderFilter: library.folderFilter, tagFilter: library.tagFilter },
+      action
+    );
+    library.smartView = next.smartView;
+    library.folderFilter = next.folderFilter;
+    library.tagFilter = next.tagFilter;
+  }
+
   function selectView(view: typeof library.smartView): void {
-    library.smartView = view;
-    library.folderFilter = '';
-    library.tagFilter = '';
+    applyNav({ kind: 'select-view', view });
   }
 
   async function newFolder(): Promise<void> {
@@ -281,6 +296,9 @@
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'all' && !library.folderFilter && !library.tagFilter} class="sidebar-nav__item" onclick={() => selectView('all')}>
           <span>All prompts</span><span>{viewCount('all')}</span>
         </button>
+        <button type="button" class:sidebar-nav__item--active={library.smartView === 'needs-attention'} class="sidebar-nav__item" onclick={() => selectView('needs-attention')}>
+          <span>Needs Attention</span><span>{viewCount('needs-attention')}</span>
+        </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'favorites'} class="sidebar-nav__item" onclick={() => selectView('favorites')}>
           <span>Favorites</span><span>{viewCount('favorites')}</span>
         </button>
@@ -306,7 +324,7 @@
               class:sidebar-nav__item--active={library.folderFilter === folder.path}
               class="sidebar-nav__item"
               style={'--depth:' + folder.depth}
-              onclick={() => { library.folderFilter = folder.path; library.smartView = 'all'; library.tagFilter = ''; }}
+              onclick={() => applyNav({ kind: 'select-folder', folder: folder.path })}
               oncontextmenu={(event) => folderMenu(event, folder.path)}
               title="Right-click to rename or delete an empty folder"
             >
@@ -323,7 +341,7 @@
       <div class="sidebar-section__heading"><span>Tags</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
-          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => { library.tagFilter = item.tag; library.smartView = 'all'; library.folderFilter = ''; }}>
+          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}
