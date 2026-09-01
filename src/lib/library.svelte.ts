@@ -169,12 +169,12 @@ function syncVariableCounts(projectPath: string, index: Map<string, SearchEntry>
 }
 
 function updateSearchEntry(document: PromptDocument): void {
+  bumpSearchIndexRevision(document.projectPath);
   const index = searchIndexes.get(document.projectPath);
   if (!index) return;
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
   variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
-  bumpSearchIndexRevision(document.projectPath);
   library.searchIndexVersion++;
 }
 

@@ -164,6 +164,42 @@ console.log('suspended body read cannot clobber a saved entry');
   eq(freshIndex.get('a')?.variableCount, 1, 'replan keeps saved variable count');
 }
 
+console.log('save before first live index bumps revision and blocks stale swap');
+{
+  const projectPath = '/project-a';
+  let revision = 0;
+  const bumpRevision = () => {
+    revision += 1;
+  };
+  const revisionAtStart = revision;
+
+  const plan = planIndexRefresh(undefined, [summary('a', 1000, 100), summary('b', 2000, 200)]);
+  const { index: staleCandidate } = await buildSearchIndexFromPlan(plan, {
+    projectPath,
+    readBody: async (prompt) =>
+      searchEntryFromDocument(document(prompt.name, prompt.modifiedAt, prompt.sizeBytes, `${prompt.name} old body`)),
+  });
+  eq(staleCandidate.get('a')?.bodyLower, 'a old body'.toLowerCase(), 'candidate caches old body for A');
+
+  const saved = document('a', 3000, 120, 'saved before live index {x} {y}');
+  bumpRevision();
+  eq(revision, 1, 'save mutation bumps revision even without a live index');
+
+  assert(isStaleSearchIndexSwap(revisionAtStart, revision), 'first-build save invalidates candidate swap');
+
+  const replan = planIndexRefresh(undefined, [summary('a', 1000, 100), summary('b', 2000, 200)]);
+  const { index: freshIndex } = await buildSearchIndexFromPlan(replan, {
+    projectPath,
+    readBody: async (prompt) =>
+      prompt.name === 'a'
+        ? searchEntryFromDocument(saved)
+        : searchEntryFromDocument(document(prompt.name, prompt.modifiedAt, prompt.sizeBytes, `${prompt.name} fresh body`)),
+  });
+  eq(freshIndex.get('a')?.bodyLower, 'saved before live index {x} {y}'.toLowerCase(), 'replan reads saved body for A');
+  eq(freshIndex.get('a')?.variableCount, 2, 'replan reads saved variable count for A');
+  eq(freshIndex.get('b')?.bodyLower, 'b fresh body'.toLowerCase(), 'replan still builds remaining prompts');
+}
+
 if (failures > 0) {
   console.error('\n' + failures + ' search index refresh test(s) failed');
   process.exit(1);
