@@ -10,6 +10,7 @@
     isAllProjects,
     library,
     projectDisplayName,
+    promptHealth,
     renameFolder,
     replaceProjectPath,
     setActiveProject,
@@ -45,9 +46,10 @@
     return nodes.flatMap((node) => [{ ...node, depth }, ...flattenFolders(node.children, depth + 1)]);
   }
 
-  function viewCount(view: 'all' | 'favorites' | 'draft' | 'archived'): number {
+  function viewCount(view: 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention'): number {
     if (view === 'all') return library.allPrompts.length;
     if (view === 'favorites') return library.allPrompts.filter((item) => item.metadata.favorite).length;
+    if (view === 'needs-attention') return library.allPrompts.filter((item) => promptHealth(item).length > 0).length;
     return library.allPrompts.filter((item) => item.metadata.status === view).length;
   }
 
@@ -280,6 +282,9 @@
       <nav class="sidebar-nav">
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'all' && !library.folderFilter && !library.tagFilter} class="sidebar-nav__item" onclick={() => selectView('all')}>
           <span>All prompts</span><span>{viewCount('all')}</span>
+        </button>
+        <button type="button" class:sidebar-nav__item--active={library.smartView === 'needs-attention'} class="sidebar-nav__item" onclick={() => selectView('needs-attention')}>
+          <span>Needs Attention</span><span>{viewCount('needs-attention')}</span>
         </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'favorites'} class="sidebar-nav__item" onclick={() => selectView('favorites')}>
           <span>Favorites</span><span>{viewCount('favorites')}</span>

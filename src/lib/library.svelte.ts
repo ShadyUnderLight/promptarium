@@ -54,6 +54,11 @@ import {
   summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
+import {
+  derivePromptHealth,
+  type PromptHealthIssue,
+  type PromptHealthInput,
+} from './health/health';
 import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
@@ -101,7 +106,7 @@ export const library = $state({
   loadingDocument: false,
   error: null as string | null,
   searchQuery: '',
-  smartView: 'all' as 'all' | 'favorites' | 'draft' | 'archived',
+  smartView: 'all' as 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention',
   folderFilter: '',
   tagFilter: '',
   modelFilter: '',
@@ -140,6 +145,11 @@ const diffCache = new Map<string, GitFileDiff>();
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
 const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
+/** Disposable derived index: promptKey -> deterministic structural issues. Like
+ *  variableCounts, it is never written back to Markdown and is rebuilt from the
+ *  same incremental search-index pass (so Health never triggers a second body
+ *  read). */
+const healthIndex = new Map<string, PromptHealthIssue[]>();
 const fsRefreshScheduler = new FsRefreshScheduler(300);
 
 let selectedOpenedFingerprint: ReturnType<typeof summaryFingerprint> | null = null;
@@ -250,6 +260,40 @@ function syncVariableCounts(projectPath: string, index: Map<string, SearchEntry>
   }
 }
 
+function projectHealthInput(
+  projectPath: string,
+  entry: SearchEntry,
+  projectNames: ReadonlySet<string>
+): PromptHealthInput {
+  return {
+    projectPath,
+    name: entry.summary.name,
+    frontmatterError: entry.summary.frontmatterError,
+    bodyEmpty: entry.bodyEmpty ?? false,
+    variableNames: entry.variableNames ?? [],
+    variables: entry.summary.metadata.variables,
+    related: entry.summary.metadata.related,
+    projectPromptNames: projectNames,
+  };
+}
+
+/** Recompute health for every prompt of one project from its search index. The
+ *  index is keyed by prompt name within the project, so relation targets resolve
+ *  against the same set the Related UI uses. */
+function rebuildProjectHealth(projectPath: string, index: Map<string, SearchEntry>): void {
+  const prefix = projectPath + '\u0000';
+  for (const key of healthIndex.keys()) {
+    if (key.startsWith(prefix)) healthIndex.delete(key);
+  }
+  const names = new Set(index.keys());
+  for (const entry of index.values()) {
+    healthIndex.set(
+      promptKey(projectPath, entry.summary.name),
+      derivePromptHealth(projectHealthInput(projectPath, entry, names))
+    );
+  }
+}
+
 function updateSearchEntry(document: PromptDocument): void {
   bumpSearchIndexRevision(document.projectPath);
   const index = searchIndexes.get(document.projectPath);
@@ -257,6 +301,10 @@ function updateSearchEntry(document: PromptDocument): void {
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
   variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
+  healthIndex.set(
+    promptKey(document.projectPath, document.name),
+    derivePromptHealth(projectHealthInput(document.projectPath, entry, new Set(index.keys())))
+  );
   library.searchIndexVersion++;
 }
 
@@ -294,6 +342,7 @@ async function refreshSearchIndex(
     commit: ({ index, stats, plan }) => {
       searchIndexes.set(projectPath, index);
       syncVariableCounts(projectPath, index);
+      rebuildProjectHealth(projectPath, index);
       library.searchIndexVersion++;
       if (import.meta.env.DEV) {
         console.debug(
@@ -1143,12 +1192,21 @@ export function promptVariableCount(prompt: PromptSummary): number | null {
   return null;
 }
 
+/** Deterministic structural issues for one prompt, from the disposable derived
+ *  health index. Reading the version keeps this reactive when the background
+ *  index finishes, without putting every issue list into Svelte state. */
+export function promptHealth(prompt: PromptSummary): PromptHealthIssue[] {
+  library.searchIndexVersion;
+  return healthIndex.get(promptKey(prompt.projectPath, prompt.name)) ?? [];
+}
+
 export function visiblePrompts(): PromptSummary[] {
   const allProjects = isAllProjects();
   const filtered = library.prompts.filter((prompt) => {
     const viewMatches =
       library.smartView === 'all' ||
       (library.smartView === 'favorites' && prompt.metadata.favorite) ||
+      (library.smartView === 'needs-attention' && promptHealth(prompt).length > 0) ||
       (library.smartView === prompt.metadata.status);
     const folderMatches =
       allProjects ||

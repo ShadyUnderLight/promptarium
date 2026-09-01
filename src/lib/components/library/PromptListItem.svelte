@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatModifiedAt, promptTitle } from '$lib/library.svelte';
+  import { formatModifiedAt, promptHealth, promptTitle } from '$lib/library.svelte';
   import type { PromptSummary } from '$lib/prompts/types';
 
   interface Props {
@@ -13,6 +13,8 @@
   }
 
   let { prompt, projectLabel = null, selected, checked, variableCount, onSelect, onToggle }: Props = $props();
+  const issues = $derived(promptHealth(prompt));
+  const healthTitle = $derived(issues.map((issue) => issue.message).join('\n'));
 </script>
 
 <div
@@ -31,7 +33,7 @@
     <div class="prompt-list-item__title-row">
       <span class:prompt-list-item__favorite={prompt.metadata.favorite} class="prompt-list-item__star">{prompt.metadata.favorite ? '★' : '☆'}</span>
       <span class="prompt-list-item__title">{promptTitle(prompt.name)}</span>
-      {#if prompt.frontmatterError}<span class="warning-badge" title={prompt.frontmatterError}>!</span>{/if}
+      {#if issues.length}<span class="health-badge" title={healthTitle}>{'⚠ ' + issues.length}</span>{/if}
     </div>
     <p class="prompt-list-item__description">{prompt.metadata.description || 'No description yet'}</p>
     <div class="prompt-list-item__meta">

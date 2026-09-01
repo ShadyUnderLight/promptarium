@@ -11,6 +11,13 @@ export interface SearchEntry {
   fingerprint: EntryFingerprint;
   bodyLower: string;
   variableCount?: number;
+  /** Variable names in first-appearance order, produced by the one body parser.
+   *  Present when the body was read; absent on the scan fallback. Prompt Health
+   *  derives its variable issues from this, never from a second body pass. */
+  variableNames?: string[];
+  /** True when the body is empty or whitespace-only after trim. Present only
+   *  when the body was read; the scan fallback reports false. */
+  bodyEmpty?: boolean;
 }
 
 export interface IndexRefreshPlan {
@@ -77,11 +84,14 @@ export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
     hasFrontmatter: document.hasFrontmatter,
     frontmatterError: document.frontmatterError,
   };
+  const variables = parseVariables(document.body);
   return {
     summary,
     fingerprint: summaryFingerprint(summary),
     bodyLower: document.body.toLowerCase(),
-    variableCount: parseVariables(document.body).length,
+    variableCount: variables.length,
+    variableNames: variables.map((variable) => variable.name),
+    bodyEmpty: document.body.trim().length === 0,
   };
 }
 

@@ -4,6 +4,7 @@
     formatModifiedAt,
     library,
     loadPromptHistory,
+    promptHealth,
     promptTitle,
     selectHistoryCommit,
     loadMorePromptHistory,
@@ -74,6 +75,10 @@
   const metadataDirty = $derived(
     Boolean(metadata && originalMetadata && JSON.stringify(metadata) !== JSON.stringify(originalMetadata))
   );
+  // Disk-derived structural issues (Issue #13). Health is derived state only:
+  // it reflects the last saved/scan state, so it is shown in Preview rather
+  // than while the editor holds unsaved changes.
+  const healthIssues = $derived(document ? promptHealth(document) : []);
   // Names of every prompt in the selected prompt's project, for the Related
   // picker. In All Projects scope `library.allPrompts` spans all projects, so
   // filter to the current project to keep relations project-local.
@@ -292,6 +297,19 @@
       <div class="frontmatter-warning">
         <span>Frontmatter warning: {document.frontmatterError}</span>
         <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? 'Hide raw file' : 'Show raw file'}</button>
+      </div>
+    {/if}
+
+    {#if mode === 'preview' && healthIssues.length}
+      <div class="health-section">
+        <div class="health-section__heading">Needs Attention</div>
+        {#each healthIssues as issue (issue.code + '\u0000' + issue.message)}
+          <div class="health-issue health-issue--{issue.severity}">
+            <span class="health-issue__mark">⚠</span>
+            <span class="health-issue__text">{issue.message}</span>
+            {#if issue.detail}<span class="health-issue__detail">{issue.detail}</span>{/if}
+          </div>
+        {/each}
       </div>
     {/if}
 

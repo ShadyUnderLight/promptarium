@@ -37,35 +37,50 @@ export interface VariableContract {
   stale: StaleVariableDoc[];
 }
 
-export function deriveVariableContract(
-  body: string,
+/**
+ * The documented / undocumented / stale classification from a pre-parsed list
+ * of variable names. This is the single implementation behind both
+ * `deriveVariableContract` (which parses the body) and Prompt Health (which
+ * works from a disposable derived index), so the two can never drift apart.
+ */
+export function classifyVariableContract(
+  variableNames: string[],
   annotations: Record<string, VariableDoc> | undefined
 ): VariableContract {
-  const vars = parseVariables(body);
   const docs = annotations ?? {};
 
   const documented: DocumentedVariable[] = [];
   const undocumented: UndocumentedVariable[] = [];
-  for (const variable of vars) {
+  for (const name of variableNames) {
     // Own-property check only: the grammar allows any [A-Za-z0-9_-]+ name,
     // so {constructor}, {toString} and {__proto__} are legal variables and
     // must not match Object.prototype members when no annotation exists.
-    const doc = Object.hasOwn(docs, variable.name) ? docs[variable.name] : undefined;
+    const doc = Object.hasOwn(docs, name) ? docs[name] : undefined;
     if (doc) {
-      documented.push({ name: variable.name, description: doc.description, example: doc.example });
+      documented.push({ name, description: doc.description, example: doc.example });
     } else {
-      undocumented.push({ name: variable.name });
+      undocumented.push({ name });
     }
   }
 
   const stale: StaleVariableDoc[] = [];
   for (const [name, doc] of Object.entries(docs)) {
-    if (!vars.some((variable) => variable.name === name)) {
+    if (!variableNames.includes(name)) {
       stale.push({ name, description: doc.description, example: doc.example });
     }
   }
 
   return { documented, undocumented, stale };
+}
+
+export function deriveVariableContract(
+  body: string,
+  annotations: Record<string, VariableDoc> | undefined
+): VariableContract {
+  return classifyVariableContract(
+    parseVariables(body).map((variable) => variable.name),
+    annotations
+  );
 }
 
 /**
