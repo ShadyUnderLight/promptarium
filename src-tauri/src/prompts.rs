@@ -7,5 +7,6 @@
 mod appstate;
 mod git;
 mod store;
+mod watcher;
 
 pub mod state;

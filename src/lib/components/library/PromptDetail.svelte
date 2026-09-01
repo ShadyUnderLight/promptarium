@@ -33,6 +33,7 @@
     onDuplicate: (document: PromptDocument, name: string) => void;
     onDeleteRequest: (document: PromptDocument) => void;
     onDirtyChange: (dirty: boolean) => void;
+    onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
   }
 
@@ -48,6 +49,7 @@
     onDuplicate,
     onDeleteRequest,
     onDirtyChange,
+    onDismissExternalChange,
     onNotice,
   }: Props = $props();
 
@@ -157,7 +159,12 @@
     if (!document) return;
     await onReload(document);
     saveError = '';
+    onDismissExternalChange();
     onNotice('Reloaded the prompt from disk. Local edits were discarded.');
+  }
+
+  function keepEditingExternalChange(): void {
+    onDismissExternalChange();
   }
 
   function actionRename(): void {
@@ -241,6 +248,23 @@
         </div>
       </div>
     </div>
+
+    {#if library.externalChangeState === 'disk_changed'}
+      <div class="detail-error">
+        <span>This prompt changed on disk while you have unsaved edits.</span>
+        <span class="detail-error__actions">
+          <button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={keepEditingExternalChange}>Keep editing</button>
+        </span>
+      </div>
+    {:else if library.externalChangeState === 'file_missing'}
+      <div class="detail-error">
+        <span>This prompt was deleted or moved externally. Your local edits are still in the editor.</span>
+        <span class="detail-error__actions">
+          <button type="button" class="btn btn--ghost btn--sm" onclick={keepEditingExternalChange}>Keep editing</button>
+        </span>
+      </div>
+    {/if}
 
     {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveError.includes('CONFLICT')}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '')}>Keep editing</button></span>{/if}</div>{/if}
     {#if document.frontmatterError}

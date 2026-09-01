@@ -3,22 +3,41 @@
 use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
+use std::sync::Mutex;
+
+use tauri::AppHandle;
 
 use super::appstate::{self, Project, ProjectList};
 use super::git::{self, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo};
 use super::store::{self, PromptDocument, PromptMetadata, PromptSummary};
+use super::watcher::ProjectFsWatcher;
 
-pub struct PromptsState;
-
-impl PromptsState {
-    pub fn new() -> Self {
-        Self
-    }
+pub struct PromptsState {
+    watcher: Mutex<ProjectFsWatcher>,
 }
 
-impl Default for PromptsState {
-    fn default() -> Self {
-        Self::new()
+impl PromptsState {
+    pub fn new(app: AppHandle) -> Self {
+        Self {
+            watcher: Mutex::new(ProjectFsWatcher::new(app)),
+        }
+    }
+
+    fn sync_watcher_for_active(&self) -> Result<(), String> {
+        let root = root()?;
+        let state = appstate::list_projects(&root)?;
+        let project = state.active.map(PathBuf::from);
+        self.watcher
+            .lock()
+            .map_err(|_| "project watcher lock poisoned".to_string())?
+            .sync_project(project)
+    }
+
+    fn sync_watcher(&self, project: Option<PathBuf>) -> Result<(), String> {
+        self.watcher
+            .lock()
+            .map_err(|_| "project watcher lock poisoned".to_string())?
+            .sync_project(project)
     }
 }
 
@@ -69,8 +88,14 @@ pub async fn list_projects() -> Result<ProjectList, String> {
 }
 
 #[tauri::command]
-pub async fn add_project(name: String, path: String) -> Result<Project, String> {
-    appstate::add_project(&root()?, &name, Path::new(&path))
+pub async fn add_project(
+    state: tauri::State<'_, PromptsState>,
+    name: String,
+    path: String,
+) -> Result<Project, String> {
+    let project = appstate::add_project(&root()?, &name, Path::new(&path))?;
+    state.sync_watcher_for_active()?;
+    Ok(project)
 }
 
 #[tauri::command]
@@ -79,8 +104,15 @@ pub async fn rename_project_label(path: String, name: String) -> Result<Project,
 }
 
 #[tauri::command]
-pub async fn replace_project_path(old_path: String, new_path: String) -> Result<Project, String> {
-    appstate::replace_project_path(&root()?, Path::new(&old_path), Path::new(&new_path))
+pub async fn replace_project_path(
+    state: tauri::State<'_, PromptsState>,
+    old_path: String,
+    new_path: String,
+) -> Result<Project, String> {
+    let project =
+        appstate::replace_project_path(&root()?, Path::new(&old_path), Path::new(&new_path))?;
+    state.sync_watcher_for_active()?;
+    Ok(project)
 }
 
 #[tauri::command]
@@ -89,13 +121,35 @@ pub async fn set_project_color(path: String, color: Option<String>) -> Result<Pr
 }
 
 #[tauri::command]
-pub async fn remove_project(path: String) -> Result<(), String> {
-    appstate::remove_project(&root()?, Path::new(&path))
+pub async fn remove_project(
+    state: tauri::State<'_, PromptsState>,
+    path: String,
+) -> Result<(), String> {
+    appstate::remove_project(&root()?, Path::new(&path))?;
+    state.sync_watcher_for_active()?;
+    Ok(())
 }
 
 #[tauri::command]
-pub async fn set_active_project(path: String) -> Result<(), String> {
-    appstate::set_active_project(&root()?, Path::new(&path))
+pub async fn set_active_project(
+    state: tauri::State<'_, PromptsState>,
+    path: String,
+) -> Result<(), String> {
+    appstate::set_active_project(&root()?, Path::new(&path))?;
+    state.sync_watcher(Some(PathBuf::from(path)))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sync_project_watcher(
+    state: tauri::State<'_, PromptsState>,
+    project: Option<String>,
+) -> Result<(), String> {
+    let path = match project {
+        Some(path) => Some(registered_project(&path)?),
+        None => None,
+    };
+    state.sync_watcher(path)
 }
 
 #[tauri::command]

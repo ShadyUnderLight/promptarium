@@ -6,6 +6,8 @@
 mod datadir;
 mod prompts;
 
+use tauri::Manager;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
@@ -16,7 +18,10 @@ pub fn run() {
         // option to hand it off to, and no Rust command surface of our own.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(prompts::state::PromptsState::new())
+        .setup(|app| {
+            app.manage(prompts::state::PromptsState::new(app.handle().clone()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             prompts::state::list_projects,
             prompts::state::add_project,
@@ -25,6 +30,7 @@ pub fn run() {
             prompts::state::set_project_color,
             prompts::state::remove_project,
             prompts::state::set_active_project,
+            prompts::state::sync_project_watcher,
             prompts::state::scan_project,
             prompts::state::scan_folders,
             prompts::state::read_prompt,
@@ -41,8 +47,7 @@ pub fn run() {
             prompts::state::git_repository_info,
             prompts::state::git_file_history,
             prompts::state::git_file_diff,
-        ])
-        .setup(move |_app| Ok(()));
+        ]);
 
     builder
         .run(tauri::generate_context!())
