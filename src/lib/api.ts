@@ -315,6 +315,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: true,
     models: ['ChatGPT', 'Claude'],
     created: '2026-08-20',
+    related: ['review/pr-checklist', 'refactor/refactor-safely'],
     extra: {},
   },
   '/dev/mock/engineering::review/pr-checklist': {
@@ -324,6 +325,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: true,
     models: ['ChatGPT'],
     created: '2026-08-08',
+    related: ['testing/test-plan', 'review/retired-check'],
     extra: {},
   },
   '/dev/mock/engineering::debug/bug-repro-first': {
@@ -333,6 +335,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: ['Claude'],
     created: '2026-08-12',
+    related: ['review/pr-checklist'],
     extra: {},
   },
   '/dev/mock/engineering::testing/test-plan': {
@@ -342,6 +345,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: ['ChatGPT'],
     created: '2026-08-05',
+    related: [],
     extra: {},
   },
   '/dev/mock/engineering::refactor/refactor-safely': {
@@ -351,6 +355,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: [],
     created: '2026-07-20',
+    related: ['review/senior-reviewer'],
     extra: {},
   },
   '/dev/mock/engineering::code/format-string': {
@@ -360,6 +365,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: ['ChatGPT'],
     created: '2026-08-02',
+    related: [],
     extra: {},
   },
   '/dev/mock/engineering::release-notes-draft': {
@@ -369,6 +375,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: [],
     created: '2026-08-17',
+    related: [],
     extra: {},
   },
   '/dev/mock/engineering::style/be-terse': {
@@ -377,6 +384,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     status: 'active',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   },
   '/dev/mock/writing::tone-notes': {
@@ -386,6 +394,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: true,
     models: ['ChatGPT'],
     created: '2026-08-15',
+    related: [],
     extra: {},
   },
   '/dev/mock/writing::headline-rewrite': {
@@ -395,6 +404,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: false,
     models: ['ChatGPT', 'Claude'],
     created: '2026-08-11',
+    related: [],
     extra: {},
   },
   '/dev/mock/writing::cut-it-in-half': {
@@ -403,6 +413,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     status: 'active',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   },
   '/dev/mock/writing::explain-like-staff-eng': {
@@ -411,6 +422,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     status: 'draft',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   },
   '/dev/mock/research::literature-scan': {
@@ -420,6 +432,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     favorite: true,
     models: ['ChatGPT'],
     created: '2026-08-01',
+    related: [],
     extra: {},
   },
   '/dev/mock/research::steelman-then-rebut': {
@@ -428,6 +441,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     status: 'active',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   },
   '/dev/mock/research::weekend-scope-guard': {
@@ -436,6 +450,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     status: 'archived',
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   },
 };
@@ -451,6 +466,7 @@ function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
     status: 'active' as const,
     favorite: false,
     models: [],
+    related: [],
     extra: {},
   };
   const variables = value.variables
@@ -460,6 +476,7 @@ function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
     ...value,
     tags: [...value.tags],
     models: [...value.models],
+    related: [...value.related],
     extra: { ...value.extra },
     ...(variables ? { variables } : {}),
   };
@@ -474,6 +491,7 @@ function hasMetadata(metadata: PromptMetadata): boolean {
       metadata.models.length ||
       metadata.created ||
       (metadata.variables && Object.keys(metadata.variables).length) ||
+      metadata.related.length ||
       Object.keys(metadata.extra).length
   );
 }

@@ -2,15 +2,20 @@
   import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
   import { setVariableDoc } from '$lib/variables/contract';
+  import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
 
   interface Props {
     metadata: Metadata;
     body: string;
     editing: boolean;
+    /** Names of every prompt in the current project (for the Related picker). */
+    promptNames?: string[];
+    /** Name of the prompt being edited (never offered as a related target). */
+    currentName?: string;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, body, editing, onChange }: Props = $props();
+  let { metadata, body, editing, promptNames = [], currentName = '', onChange }: Props = $props();
 
   // Variable names come live from the body parser. The editor never creates or
   // renames variables in frontmatter; a body edit immediately surfaces a new
@@ -30,6 +35,7 @@
       ...metadata,
       tags: [...metadata.tags],
       models: [...metadata.models],
+      related: [...metadata.related],
       extra: { ...metadata.extra },
       ...(variables ? { variables } : {}),
     };
@@ -68,6 +74,26 @@
     if (variables) next.variables = variables;
     else delete next.variables;
     onChange(next);
+  }
+
+  // Related prompts: the picker only offers prompts in the current project,
+  // never the prompt being edited, and never entries already linked.
+  const addableRelated = $derived(
+    promptNames.filter((name) => name !== currentName && !metadata.related.includes(name))
+  );
+  let relatedPick = $state('');
+
+  function addRelated(): void {
+    if (!relatedPick) return;
+    setField('related', addRelatedEntry(metadata.related, relatedPick));
+    relatedPick = '';
+  }
+
+  // The raw list is rendered verbatim — including duplicates that came from a
+  // hand-edited file — so removal is by index (value-based removal would wipe
+  // every duplicate at once). See removeRelatedEntry().
+  function removeRelated(index: number): void {
+    setField('related', removeRelatedEntry(metadata.related, index));
   }
 </script>
 
@@ -150,6 +176,33 @@
       {/if}
       {#if !variableNames.length && !staleNames.length}
         <p class="detail-muted">No variables detected in the prompt body.</p>
+      {/if}
+    </div>
+    <div class="related-editor">
+      <span class="variables-editor__heading">Related prompts</span>
+      {#if metadata.related.length}
+        <div class="related-edit-list">
+          {#each metadata.related as path, index (index)}
+            <div class="variable-doc-edit">
+              <div class="variable-doc-edit__name">
+                <span class="variable-token">{path}</span>
+                <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(index)}>Remove</button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      {#if addableRelated.length}
+        <div class="related-picker">
+          <select bind:value={relatedPick} onchange={addRelated} aria-label="Add a related prompt">
+            <option value="" disabled>Add a related prompt…</option>
+            {#each addableRelated as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </div>
+      {:else}
+        <p class="detail-muted">No other prompt in this project is available to link.</p>
       {/if}
     </div>
   </div>

@@ -57,6 +57,8 @@ pub struct PromptMetadata {
     #[serde(default)]
     pub variables: BTreeMap<String, VariableDoc>,
     #[serde(default)]
+    pub related: Vec<String>,
+    #[serde(default)]
     pub extra: BTreeMap<String, JsonValue>,
 }
 
@@ -162,6 +164,41 @@ fn valid_created_date(value: &str) -> bool {
             .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
 }
 
+/// A canonical `related` value is a project-relative prompt path without a
+/// `.md` suffix, validated with the same rules used for prompt names. Values
+/// that fail this test are preserved (never dropped and never silently
+/// normalized) but are reported through the frontmatter warning channel, so
+/// the relation can be surfaced as an invalid diagnostic instead of hiding the
+/// prompt.
+fn valid_relation_path(value: &str) -> bool {
+    !value.ends_with(".md") && validate_name(value).is_ok()
+}
+
+/// Parse the `related` frontmatter field. Only a list of strings is supported;
+/// any other shape is a warning. Every entry is kept verbatim in the metadata
+/// so an invalid or unresolved value survives a supported metadata save, while
+/// non-canonical entries also produce a visible warning.
+fn relation_list(value: &YamlValue, errors: &mut Vec<String>) -> Vec<String> {
+    let Some(values) = value.as_sequence() else {
+        errors.push("related must be a list of strings".to_string());
+        return Vec::new();
+    };
+    let mut output = Vec::with_capacity(values.len());
+    for item in values {
+        let Some(text) = item.as_str() else {
+            errors.push("related must contain only strings".to_string());
+            continue;
+        };
+        if !valid_relation_path(text) {
+            errors.push(format!(
+                "related must be a project-relative prompt path without .md: {text:?}"
+            ));
+        }
+        output.push(text.to_string());
+    }
+    output
+}
+
 fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String> {
     let value: YamlValue = serde_yaml::from_str(yaml).map_err(|e| e.to_string())?;
     if value.is_null() {
@@ -201,6 +238,7 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
                 Some(date) if valid_created_date(date) => metadata.created = Some(date.to_string()),
                 Some(_) | None => errors.push("created must be a YYYY-MM-DD string".to_string()),
             },
+            "related" => metadata.related = relation_list(value, &mut errors),
             "variables" => match value.as_mapping() {
                 Some(variables) => {
                     for (name, doc_value) in variables {
@@ -559,6 +597,7 @@ fn metadata_has_values(metadata: &PromptMetadata) -> bool {
         || !metadata.models.is_empty()
         || metadata.created.is_some()
         || !metadata.variables.is_empty()
+        || !metadata.related.is_empty()
         || !metadata.extra.is_empty()
 }
 
@@ -629,6 +668,12 @@ fn serialize_frontmatter(
             variables.insert(yaml_string(name), YamlValue::Mapping(fields));
         }
         mapping.insert(yaml_string("variables"), YamlValue::Mapping(variables));
+    }
+    if !metadata.related.is_empty() {
+        mapping.insert(
+            yaml_string("related"),
+            YamlValue::Sequence(metadata.related.iter().map(|related| yaml_string(related)).collect()),
+        );
     }
     for (key, value) in &metadata.extra {
         mapping.insert(yaml_string(key), yaml_from_json(value)?);
@@ -1510,6 +1555,150 @@ mod tests {
         );
         // Supported fields under the same variable still parse.
         assert!(document.summary.metadata.variables.contains_key("repository"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // ── related / backlinks ────────────────────────────────────────────────
+
+    #[test]
+    fn related_missing_defaults_to_empty_without_migration() {
+        let dir = tmp_dir("related-missing");
+        write(&dir, "plain.md", "body\n");
+        let document = read_prompt(&dir, "plain").unwrap();
+        assert!(document.summary.metadata.related.is_empty());
+        // A body-only save of a plain Markdown file must not add a `related` field.
+        save_prompt(
+            &dir,
+            "plain",
+            "body\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("plain.md")).unwrap(), "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn related_parses_canonical_paths_and_round_trips() {
+        let dir = tmp_dir("related-parse");
+        write(
+            &dir,
+            "p.md",
+            "---\nrelated:\n  - coding/github/fix-pr\n  - review/检查清单\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            document.summary.metadata.related,
+            ["coding/github/fix-pr", "review/检查清单"]
+        );
+        assert!(document.summary.frontmatter_error.is_none());
+        assert!(!document.summary.metadata.extra.contains_key("related"));
+
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(saved.contains("related:"), "{saved}");
+        assert!(saved.contains("- coding/github/fix-pr"), "{saved}");
+        assert!(saved.contains("- review/检查清单"), "{saved}");
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.related,
+            ["coding/github/fix-pr", "review/检查清单"]
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn related_invalid_paths_warn_but_stay_visible_and_round_trip() {
+        let cases = [
+            "coding/foo.md",     // explicit .md suffix is invalid, not normalized
+            "/Users/me/prompt",  // absolute path
+            "a/../outside",      // path escape
+            "a//b",              // empty segment
+        ];
+        for raw in cases {
+            let dir = tmp_dir("related-invalid");
+            let yaml = format!("---\nrelated:\n  - {raw}\n---\nbody\n");
+            write(&dir, "p.md", &yaml);
+            let document = read_prompt(&dir, "p").unwrap();
+            let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+            assert!(
+                error.contains("related must be a project-relative prompt path"),
+                "invalid related {raw:?} must be loud, got: {error}"
+            );
+            // The entry is preserved, never dropped and never normalized.
+            assert_eq!(document.summary.metadata.related, [raw]);
+            assert_eq!(document.body, "body\n");
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn related_empty_entry_warns_without_hiding_the_prompt() {
+        // An empty YAML sequence item parses as a null scalar, which is not a
+        // string reference; it is loud (like the variables string_list) and the
+        // prompt stays fully readable.
+        let dir = tmp_dir("related-empty");
+        write(&dir, "p.md", "---\nrelated:\n  -\n---\nbody\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(error.contains("related"), "empty related entry must be loud, got: {error}");
+        assert_eq!(document.body, "body\n");
+        assert!(document.summary.metadata.related.is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn related_wrong_type_warns_and_defaults_to_empty() {
+        let dir = tmp_dir("related-wrong-type");
+        write(&dir, "p.md", "---\nrelated: coding/foo\n---\nbody\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("related must be a list of strings"),
+            "scalar related must be loud, got: {error}"
+        );
+        assert!(document.summary.metadata.related.is_empty());
+        assert_eq!(document.body, "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn related_duplicates_are_preserved_verbatim_by_the_serializer() {
+        // Deduplication is a display-time concern (see relations.ts); the
+        // serializer must not silently rewrite what the user wrote.
+        let dir = tmp_dir("related-dup");
+        let raw = "---\nrelated:\n  - coding/a\n  - coding/a\n---\nbody\n";
+        write(&dir, "p.md", raw);
+        let document = read_prompt(&dir, "p").unwrap();
+        assert_eq!(document.summary.metadata.related, ["coding/a", "coding/a"]);
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert_eq!(saved.matches("- coding/a").count(), 2, "{saved}");
         fs::remove_dir_all(dir).unwrap();
     }
 }
