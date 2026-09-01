@@ -66,9 +66,9 @@ import {
   finalizeAllProjectsScanResults,
   mapWithConcurrency,
   mergeSearchResults,
+  planAllProjectsGlobalCommit,
   refreshAllProjectsProjectScan,
   searchProjectIndex,
-  summariesContainIdentity,
   type ProjectScanResult,
 } from './library/all-projects';
 import {
@@ -592,64 +592,57 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
         return refreshed.filter((result): result is ProjectScanResult => result !== null);
       },
       commit: (finalized) => {
-        const healthyProjects = library.projects.filter((project) =>
-          finalized.some((result) => result.projectPath === project.path)
-        );
-        library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
-        const summaries = aggregateScanResults(finalized);
-        library.allPrompts = summaries;
+        const plan = planAllProjectsGlobalCommit({
+          finalized,
+          projects: library.projects,
+          searchQuery: library.searchQuery,
+          searchIndexes,
+          selectedProjectPath: library.selectedProjectPath,
+          selectedName: library.selectedName,
+          editorDirty,
+          openedFingerprint: selectedOpenedFingerprint,
+          reloadSelected,
+        });
+        library.allProjectsHealthyPaths = plan.healthyProjectPaths;
+        library.allPrompts = plan.summaries;
+        library.prompts = plan.prompts;
         library.folderPaths = [];
         library.allProjectsWarnings = warnings;
         library.error = null;
-        return { summaries, healthyProjects };
+        if (plan.decision.externalChange) {
+          library.externalChangeState = plan.decision.externalChange;
+        } else if (plan.decision.reloadSelected) {
+          library.externalChangeState = null;
+        }
+        if (plan.decision.clearSelection) {
+          clearSelectedDocument();
+        }
+        return plan;
       },
     });
     if (!committed || !scopeStillCurrent(serial, scope)) return;
 
-    const { summaries, healthyProjects } = committed;
-
-    const query = library.searchQuery;
     const querySerial = searchSerial;
-    if (library.searchQuery.trim()) {
-      library.prompts = mergeSearchResults(healthyProjects, searchIndexes, query);
-    } else {
-      library.prompts = summaries;
-    }
-    if (!scopeStillCurrent(serial, scope) || querySerial !== searchSerial || query !== library.searchQuery) return;
-
-    const decision = decideSelectedRefresh({
-      selectedProjectPath: library.selectedProjectPath,
-      selectedName: library.selectedName,
-      summaries,
-      editorDirty,
-      openedFingerprint: selectedOpenedFingerprint,
-      reloadSelected,
-    });
-
-    if (decision.externalChange) {
-      library.externalChangeState = decision.externalChange;
-    } else if (decision.reloadSelected) {
-      library.externalChangeState = null;
-    }
-
-    const selectedName = library.selectedName;
-    const selectedProject = library.selectedProjectPath;
-    const selectedDocumentSerial = documentSerial;
-    if (decision.clearSelection) {
-      clearSelectedDocument();
-    } else if (
-      decision.reloadSelected &&
-      selectedName &&
-      selectedProject &&
-      summariesContainIdentity(summaries, selectedProject, selectedName)
+    if (
+      !scopeStillCurrent(serial, scope) ||
+      querySerial !== searchSerial ||
+      library.searchQuery !== committed.queryAtCommit
     ) {
-      const selected = await apiReadPrompt(selectedProject, selectedName);
+      return;
+    }
+
+    if (committed.selectedReload) {
+      const { projectPath, name } = committed.selectedReload;
+      const selectedDocumentSerial = documentSerial;
+      const selected = await apiReadPrompt(projectPath, name);
       if (
         !scopeStillCurrent(serial, scope) ||
         selectedDocumentSerial !== documentSerial ||
-        library.selectedName !== selectedName ||
-        library.selectedProjectPath !== selectedProject
-      ) return;
+        library.selectedName !== name ||
+        library.selectedProjectPath !== projectPath
+      ) {
+        return;
+      }
       setSelectedDocument(selected);
     }
   } catch (error) {

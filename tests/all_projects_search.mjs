@@ -10,6 +10,7 @@ const {
   compareSearchHits,
   finalizeAllProjectsScanResults,
   mergeSearchResults,
+  planAllProjectsGlobalCommit,
   projectLabel,
   refreshAllProjectsProjectScan,
 } = await import(join(root, 'src/lib/library/all-projects.ts'));
@@ -287,6 +288,52 @@ console.log('finalizeAllProjectsScanResults commits before helper resolves');
   eq(outcome?.[0]?.metadata.description, 'stable@5', 'committed snapshot is available from helper result');
   revisions.set('/project-a', 6);
   eq(committedSummaries?.[0]?.metadata.description, 'stable@5', 'post-resolve mutation must not retroactively change committed snapshot');
+}
+
+console.log('planAllProjectsGlobalCommit binds visible prompts to the committed snapshot');
+{
+  const summariesAtCommit = [summary('/project-a', 'foo', 'stable@5')];
+  const projects = [{ name: 'Work', path: '/project-a' }];
+
+  const plan = planAllProjectsGlobalCommit({
+    finalized: [{ projectPath: '/project-a', summaries: summariesAtCommit, revision: 5 }],
+    projects,
+    searchQuery: '',
+    searchIndexes: new Map(),
+    selectedProjectPath: null,
+    selectedName: null,
+    editorDirty: false,
+    openedFingerprint: null,
+    reloadSelected: true,
+  });
+
+  eq(plan.prompts, plan.summaries, 'visible prompts use the same aggregated snapshot as allPrompts');
+  eq(plan.prompts[0].metadata.description, 'stable@5', 'prompts are produced during global commit planning');
+
+  const laterSummaries = [summary('/project-a', 'foo', 'saved@6', [], 'active')];
+  assert(plan.prompts !== laterSummaries, 'caller must not reassign prompts from a later snapshot variable');
+}
+
+console.log('planAllProjectsGlobalCommit plans selected refresh from the same snapshot');
+{
+  const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
+  const committedSummary = summary('/project-a', 'foo', 'stable@5', [], 'active');
+  const projects = [{ name: 'Work', path: '/project-a' }];
+
+  const plan = planAllProjectsGlobalCommit({
+    finalized: [{ projectPath: '/project-a', summaries: [committedSummary], revision: 5 }],
+    projects,
+    searchQuery: '',
+    searchIndexes: new Map(),
+    selectedProjectPath: '/project-a',
+    selectedName: 'foo',
+    editorDirty: true,
+    openedFingerprint: summaryFingerprint(committedSummary),
+    reloadSelected: false,
+  });
+
+  eq(plan.decision.externalChange, null, 'selected decision uses the same snapshot as prompts');
+  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved when snapshot matches fingerprint');
 }
 
 if (failures) {

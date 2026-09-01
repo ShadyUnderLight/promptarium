@@ -1,4 +1,6 @@
 import type { Project, PromptSummary } from '$lib/prompts/types';
+import { decideSelectedRefresh, type SelectedRefreshDecision } from './refresh-selected';
+import type { EntryFingerprint } from './search-index';
 import { promptKey } from './scope';
 
 const ALL_PROJECTS_CONCURRENCY = 4;
@@ -145,6 +147,65 @@ export function replaceProjectScanResults(
 ): ProjectScanResult[] {
   const byPath = new Map(replacements.map((result) => [result.projectPath, result]));
   return results.map((result) => byPath.get(result.projectPath) ?? result);
+}
+
+export interface AllProjectsGlobalCommitInput {
+  finalized: ProjectScanResult[];
+  projects: Project[];
+  searchQuery: string;
+  searchIndexes: Map<string, Map<string, IndexedPrompt>>;
+  selectedProjectPath: string | null;
+  selectedName: string | null;
+  editorDirty: boolean;
+  openedFingerprint: EntryFingerprint | null;
+  reloadSelected: boolean;
+}
+
+export interface AllProjectsGlobalCommitPlan {
+  summaries: PromptSummary[];
+  healthyProjects: Project[];
+  healthyProjectPaths: string[];
+  prompts: PromptSummary[];
+  queryAtCommit: string;
+  decision: SelectedRefreshDecision;
+  selectedReload: { projectPath: string; name: string } | null;
+}
+
+/** Plan every synchronous global snapshot consumer from one finalized project scan set. */
+export function planAllProjectsGlobalCommit(input: AllProjectsGlobalCommitInput): AllProjectsGlobalCommitPlan {
+  const healthyProjects = input.projects.filter((project) =>
+    input.finalized.some((result) => result.projectPath === project.path)
+  );
+  const summaries = aggregateScanResults(input.finalized);
+  const queryAtCommit = input.searchQuery;
+  const prompts = queryAtCommit.trim()
+    ? mergeSearchResults(healthyProjects, input.searchIndexes, queryAtCommit)
+    : summaries;
+  const decision = decideSelectedRefresh({
+    selectedProjectPath: input.selectedProjectPath,
+    selectedName: input.selectedName,
+    summaries,
+    editorDirty: input.editorDirty,
+    openedFingerprint: input.openedFingerprint,
+    reloadSelected: input.reloadSelected,
+  });
+  const selectedReload =
+    decision.reloadSelected &&
+    !decision.clearSelection &&
+    input.selectedName &&
+    input.selectedProjectPath &&
+    summariesContainIdentity(summaries, input.selectedProjectPath, input.selectedName)
+      ? { projectPath: input.selectedProjectPath, name: input.selectedName }
+      : null;
+  return {
+    summaries,
+    healthyProjects,
+    healthyProjectPaths: healthyProjects.map((project) => project.path),
+    prompts,
+    queryAtCommit,
+    decision,
+    selectedReload,
+  };
 }
 
 /** Re-refresh mutated projects until every snapshot revision matches, then commit synchronously. */
