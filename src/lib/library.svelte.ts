@@ -60,6 +60,7 @@ import {
   type PromptHealthInput,
 } from './health/health';
 import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
+import { matchesLibraryFilters } from './library/visible-filter';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
   decideSelectedRefresh,
@@ -269,8 +270,11 @@ function projectHealthInput(
     projectPath,
     name: entry.summary.name,
     frontmatterError: entry.summary.frontmatterError,
-    bodyEmpty: entry.bodyEmpty ?? false,
-    variableNames: entry.variableNames ?? [],
+    // Pass body-read absence through: summary-only entries (body read failed)
+    // must keep variableNames/bodyEmpty undefined so Health skips variable and
+    // EMPTY_BODY checks instead of fabricating stale warnings.
+    bodyEmpty: entry.bodyEmpty,
+    variableNames: entry.variableNames,
     variables: entry.summary.metadata.variables,
     related: entry.summary.metadata.related,
     projectPromptNames: projectNames,
@@ -1202,21 +1206,19 @@ export function promptHealth(prompt: PromptSummary): PromptHealthIssue[] {
 
 export function visiblePrompts(): PromptSummary[] {
   const allProjects = isAllProjects();
-  const filtered = library.prompts.filter((prompt) => {
-    const viewMatches =
-      library.smartView === 'all' ||
-      (library.smartView === 'favorites' && prompt.metadata.favorite) ||
-      (library.smartView === 'needs-attention' && promptHealth(prompt).length > 0) ||
-      (library.smartView === prompt.metadata.status);
-    const folderMatches =
-      allProjects ||
-      !library.folderFilter ||
-      prompt.folder === library.folderFilter ||
-      prompt.folder.startsWith(library.folderFilter + '/');
-    const tagMatches = !library.tagFilter || prompt.metadata.tags.includes(library.tagFilter);
-    const modelMatches = !library.modelFilter || prompt.metadata.models.includes(library.modelFilter);
-    return viewMatches && folderMatches && tagMatches && modelMatches;
-  });
+  const filtered = library.prompts.filter((prompt) =>
+    matchesLibraryFilters(
+      prompt,
+      {
+        smartView: library.smartView,
+        folderFilter: library.folderFilter,
+        tagFilter: library.tagFilter,
+        modelFilter: library.modelFilter,
+        allProjects,
+      },
+      promptHealth(prompt).length
+    )
+  );
   const sorted = [...filtered];
   if (library.searchQuery.trim() && library.sort === 'modified-desc') return sorted;
   sorted.sort((a, b) => {

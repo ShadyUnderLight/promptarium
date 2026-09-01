@@ -112,10 +112,52 @@ eq(
   'self relation is SELF_RELATED_PROMPT'
 );
 
+eq(
+  codes(derivePromptHealth(base({ related: ['gone', 'gone'] }))),
+  ['BROKEN_RELATED_PROMPT'],
+  'duplicate related entries are reported once'
+);
+
+eq(
+  codes(derivePromptHealth(base({ related: ['../escape', '../escape'] }))),
+  ['INVALID_RELATED_PROMPT'],
+  'duplicate invalid related entries are reported once'
+);
+
 {
   const invalid = derivePromptHealth(base({ related: ['../escape'] }))[0];
   assert(invalid && invalid.severity === 'error', 'INVALID_RELATED_PROMPT is severity error');
 }
+
+console.log('summary fallback (body read failed)');
+
+// summaryEntryFromScan() produces an entry without variableNames/bodyEmpty but
+// with metadata.variables intact. Health must not turn those annotations into
+// stale warnings, and must not report EMPTY_BODY it cannot know about.
+eq(
+  codes(
+    derivePromptHealth(
+      base({ variableNames: undefined, bodyEmpty: undefined, variables: { focus: { description: 'x' } } })
+    )
+  ),
+  [],
+  'summary fallback with annotations does not fabricate STALE_VARIABLE_DOCUMENTATION'
+);
+
+eq(
+  codes(
+    derivePromptHealth(
+      base({
+        variableNames: undefined,
+        bodyEmpty: undefined,
+        frontmatterError: 'bad',
+        related: ['gone'],
+      })
+    )
+  ),
+  ['INVALID_FRONTMATTER', 'BROKEN_RELATED_PROMPT'],
+  'summary fallback still reports frontmatter and relation issues'
+);
 
 console.log('empty body + leftover annotation');
 

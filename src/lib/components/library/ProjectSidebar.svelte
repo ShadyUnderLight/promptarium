@@ -148,8 +148,14 @@
 
   function selectView(view: typeof library.smartView): void {
     library.smartView = view;
-    library.folderFilter = '';
-    library.tagFilter = '';
+    // Only the "All prompts" reset clears the tag/folder filters. Every other
+    // smart view (Needs Attention, Favorites, Draft, Archived) combines with
+    // whichever tag/folder filter is already active (Issue #13 requires
+    // Needs Attention to compose with Search and Tag/Folder filters).
+    if (view === 'all') {
+      library.folderFilter = '';
+      library.tagFilter = '';
+    }
   }
 
   async function newFolder(): Promise<void> {
@@ -311,7 +317,7 @@
               class:sidebar-nav__item--active={library.folderFilter === folder.path}
               class="sidebar-nav__item"
               style={'--depth:' + folder.depth}
-              onclick={() => { library.folderFilter = folder.path; library.smartView = 'all'; library.tagFilter = ''; }}
+              onclick={() => { library.folderFilter = folder.path; }}
               oncontextmenu={(event) => folderMenu(event, folder.path)}
               title="Right-click to rename or delete an empty folder"
             >
@@ -328,7 +334,7 @@
       <div class="sidebar-section__heading"><span>Tags</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
-          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => { library.tagFilter = item.tag; library.smartView = 'all'; library.folderFilter = ''; }}>
+          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => { library.tagFilter = item.tag; }}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}

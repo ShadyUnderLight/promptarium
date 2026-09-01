@@ -44,10 +44,15 @@ export interface PromptHealthInput {
   projectPath: string;
   name: string;
   frontmatterError?: string;
-  /** True when the body is empty or whitespace-only after trim. */
-  bodyEmpty: boolean;
-  /** Variable names in first-appearance order, produced by the body parser. */
-  variableNames: string[];
+  /** True when the body is empty or whitespace-only after trim. Absent when the
+   *  body was never read (scan fallback), in which case no EMPTY_BODY issue is
+   *  reported. */
+  bodyEmpty?: boolean;
+  /** Variable names in first-appearance order, produced by the body parser.
+   *  Absent when the body was never read (scan fallback): variable issues are
+   *  skipped entirely, so an unread body can never fabricate STALE / undocumented
+   *  signals from annotations alone. */
+  variableNames?: string[];
   variables?: Record<string, VariableDoc>;
   related: string[];
   /** Names of every prompt in the same project (for relation target existence). */
@@ -91,28 +96,38 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
     });
   }
 
-  const contract = classifyVariableContract(input.variableNames, input.variables);
-  for (const variable of contract.undocumented) {
-    issues.push({
-      code: 'UNDOCUMENTED_VARIABLE',
-      severity: 'warning',
-      message: `Variable {${variable.name}} has no documentation`,
-      detail: `{${variable.name}} appears in the body but has no description or example annotation.`,
-    });
-  }
-  for (const variable of contract.stale) {
-    issues.push({
-      code: 'STALE_VARIABLE_DOCUMENTATION',
-      severity: 'warning',
-      message: `Variable annotation {${variable.name}} is stale`,
-      detail: `{${variable.name}} is documented but no longer appears in the body.`,
-    });
+  // Variable health is only meaningful when the body was actually read. A
+  // summary-only entry (scan fallback, variableNames === undefined) must not be
+  // turned into stale / undocumented warnings from its annotations alone.
+  if (input.variableNames !== undefined) {
+    const contract = classifyVariableContract(input.variableNames, input.variables);
+    for (const variable of contract.undocumented) {
+      issues.push({
+        code: 'UNDOCUMENTED_VARIABLE',
+        severity: 'warning',
+        message: `Variable {${variable.name}} has no documentation`,
+        detail: `{${variable.name}} appears in the body but has no description or example annotation.`,
+      });
+    }
+    for (const variable of contract.stale) {
+      issues.push({
+        code: 'STALE_VARIABLE_DOCUMENTATION',
+        severity: 'warning',
+        message: `Variable annotation {${variable.name}} is stale`,
+        detail: `{${variable.name}} is documented but no longer appears in the body.`,
+      });
+    }
   }
 
-  // Mirror relations.ts resolveRelations classification exactly: self →
-  // invalid → missing. Keeping both in step matters because the Related UI and
-  // Health must never disagree about the same related entry.
+  // Mirror relations.ts resolveRelations classification exactly: dedupe first,
+  // then self → invalid → missing. Keeping both in step matters because the
+  // Related UI and Health must never disagree about the same related entry.
+  // External edits may write duplicate entries, so only the first occurrence of
+  // a path is judged — a duplicate must not double-count a warning.
+  const seen = new Set<string>();
   for (const path of input.related) {
+    if (seen.has(path)) continue;
+    seen.add(path);
     if (path === input.name) {
       issues.push({
         code: 'SELF_RELATED_PROMPT',
