@@ -32,9 +32,9 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(name, modifiedAt = 1000, sizeBytes = 100) {
+function summary(projectPath, name, modifiedAt = 1000, sizeBytes = 100) {
   return {
-    projectPath: '/project-a',
+    projectPath,
     relativePath: name + '.md',
     name,
     folder: '',
@@ -49,10 +49,11 @@ function summary(name, modifiedAt = 1000, sizeBytes = 100) {
 console.log('clean selected reloads when requested');
 eq(
   decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
     selectedName: 'a',
-    summaries: [summary('a')],
+    summaries: [summary('/project-a', 'a')],
     editorDirty: false,
-    openedFingerprint: summaryFingerprint(summary('a')),
+    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: true,
   }),
   {
@@ -67,10 +68,11 @@ eq(
 console.log('dirty selected skips reload and flags disk change');
 eq(
   decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
     selectedName: 'a',
-    summaries: [summary('a', 2000, 100)],
+    summaries: [summary('/project-a', 'a', 2000, 100)],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('a', 1000, 100)),
+    openedFingerprint: summaryFingerprint(summary('/project-a', 'a', 1000, 100)),
     reloadSelected: false,
   }),
   {
@@ -85,10 +87,11 @@ eq(
 console.log('dirty selected with unchanged disk stays quiet');
 eq(
   decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
     selectedName: 'a',
-    summaries: [summary('a')],
+    summaries: [summary('/project-a', 'a')],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('a')),
+    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: false,
   }),
   {
@@ -103,10 +106,11 @@ eq(
 console.log('deleted selected clears when clean');
 eq(
   decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
     selectedName: 'a',
     summaries: [],
     editorDirty: false,
-    openedFingerprint: summaryFingerprint(summary('a')),
+    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: false,
   }),
   {
@@ -121,10 +125,11 @@ eq(
 console.log('deleted selected stays when dirty');
 eq(
   decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
     selectedName: 'a',
     summaries: [],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('a')),
+    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: false,
   }),
   {
@@ -134,6 +139,28 @@ eq(
     preserveEditor: true,
   },
   'deleted dirty'
+);
+
+console.log('same-name prompts in different projects resolve by projectPath');
+eq(
+  decideSelectedRefresh({
+    selectedProjectPath: '/project-b',
+    selectedName: 'review/common',
+    summaries: [
+      summary('/project-a', 'review/common', 1000, 100),
+      summary('/project-b', 'review/common', 3000, 100),
+    ],
+    editorDirty: true,
+    openedFingerprint: summaryFingerprint(summary('/project-b', 'review/common', 1000, 100)),
+    reloadSelected: false,
+  }),
+  {
+    reloadSelected: false,
+    clearSelection: false,
+    externalChange: 'disk_changed',
+    preserveEditor: true,
+  },
+  'project-scoped dirty external change in all-projects aggregate'
 );
 
 if (failures) {

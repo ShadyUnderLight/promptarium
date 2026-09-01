@@ -1,17 +1,20 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { focusTrap } from '$lib/attachments/focusTrap';
-  import type { PromptDocument, PromptMetadata, PromptStatus } from '$lib/prompts/types';
+  import type { Project, PromptDocument, PromptMetadata, PromptStatus } from '$lib/prompts/types';
   import { defaultPromptMetadata } from '$lib/prompts/types';
 
   interface Props {
+    projects: Project[];
+    defaultProjectPath: string;
     defaultFolder?: string;
-    onCreate: (name: string, body: string, metadata: PromptMetadata) => Promise<PromptDocument>;
+    onCreate: (projectPath: string, name: string, body: string, metadata: PromptMetadata) => Promise<PromptDocument>;
     onClose: () => void;
   }
 
-  let { defaultFolder = '', onCreate, onClose }: Props = $props();
+  let { projects, defaultProjectPath, defaultFolder = '', onCreate, onClose }: Props = $props();
   let nameInput: HTMLInputElement | undefined = $state(undefined);
+  let projectPath = $state('');
   let name = $state('');
   let body = $state('');
   let description = $state('');
@@ -22,8 +25,10 @@
   let created = $state('');
   let error = $state('');
   let busy = $state(false);
+  const showProjectPicker = $derived(projects.length > 1);
 
   onMount(() => {
+    projectPath = defaultProjectPath;
     name = defaultFolder ? defaultFolder + '/' : '';
     nameInput?.focus();
   });
@@ -38,6 +43,10 @@
       error = 'Enter a filename for the prompt.';
       return;
     }
+    if (!projectPath) {
+      error = 'Choose a project for this prompt.';
+      return;
+    }
     busy = true;
     error = '';
     const metadata = defaultPromptMetadata();
@@ -48,7 +57,7 @@
     metadata.models = listValue(modelsText);
     if (created.trim()) metadata.created = created.trim();
     try {
-      await onCreate(trimmed, body, metadata);
+      await onCreate(projectPath, trimmed, body, metadata);
       onClose();
     } catch (cause) {
       error = cause instanceof Error ? cause.message : String(cause);
@@ -76,6 +85,17 @@
     </div>
 
     {#if error}<p class="form-error">{error}</p>{/if}
+
+    {#if showProjectPicker}
+      <label class="field">
+        <span>Project</span>
+        <select bind:value={projectPath}>
+          {#each projects as project (project.path)}
+            <option value={project.path}>{project.name}</option>
+          {/each}
+        </select>
+      </label>
+    {/if}
 
     <label class="field">
       <span>Filename <small>relative path, without .md</small></span>

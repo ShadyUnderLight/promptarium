@@ -7,10 +7,13 @@
     createFolder,
     deleteFolder,
     forgetProject,
+    isAllProjects,
     library,
+    projectDisplayName,
     renameFolder,
     replaceProjectPath,
     setActiveProject,
+    setAllProjectsScope,
     tagCounts,
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
@@ -30,9 +33,13 @@
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
 
   const project = $derived(activeProject());
+  const allProjectsActive = $derived(isAllProjects());
   const folders = $derived(flattenFolders(buildFolderTree(library.allPrompts, library.folderPaths)));
   const tags = $derived(tagCounts(library.allPrompts));
-  const isMissing = $derived(Boolean(library.error?.toLowerCase().includes('project folder not found')));
+  const isMissing = $derived(
+    !allProjectsActive && Boolean(library.error?.toLowerCase().includes('project folder not found'))
+  );
+  const showNavigation = $derived(Boolean(project) || allProjectsActive);
 
   function flattenFolders(nodes: FolderNode[], depth = 0): Array<FolderNode & { depth: number }> {
     return nodes.flatMap((node) => [{ ...node, depth }, ...flattenFolders(node.children, depth + 1)]);
@@ -120,6 +127,19 @@
     }
   }
 
+  async function enterAllProjects(): Promise<void> {
+    if (!canNavigate()) return;
+    if (!library.projects.length) {
+      onNotice('Add a prompt project first.');
+      return;
+    }
+    try {
+      await setAllProjectsScope();
+    } catch (error) {
+      onNotice(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function closeMenu(): void {
     menu = null;
   }
@@ -200,24 +220,44 @@
     {/if}
 
     <div class="project-list">
+      <button
+        type="button"
+        class="project-row project-row--all"
+        class:project-row--active={allProjectsActive}
+        onclick={enterAllProjects}
+        title="Search prompts across every registered project"
+      >
+        <span class="project-row__dot project-row__dot--all"></span>
+        <span class="project-row__name">All Projects</span>
+        {#if allProjectsActive}<span class="project-row__count">{library.allPrompts.length}</span>{/if}
+      </button>
       {#each library.projects as item (item.path)}
         <button
           type="button"
           class="project-row"
-          class:project-row--active={library.activeProjectPath === item.path}
+          class:project-row--active={!allProjectsActive && library.activeProjectPath === item.path}
           onclick={() => switchProject(item.path)}
           oncontextmenu={(event) => openMenu(event, item)}
           title={item.path}
         >
           <span class="project-row__dot" style={'--project-color:' + (item.color ?? 'var(--text-faint)')}></span>
           <span class="project-row__name">{item.name}</span>
-          {#if library.activeProjectPath === item.path}<span class="project-row__count">{library.allPrompts.length}</span>{/if}
+          {#if !allProjectsActive && library.activeProjectPath === item.path}<span class="project-row__count">{library.allPrompts.length}</span>{/if}
         </button>
       {:else}
         <p class="sidebar-empty">Add a folder to start your library.</p>
       {/each}
     </div>
   </div>
+
+  {#if allProjectsActive && library.allProjectsWarnings.length}
+    <div class="missing-project missing-project--warning">
+      <strong>{library.allProjectsWarnings.length} project{library.allProjectsWarnings.length === 1 ? '' : 's'} could not refresh</strong>
+      {#each library.allProjectsWarnings as warning (warning.projectPath)}
+        <span>{projectDisplayName(warning.projectPath)} — {warning.error}</span>
+      {/each}
+    </div>
+  {/if}
 
   {#if isMissing}
     <div class="missing-project">
@@ -234,7 +274,7 @@
     </div>
   {/if}
 
-  {#if project}
+  {#if showNavigation}
     <div class="sidebar-section">
       <div class="sidebar-section__heading"><span>Smart Views</span></div>
       <nav class="sidebar-nav">
@@ -253,29 +293,31 @@
       </nav>
     </div>
 
-    <div class="sidebar-section sidebar-section--folders">
-      <div class="sidebar-section__heading">
-        <span>Folders</span>
-        <button type="button" class="sidebar-icon" aria-label="New folder" title="New folder" onclick={newFolder}>＋</button>
+    {#if project && !allProjectsActive}
+      <div class="sidebar-section sidebar-section--folders">
+        <div class="sidebar-section__heading">
+          <span>Folders</span>
+          <button type="button" class="sidebar-icon" aria-label="New folder" title="New folder" onclick={newFolder}>＋</button>
+        </div>
+        <nav class="sidebar-nav">
+          {#each folders as folder (folder.path)}
+            <button
+              type="button"
+              class:sidebar-nav__item--active={library.folderFilter === folder.path}
+              class="sidebar-nav__item"
+              style={'--depth:' + folder.depth}
+              onclick={() => { library.folderFilter = folder.path; library.smartView = 'all'; library.tagFilter = ''; }}
+              oncontextmenu={(event) => folderMenu(event, folder.path)}
+              title="Right-click to rename or delete an empty folder"
+            >
+              <span class="folder-glyph">⌄</span><span>{folder.name}</span><span>{folder.promptCount}</span>
+            </button>
+          {:else}
+            <p class="sidebar-empty">Folders appear from your project tree.</p>
+          {/each}
+        </nav>
       </div>
-      <nav class="sidebar-nav">
-        {#each folders as folder (folder.path)}
-          <button
-            type="button"
-            class:sidebar-nav__item--active={library.folderFilter === folder.path}
-            class="sidebar-nav__item"
-            style={'--depth:' + folder.depth}
-            onclick={() => { library.folderFilter = folder.path; library.smartView = 'all'; library.tagFilter = ''; }}
-            oncontextmenu={(event) => folderMenu(event, folder.path)}
-            title="Right-click to rename or delete an empty folder"
-          >
-            <span class="folder-glyph">⌄</span><span>{folder.name}</span><span>{folder.promptCount}</span>
-          </button>
-        {:else}
-          <p class="sidebar-empty">Folders appear from your project tree.</p>
-        {/each}
-      </nav>
-    </div>
+    {/if}
 
     <div class="sidebar-section sidebar-section--tags">
       <div class="sidebar-section__heading"><span>Tags</span></div>

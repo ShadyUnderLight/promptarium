@@ -403,6 +403,14 @@ body {
   background: var(--project-color);
 }
 
+.project-row__dot--all {
+  background: linear-gradient(135deg, var(--accent-user) 0%, color-mix(in srgb, var(--accent-user) 55%, white) 100%);
+}
+
+.missing-project--warning {
+  border-color: color-mix(in srgb, #d4a017 35%, transparent);
+}
+
 .project-row__name,
 .sidebar-nav__item span:first-child {
   overflow: hidden;
@@ -745,6 +753,14 @@ body {
   text-overflow: ellipsis;
 }
 
+.prompt-list-item__project {
+  font-weight: 600;
+  color: var(--text-muted);
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .tag-chip,
 .tag-label,
 .variable-token,
@@ -838,6 +854,14 @@ body {
   flex-direction: column;
   gap: 0.55rem;
   padding: 1rem;
+}
+
+.library-refreshing {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent-user) 6%, transparent);
 }
 
 .library-loading span,

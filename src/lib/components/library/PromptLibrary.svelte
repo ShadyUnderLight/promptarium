@@ -1,67 +1,84 @@
 <script lang="ts">
-  import { library, promptVariableCount, visiblePrompts } from '$lib/library.svelte';
+  import { isAllProjects, library, projectDisplayName, promptVariableCount, visiblePrompts } from '$lib/library.svelte';
+  import { promptKey } from '$lib/library/scope';
   import type { PromptSummary } from '$lib/prompts/types';
   import PromptListItem from './PromptListItem.svelte';
   import PromptToolbar from './PromptToolbar.svelte';
 
   interface Props {
-    projectPath: string | null;
     onSelectPrompt: (prompt: PromptSummary) => void;
     onNewPrompt: () => void;
     onBatch: (prompts: PromptSummary[], action: 'favorite' | 'unfavorite' | 'archive' | 'draft' | 'active' | 'add-tag' | 'remove-tag' | 'delete', tag?: string) => Promise<boolean>;
   }
 
-  let { projectPath, onSelectPrompt, onNewPrompt, onBatch }: Props = $props();
-  let selectedNames = $state<string[]>([]);
+  let { onSelectPrompt, onNewPrompt, onBatch }: Props = $props();
+  let selectedKeys = $state<string[]>([]);
   const prompts = $derived(visiblePrompts());
+  const allProjects = $derived(isAllProjects());
+  const hasProjects = $derived(library.projects.length > 0);
+
   $effect(() => {
-    projectPath;
-    selectedNames = [];
+    library.libraryScope;
+    selectedKeys = [];
   });
 
   $effect(() => {
-    const available = new Set(prompts.map((prompt) => prompt.name));
-    const next = selectedNames.filter((name) => available.has(name));
-    if (next.length !== selectedNames.length) selectedNames = next;
+    const available = new Set(prompts.map((prompt) => promptKey(prompt.projectPath, prompt.name)));
+    const next = selectedKeys.filter((key) => available.has(key));
+    if (next.length !== selectedKeys.length) selectedKeys = next;
   });
 
-  function toggle(name: string): void {
-    selectedNames = selectedNames.includes(name)
-      ? selectedNames.filter((item) => item !== name)
-      : [...selectedNames, name];
+  function toggle(prompt: PromptSummary): void {
+    const key = promptKey(prompt.projectPath, prompt.name);
+    selectedKeys = selectedKeys.includes(key)
+      ? selectedKeys.filter((item) => item !== key)
+      : [...selectedKeys, key];
   }
 
   function selectAll(): void {
-    selectedNames = prompts.map((prompt) => prompt.name);
+    selectedKeys = prompts.map((prompt) => promptKey(prompt.projectPath, prompt.name));
   }
 
   function clearSelection(): void {
-    selectedNames = [];
+    selectedKeys = [];
   }
 
   async function handleBatch(action: Parameters<Props['onBatch']>[1], tag?: string): Promise<void> {
-    const selected = library.allPrompts.filter((prompt) => selectedNames.includes(prompt.name));
-    if (await onBatch(selected, action, tag)) selectedNames = [];
+    const selected = prompts.filter((prompt) => selectedKeys.includes(promptKey(prompt.projectPath, prompt.name)));
+    if (await onBatch(selected, action, tag)) selectedKeys = [];
   }
 
   function variableCount(prompt: PromptSummary): number | null {
     return promptVariableCount(prompt);
   }
+
+  function isSelected(prompt: PromptSummary): boolean {
+    return (
+      library.selectedProjectPath === prompt.projectPath &&
+      library.selectedName === prompt.name &&
+      library.selected?.projectPath === prompt.projectPath &&
+      library.selected.name === prompt.name
+    );
+  }
 </script>
 
 <section class="prompt-library" aria-label="Prompt library">
-  <PromptToolbar selectedCount={selectedNames.length} onSelectAll={selectAll} onClearSelection={clearSelection} onBatch={handleBatch} />
+  <PromptToolbar selectedCount={selectedKeys.length} batchEnabled={true} onSelectAll={selectAll} onClearSelection={clearSelection} onBatch={handleBatch} />
+
+  {#if library.refreshing}
+    <div class="library-refreshing" role="status">Refreshing…</div>
+  {/if}
 
   {#if library.loading}
     <div class="library-loading"><span></span><span></span><span></span><span></span></div>
-  {:else if !library.activeProjectPath}
+  {:else if !hasProjects}
     <div class="library-empty">
       <div class="empty-icon">⌘</div>
       <h2>Choose a prompt project</h2>
       <p>Add a folder from the sidebar. Every Markdown file inside becomes a prompt.</p>
       <button type="button" class="btn btn--primary" onclick={onNewPrompt}>Add your first prompt</button>
     </div>
-  {:else if library.error?.toLowerCase().includes('project folder not found')}
+  {:else if !allProjects && library.error?.toLowerCase().includes('project folder not found')}
     <div class="library-empty library-empty--error">
       <div class="empty-icon">!</div>
       <h2>Project folder not found</h2>
@@ -76,14 +93,15 @@
     </div>
   {:else}
     <div class={'prompt-list prompt-list--' + library.viewMode} role="listbox" aria-label="Prompts">
-      {#each prompts as prompt (prompt.name)}
+      {#each prompts as prompt (promptKey(prompt.projectPath, prompt.name))}
         <PromptListItem
           prompt={prompt}
-          selected={library.selected?.projectPath === prompt.projectPath && library.selected.name === prompt.name}
-          checked={selectedNames.includes(prompt.name)}
+          projectLabel={allProjects ? projectDisplayName(prompt.projectPath) : null}
+          selected={isSelected(prompt)}
+          checked={selectedKeys.includes(promptKey(prompt.projectPath, prompt.name))}
           variableCount={variableCount(prompt)}
           onSelect={() => onSelectPrompt(prompt)}
-          onToggle={(event) => { event.stopPropagation(); toggle(prompt.name); }}
+          onToggle={(event) => { event.stopPropagation(); toggle(prompt); }}
         />
       {/each}
     </div>

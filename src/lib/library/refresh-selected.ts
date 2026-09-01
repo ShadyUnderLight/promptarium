@@ -4,6 +4,7 @@ import { fingerprintsMatch, summaryFingerprint, type EntryFingerprint } from './
 export type ExternalChangeState = null | 'disk_changed' | 'file_missing';
 
 export interface SelectedRefreshInput {
+  selectedProjectPath: string | null;
   selectedName: string | null;
   summaries: PromptSummary[];
   editorDirty: boolean;
@@ -20,8 +21,8 @@ export interface SelectedRefreshDecision {
 
 /** Pure planner for how a refresh should treat the currently selected prompt. */
 export function decideSelectedRefresh(input: SelectedRefreshInput): SelectedRefreshDecision {
-  const { selectedName, summaries, editorDirty, openedFingerprint, reloadSelected } = input;
-  if (!selectedName) {
+  const { selectedProjectPath, selectedName, summaries, editorDirty, openedFingerprint, reloadSelected } = input;
+  if (!selectedName || !selectedProjectPath) {
     return {
       reloadSelected: false,
       clearSelection: false,
@@ -30,7 +31,9 @@ export function decideSelectedRefresh(input: SelectedRefreshInput): SelectedRefr
     };
   }
 
-  const summary = summaries.find((prompt) => prompt.name === selectedName);
+  const summary = summaries.find(
+    (prompt) => prompt.projectPath === selectedProjectPath && prompt.name === selectedName
+  );
   if (!summary) {
     if (editorDirty) {
       return {

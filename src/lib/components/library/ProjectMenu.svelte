@@ -3,7 +3,7 @@
   import { focusTrap } from '$lib/attachments/focusTrap';
   import { revealInFinder as apiRevealInFinder } from '$lib/api';
   import type { Project } from '$lib/prompts/types';
-  import { forgetProject, library, renameProjectLabel, setProjectColor } from '$lib/library.svelte';
+  import { forgetProject, renameProjectLabel, setProjectColor } from '$lib/library.svelte';
 
   interface Props {
     project: Project;
@@ -43,7 +43,7 @@
 
   async function forget(): Promise<void> {
     if (!window.confirm('Forget “' + project.name + '”? The folder and all Markdown files will stay on disk.')) return;
-    if (project.path === library.activeProjectPath && !canNavigate()) return;
+    if (!canNavigate()) return;
     try {
       await forgetProject(project.path);
       onNotice('Project forgotten. Its files are still on disk.');
