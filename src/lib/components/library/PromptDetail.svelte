@@ -85,7 +85,7 @@
       mode = 'preview';
       return;
     }
-    const key = current.name + '\u0000' + current.raw;
+    const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
     body = current.body;

@@ -65,6 +65,10 @@
 <section class="prompt-library" aria-label="Prompt library">
   <PromptToolbar selectedCount={selectedKeys.length} batchEnabled={true} onSelectAll={selectAll} onClearSelection={clearSelection} onBatch={handleBatch} />
 
+  {#if library.refreshing}
+    <div class="library-refreshing" role="status">Refreshing…</div>
+  {/if}
+
   {#if library.loading}
     <div class="library-loading"><span></span><span></span><span></span><span></span></div>
   {:else if !hasProjects}

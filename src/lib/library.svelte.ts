@@ -85,7 +85,9 @@ export const library = $state({
   selectedName: null as string | null,
   selected: null as PromptDocument | null,
   allProjectsWarnings: [] as Array<{ projectPath: string; error: string }>,
+  allProjectsHealthyPaths: [] as string[],
   loading: false,
+  refreshing: false,
   loadingDocument: false,
   error: null as string | null,
   searchQuery: '',
@@ -161,6 +163,11 @@ function scopeStillCurrent(serial: number, scope: LibraryScope): boolean {
 
 function selectedIdentityMatches(project: string, name: string): boolean {
   return library.selectedProjectPath === project && library.selectedName === name;
+}
+
+function healthyProjectsForSearch(): Project[] {
+  const paths = new Set(library.allProjectsHealthyPaths);
+  return library.projects.filter((project) => paths.has(project.path));
 }
 
 async function refreshCurrentScope(options: RefreshLibraryOptions = {}): Promise<void> {
@@ -454,6 +461,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
 
     const decision = decideSelectedRefresh({
+      selectedProjectPath: library.selectedProjectPath,
       selectedName: library.selectedName,
       summaries,
       editorDirty,
@@ -524,9 +532,12 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     library.prompts = [];
     library.folderPaths = [];
     library.allProjectsWarnings = [];
+    library.allProjectsHealthyPaths = [];
     return;
   }
-  library.loading = true;
+  const initialLoad = library.allPrompts.length === 0;
+  library.loading = initialLoad;
+  library.refreshing = !initialLoad;
   const warnings: Array<{ projectPath: string; error: string }> = [];
   try {
     const scanResults = await mapWithConcurrency(library.projects, ALL_PROJECTS_CONCURRENCY, async (project) => {
@@ -542,6 +553,10 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     if (!scopeStillCurrent(serial, scope)) return;
 
     const healthy = scanResults.filter((result): result is NonNullable<typeof result> => result !== null);
+    const healthyProjects = library.projects.filter((project) =>
+      healthy.some((result) => result.projectPath === project.path)
+    );
+    library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
     const summaries = aggregateScanResults(healthy);
     library.allPrompts = summaries;
     library.folderPaths = [];
@@ -551,17 +566,38 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
-      library.prompts = mergeSearchResults(library.projects, searchIndexes, query);
+      library.prompts = mergeSearchResults(healthyProjects, searchIndexes, query);
     } else {
       library.prompts = summaries;
     }
     if (!scopeStillCurrent(serial, scope) || querySerial !== searchSerial || query !== library.searchQuery) return;
 
+    const decision = decideSelectedRefresh({
+      selectedProjectPath: library.selectedProjectPath,
+      selectedName: library.selectedName,
+      summaries,
+      editorDirty,
+      openedFingerprint: selectedOpenedFingerprint,
+      reloadSelected,
+    });
+
+    if (decision.externalChange) {
+      library.externalChangeState = decision.externalChange;
+    } else if (decision.reloadSelected) {
+      library.externalChangeState = null;
+    }
+
     const selectedName = library.selectedName;
     const selectedProject = library.selectedProjectPath;
     const selectedDocumentSerial = documentSerial;
-    if (
-      reloadSelected &&
+    if (decision.clearSelection) {
+      library.selectedProjectPath = null;
+      library.selectedName = null;
+      library.selected = null;
+      selectedOpenedFingerprint = null;
+      library.externalChangeState = null;
+    } else if (
+      decision.reloadSelected &&
       selectedName &&
       selectedProject &&
       summariesContainIdentity(summaries, selectedProject, selectedName)
@@ -576,12 +612,6 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
       library.selected = selected;
       selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
       library.externalChangeState = null;
-    } else if (!editorDirty && selectedProject && selectedName && !summariesContainIdentity(summaries, selectedProject, selectedName)) {
-      library.selectedProjectPath = null;
-      library.selectedName = null;
-      library.selected = null;
-      selectedOpenedFingerprint = null;
-      library.externalChangeState = null;
     }
   } catch (error) {
     if (!scopeStillCurrent(serial, scope)) return;
@@ -589,7 +619,10 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     library.allPrompts = [];
     library.prompts = [];
   } finally {
-    if (serial === loadSerial && isAllProjects()) library.loading = false;
+    if (serial === loadSerial && isAllProjects()) {
+      library.loading = false;
+      library.refreshing = false;
+    }
   }
 }
 
@@ -993,7 +1026,7 @@ async function runSearch(): Promise<void> {
     }
     try {
       const results = query
-        ? mergeSearchResults(library.projects, searchIndexes, query)
+        ? mergeSearchResults(healthyProjectsForSearch(), searchIndexes, query)
         : library.allPrompts;
       if (serial !== searchSerial || !isAllProjects()) return;
       library.prompts = results;

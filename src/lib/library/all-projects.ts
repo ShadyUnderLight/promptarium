@@ -79,15 +79,24 @@ export function mergeSearchResults(
   query: string
 ): PromptSummary[] {
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!tokens.length) return aggregateSummaries([...indexes.values()].flatMap((index) => [...index.values()].map((e) => e.summary)));
+  if (!tokens.length) {
+    const summaries: PromptSummary[] = [];
+    for (const project of projects) {
+      const index = indexes.get(project.path);
+      if (!index) continue;
+      for (const entry of index.values()) summaries.push(entry.summary);
+    }
+    return aggregateSummaries(summaries);
+  }
 
   const matches: Array<{ summary: PromptSummary; score: number }> = [];
-  for (const [projectPath, index] of indexes) {
+  for (const project of projects) {
+    const index = indexes.get(project.path);
+    if (!index) continue;
     for (const entry of index.values()) {
       const score = scoreEntry(entry, tokens);
       if (score !== null) matches.push({ summary: entry.summary, score });
     }
-    void projectPath;
   }
 
   return matches
@@ -105,7 +114,9 @@ export function compareSearchHits(
     projectLabel(projects, b.summary.projectPath)
   );
   if (projectCompare !== 0) return projectCompare;
-  return a.summary.name.localeCompare(b.summary.name);
+  const nameCompare = a.summary.name.localeCompare(b.summary.name);
+  if (nameCompare !== 0) return nameCompare;
+  return a.summary.projectPath.localeCompare(b.summary.projectPath);
 }
 
 export function aggregateSummaries(summaries: PromptSummary[]): PromptSummary[] {

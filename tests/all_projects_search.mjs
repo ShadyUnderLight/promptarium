@@ -115,6 +115,32 @@ eq(
 const tagHits = mergeSearchResults(projects, indexes, 'image');
 eq(tagHits.length, 2, 'tag search finds prompts in both projects');
 
+console.log('mergeSearchResults ignores stale indexes outside registered projects');
+const indexesWithGhost = new Map(indexes);
+indexesWithGhost.set(
+  '/project-ghost',
+  new Map([
+    [
+      'ghost-only',
+      entry('/project-ghost', 'ghost-only', 'ghost-only-keyword body', 'ghost only', []),
+    ],
+  ])
+);
+const registeredOnly = [{ name: 'Work', path: '/project-a' }];
+eq(
+  mergeSearchResults(registeredOnly, indexesWithGhost, 'ghost-only-keyword').length,
+  0,
+  'forgotten project index must not appear in global search'
+);
+
+console.log('mergeSearchResults ignores unhealthy projects this refresh');
+const onlyHealthyA = [{ name: 'Work', path: '/project-a' }];
+eq(
+  mergeSearchResults(onlyHealthyA, indexes, 'image').map((item) => item.projectPath),
+  ['/project-a'],
+  'failed scan project must not contribute search hits'
+);
+
 console.log('compareSearchHits deterministic tie-break');
 const tie = compareSearchHits(
   { summary: summary('/project-b', 'z-prompt'), score: 10 },
@@ -122,6 +148,17 @@ const tie = compareSearchHits(
   projects
 );
 assert(tie < 0, 'equal score sorts by project label then prompt name');
+
+const sameLabelProjects = [
+  { name: 'Work', path: '/project-a' },
+  { name: 'Work', path: '/project-b' },
+];
+const tieSameLabel = compareSearchHits(
+  { summary: summary('/project-b', 'shared'), score: 10 },
+  { summary: summary('/project-a', 'shared'), score: 10 },
+  sameLabelProjects
+);
+assert(tieSameLabel !== 0, 'same label and prompt name still tie-breaks by projectPath');
 
 if (failures) {
   console.error('\n' + failures + ' test(s) failed.');

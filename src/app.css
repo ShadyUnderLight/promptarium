@@ -856,6 +856,14 @@ body {
   padding: 1rem;
 }
 
+.library-refreshing {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent-user) 6%, transparent);
+}
+
 .library-loading span,
 .detail-loading span {
   height: 4.5rem;
