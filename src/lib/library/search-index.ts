@@ -103,6 +103,23 @@ export function isStaleSearchIndexSwap(revisionAtStart: number, currentRevision:
   return revisionAtStart !== currentRevision;
 }
 
+/** Rebuild until revision is stable so callers can await a committed index snapshot. */
+export async function buildUntilRevisionStable<T>(options: {
+  getRevision: () => number;
+  shouldAbort?: () => boolean;
+  build: () => Promise<T>;
+}): Promise<T | null> {
+  while (true) {
+    if (options.shouldAbort?.()) return null;
+    const revisionAtStart = options.getRevision();
+    const candidate = await options.build();
+    if (options.shouldAbort?.()) return null;
+    if (!isStaleSearchIndexSwap(revisionAtStart, options.getRevision())) {
+      return candidate;
+    }
+  }
+}
+
 /** Build a candidate index from a refresh plan; stats count actual body reads separately. */
 export async function buildSearchIndexFromPlan(
   plan: IndexRefreshPlan,

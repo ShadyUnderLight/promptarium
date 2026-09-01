@@ -42,18 +42,20 @@ import {
   appendHistoryPage,
   isStaleHistoryDiffResponse,
   isStaleHistoryResponse,
+  loadHistoryFirstPage,
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 import {
   buildSearchIndexFromPlan,
+  buildUntilRevisionStable,
   fingerprintsMatch,
-  isStaleSearchIndexSwap,
   planIndexRefresh,
   searchEntryFromDocument,
   summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
+import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
   decideSelectedRefresh,
@@ -191,18 +193,23 @@ function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
 }
 
 function summaryOf(document: PromptDocument): PromptSummary {
-  return {
-    projectPath: document.projectPath,
-    relativePath: document.relativePath,
-    name: document.name,
-    folder: document.folder,
-    extension: document.extension,
-    metadata: document.metadata,
-    modifiedAt: document.modifiedAt,
-    sizeBytes: document.sizeBytes,
-    hasFrontmatter: document.hasFrontmatter,
-    frontmatterError: document.frontmatterError,
-  };
+  return summaryFromDocument(document);
+}
+
+function setSelectedDocument(document: PromptDocument): void {
+  library.selectedProjectPath = document.projectPath;
+  library.selectedName = document.name;
+  library.selected = document;
+  selectedOpenedFingerprint = openedFingerprintForDocument(document);
+  library.externalChangeState = null;
+}
+
+function clearSelectedDocument(): void {
+  library.selectedProjectPath = null;
+  library.selectedName = null;
+  library.selected = null;
+  selectedOpenedFingerprint = null;
+  library.externalChangeState = null;
 }
 
 function diffCacheKey(projectPath: string, name: string, commit: string): string {
@@ -252,36 +259,38 @@ async function refreshSearchIndex(
   summaries: PromptSummary[],
   serial: number
 ): Promise<void> {
-  const revisionAtStart = searchIndexRevision(projectPath);
-  const oldIndex = searchIndexes.get(projectPath);
-  const plan = planIndexRefresh(oldIndex, summaries);
-  const { index, stats } = await buildSearchIndexFromPlan(plan, {
-    projectPath,
-    readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
-    selectedEntry: (prompt) => {
-      const selected = library.selected;
-      if (
-        selected &&
-        selected.projectPath === projectPath &&
-        selected.name === prompt.name &&
-        fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
-      ) {
-        return searchEntryFromDocument(selected);
-      }
-      return null;
+  const result = await buildUntilRevisionStable({
+    getRevision: () => searchIndexRevision(projectPath),
+    shouldAbort: () =>
+      serial !== loadSerial ||
+      (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath),
+    build: async () => {
+      const revisionAtStart = searchIndexRevision(projectPath);
+      const oldIndex = searchIndexes.get(projectPath);
+      const plan = planIndexRefresh(oldIndex, summaries);
+      const built = await buildSearchIndexFromPlan(plan, {
+        projectPath,
+        readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
+        selectedEntry: (prompt) => {
+          const selected = library.selected;
+          if (
+            selected &&
+            selected.projectPath === projectPath &&
+            selected.name === prompt.name &&
+            fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
+          ) {
+            return searchEntryFromDocument(selected);
+          }
+          return null;
+        },
+      });
+      return { revisionAtStart, plan, ...built };
     },
   });
 
-  if (serial !== loadSerial) return;
-  if (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath) return;
+  if (!result) return;
 
-  if (isStaleSearchIndexSwap(revisionAtStart, searchIndexRevision(projectPath))) {
-    if (import.meta.env.DEV) {
-      console.debug(`[index] project=${projectPath} stale swap discarded, re-planning`);
-    }
-    void refreshSearchIndex(projectPath, summaries, serial);
-    return;
-  }
+  const { index, stats, plan } = result;
 
   searchIndexes.set(projectPath, index);
   syncVariableCounts(projectPath, index);
@@ -493,11 +502,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     const selectedProject = library.selectedProjectPath;
     const selectedDocumentSerial = documentSerial;
     if (decision.clearSelection) {
-      library.selectedProjectPath = null;
-      library.selectedName = null;
-      library.selected = null;
-      selectedOpenedFingerprint = null;
-      library.externalChangeState = null;
+      clearSelectedDocument();
     } else if (
       decision.reloadSelected &&
       selectedName &&
@@ -512,9 +517,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
         library.selectedName !== selectedName ||
         library.selectedProjectPath !== selectedProject
       ) return;
-      library.selected = selected;
-      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
-      library.externalChangeState = null;
+      setSelectedDocument(selected);
     }
   } catch (error) {
     if (serial !== loadSerial || project !== library.activeProjectPath) return;
@@ -607,11 +610,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     const selectedProject = library.selectedProjectPath;
     const selectedDocumentSerial = documentSerial;
     if (decision.clearSelection) {
-      library.selectedProjectPath = null;
-      library.selectedName = null;
-      library.selected = null;
-      selectedOpenedFingerprint = null;
-      library.externalChangeState = null;
+      clearSelectedDocument();
     } else if (
       decision.reloadSelected &&
       selectedName &&
@@ -625,9 +624,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
         library.selectedName !== selectedName ||
         library.selectedProjectPath !== selectedProject
       ) return;
-      library.selected = selected;
-      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
-      library.externalChangeState = null;
+      setSelectedDocument(selected);
     }
   } catch (error) {
     if (!scopeStillCurrent(serial, scope)) return;
@@ -739,9 +736,7 @@ export async function selectPrompt(project: string, name: string): Promise<void>
   try {
     const document = await apiReadPrompt(project, name);
     if (serial !== documentSerial || !selectedIdentityMatches(project, name)) return;
-    library.selected = document;
-    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
-    library.externalChangeState = null;
+    setSelectedDocument(document);
   } catch (error) {
     if (serial === documentSerial && selectedIdentityMatches(project, name)) library.error = errorText(error);
   } finally {
@@ -756,7 +751,6 @@ export async function loadPromptHistory(project: string, name: string): Promise<
   library.historyLoading = true;
   try {
     const cacheKey = promptKey(project, name);
-    const cached = historyCache.get(cacheKey);
     const repo = await apiGitRepositoryInfo(project);
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
@@ -766,11 +760,11 @@ export async function loadPromptHistory(project: string, name: string): Promise<
       library.historyLoading = false;
       return;
     }
-    const page = cached ?? (await apiGitFileHistory(project, name));
+    const page = await loadHistoryFirstPage(() => apiGitFileHistory(project, name));
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
-    if (!cached) historyCache.set(cacheKey, page);
+    historyCache.set(cacheKey, page);
     library.historyPage = page;
     if (page.commits.length > 0) {
       await selectHistoryCommit(project, name, page.commits[0], serial);
@@ -924,11 +918,7 @@ export async function saveDocument(
     expectedRaw
   );
   if (selectedIdentityMatches(source.projectPath, source.name)) {
-    library.selected = document;
-    library.selectedProjectPath = document.projectPath;
-    library.selectedName = document.name;
-    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
-    library.externalChangeState = null;
+    setSelectedDocument(document);
     replaceSummary(summaryOf(document));
     updateSearchEntry(document);
     if (isAllProjects()) void runSearch();
@@ -948,15 +938,11 @@ export async function createPrompt(
   const document = await apiCreatePrompt(projectPath, name, body, metadata);
   if (isAllProjects()) {
     await refreshAllProjects();
-    library.selectedProjectPath = document.projectPath;
-    library.selectedName = document.name;
-    library.selected = document;
+    setSelectedDocument(document);
   } else if (projectPath === library.activeProjectPath) {
     await refreshLibrary();
     if (projectPath === library.activeProjectPath) {
-      library.selectedProjectPath = document.projectPath;
-      library.selectedName = document.name;
-      library.selected = document;
+      setSelectedDocument(document);
     }
   }
   return document;
@@ -974,7 +960,7 @@ export async function renamePrompt(source: PromptDocument, newName: string): Pro
     library.selectedName = document.name;
   }
   await refreshCurrentScope();
-  if (wasSelected) library.selected = document;
+  if (wasSelected) setSelectedDocument(document);
   return document;
 }
 
@@ -986,7 +972,7 @@ export async function movePrompt(source: PromptDocument, destination: string): P
     library.selectedName = document.name;
   }
   await refreshCurrentScope();
-  if (wasSelected) library.selected = document;
+  if (wasSelected) setSelectedDocument(document);
   return document;
 }
 

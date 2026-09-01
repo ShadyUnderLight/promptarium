@@ -62,3 +62,10 @@ export function appendHistoryPage(
     nextCursor: next.nextCursor,
   };
 }
+
+/** First-page history always refetches when opening History; cache is only for pagination within a session. */
+export async function loadHistoryFirstPage(
+  fetchFirstPage: () => Promise<GitFileHistoryPage>
+): Promise<GitFileHistoryPage> {
+  return fetchFirstPage();
+}

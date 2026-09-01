@@ -21,6 +21,7 @@ const {
   historyEmptyReason,
   isStaleHistoryDiffResponse,
   isStaleHistoryResponse,
+  loadHistoryFirstPage,
 } = await import(join(root, 'src/lib/prompts/history.ts'));
 
 let failures = 0;
@@ -163,6 +164,28 @@ eq(
   },
   'load more appends commits and advances cursor'
 );
+
+console.log('history first page always refetches on open');
+{
+  let fetchCount = 0;
+  const stalePage = { tracked: true, commits: [{ hash: 'stale' }], nextCursor: undefined };
+  const freshPage = {
+    tracked: true,
+    commits: [{ hash: 'new-1' }, { hash: 'new-2' }],
+    nextCursor: undefined,
+  };
+  const first = await loadHistoryFirstPage(async () => {
+    fetchCount++;
+    return stalePage;
+  });
+  const second = await loadHistoryFirstPage(async () => {
+    fetchCount++;
+    return freshPage;
+  });
+  eq(fetchCount, 2, 'each history open refetches first page instead of reusing session cache');
+  eq(first, stalePage, 'first open uses fetched page');
+  eq(second, freshPage, 'reopen sees new commits after external git activity');
+}
 
 console.log('duplicate diff lines');
 eq(

@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
   buildSearchIndexFromPlan,
+  buildUntilRevisionStable,
   isStaleSearchIndexSwap,
   planIndexRefresh,
   searchEntryFromDocument,
@@ -198,6 +199,24 @@ console.log('save before first live index bumps revision and blocks stale swap')
   eq(freshIndex.get('a')?.bodyLower, 'saved before live index {x} {y}'.toLowerCase(), 'replan reads saved body for A');
   eq(freshIndex.get('a')?.variableCount, 2, 'replan reads saved variable count for A');
   eq(freshIndex.get('b')?.bodyLower, 'b fresh body'.toLowerCase(), 'replan still builds remaining prompts');
+}
+
+console.log('buildUntilRevisionStable awaits retry until revision stabilizes');
+{
+  let revision = 0;
+  let buildAttempts = 0;
+
+  const index = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => {
+      buildAttempts++;
+      if (buildAttempts === 1) revision = 1;
+      return new Map([['attempt', buildAttempts]]);
+    },
+  });
+
+  eq(buildAttempts, 2, 'stale first candidate triggers awaited rebuild');
+  eq(index?.get('attempt'), 2, 'stable revision returns retried candidate');
 }
 
 if (failures > 0) {
