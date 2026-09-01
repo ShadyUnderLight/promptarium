@@ -5,6 +5,7 @@
     batchUpdate,
     createPrompt,
     deletePrompt,
+    duplicateAsVariant,
     duplicatePrompt,
     dismissExternalChange,
     initLibrary,
@@ -171,6 +172,16 @@
       .then(() => {
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
         notice('Prompt duplicated.');
+      })
+      .catch((error) => notice(errorText(error)));
+  }
+
+  function handleDuplicateAsVariant(document: PromptDocument, name: string): void {
+    if (detailDirty && !canNavigate()) return;
+    void duplicateAsVariant(document, name)
+      .then(() => {
+        if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
+        notice('Prompt duplicated as variant.');
       })
       .catch((error) => notice(errorText(error)));
   }
@@ -365,6 +376,7 @@
       onRename={handleRename}
       onMove={handleMove}
       onDuplicate={handleDuplicate}
+      onDuplicateAsVariant={handleDuplicateAsVariant}
       onDeleteRequest={requestDelete}
       onDirtyChange={(dirty) => (detailDirty = dirty)}
       onDismissExternalChange={dismissExternalChange}

@@ -1675,6 +1675,100 @@ body {
   max-width: 54rem;
 }
 
+/* Prompt Compare sheet (Issue #14): a temporary view, not a permanent tab. */
+.compare-modal {
+  max-width: 56rem;
+  max-height: min(88vh, 48rem);
+  overflow: auto;
+}
+
+.compare-modal__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.compare-modal__head h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.compare-modal__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.compare-picker {
+  width: 16rem;
+  max-width: 100%;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.72rem;
+}
+
+.compare-section {
+  margin-top: 1.1rem;
+}
+
+.compare-section__heading {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.45rem;
+}
+
+.compare-empty {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  padding: 0.4rem 0;
+}
+
+.compare-meta-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.compare-meta-row__field {
+  font-weight: 600;
+  min-width: 6.5rem;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.compare-meta-row__left {
+  color: var(--accent-result-err);
+  text-decoration: line-through;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.compare-meta-row__arrow {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.compare-meta-row__right {
+  color: #15803d;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .raw-file {
   min-height: 18rem;
   color: var(--text-muted);

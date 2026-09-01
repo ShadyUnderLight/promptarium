@@ -52,6 +52,31 @@ export function defaultPromptMetadata(): PromptMetadata {
   };
 }
 
+/** The frontmatter key that names an explicit variant parent. It is an
+ *  additive, optional field (contract invariant #8) that Rust preserves as an
+ *  unknown top-level key in `extra` (#9: unknown fields round-trip), so Issue
+ *  #14 needs no backend change: the value is read and written through `extra`. */
+const VARIANT_OF_KEY = 'variantOf';
+
+/** Read the explicit variant parent path from metadata, if any. Only a
+ *  non-empty string is a meaningful variant parent; an invalid or missing
+ *  value is surfaced by the variant resolver / Health, never normalized. */
+export function getVariantOf(metadata: PromptMetadata): string | undefined {
+  const value = metadata.extra[VARIANT_OF_KEY];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+/** Return a copy of `metadata` with `variantOf` set to `path` (removed when
+ *  `path` is empty or undefined). The value stays in `extra`, so it round-trips
+ *  through the existing serializer exactly like any other unknown field. */
+export function withVariantOf(metadata: PromptMetadata, path: string | undefined): PromptMetadata {
+  const extra = { ...metadata.extra };
+  const trimmed = path?.trim();
+  if (trimmed) extra[VARIANT_OF_KEY] = trimmed;
+  else delete extra[VARIANT_OF_KEY];
+  return { ...metadata, extra };
+}
+
 /** Lightweight library row; bodies are loaded only for the selected prompt. */
 export interface PromptSummary {
   projectPath: string;

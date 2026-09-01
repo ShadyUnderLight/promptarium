@@ -129,6 +129,86 @@ eq(
   assert(invalid && invalid.severity === 'error', 'INVALID_RELATED_PROMPT is severity error');
 }
 
+console.log('variant health (Issue #14)');
+
+eq(
+  codes(derivePromptHealth(base({ variantOf: 'parent', projectPromptNames: new Set(['review', 'parent']) }))),
+  [],
+  'valid variant parent produces no variant issue'
+);
+
+eq(
+  codes(derivePromptHealth(base({ variantOf: 'gone' }))),
+  ['BROKEN_VARIANT_PARENT'],
+  'missing variant parent is BROKEN_VARIANT_PARENT'
+);
+
+eq(
+  codes(derivePromptHealth(base({ variantOf: '../escape' }))),
+  ['INVALID_VARIANT_PARENT'],
+  'path-escape variant parent is INVALID_VARIANT_PARENT'
+);
+
+eq(
+  codes(derivePromptHealth(base({ variantOf: 'parent.md' }))),
+  ['INVALID_VARIANT_PARENT'],
+  'variant parent with a .md suffix is INVALID_VARIANT_PARENT'
+);
+
+eq(
+  codes(derivePromptHealth(base({ variantOf: 'review' }))),
+  ['SELF_VARIANT_PARENT'],
+  'self variant parent is SELF_VARIANT_PARENT'
+);
+
+{
+  const invalid = derivePromptHealth(base({ variantOf: '../escape' }))[0];
+  assert(invalid && invalid.severity === 'error', 'INVALID_VARIANT_PARENT is severity error');
+}
+
+eq(
+  codes(
+    derivePromptHealth(
+      base({ variantOf: 'parent', projectPromptNames: new Set(['review', 'parent']), projectVariantCycleNames: new Set(['review', 'other']) })
+    )
+  ),
+  ['VARIANT_CYCLE'],
+  'a prompt in a derived cycle reports VARIANT_CYCLE'
+);
+
+eq(
+  codes(
+    derivePromptHealth(
+      base({ variantOf: 'parent', projectPromptNames: new Set(['review', 'parent']), projectVariantCycleNames: new Set(['other']) })
+    )
+  ),
+  [],
+  'a prompt not in the derived cycle set reports no cycle issue'
+);
+
+eq(
+  codes(
+    derivePromptHealth(
+      base({ variantOf: 'parent', projectPromptNames: new Set(['review', 'parent']), projectVariantCycleNames: new Set(['review']) })
+    )
+  ),
+  ['VARIANT_CYCLE'],
+  'a valid parent can still be a cycle member'
+);
+
+{
+  const input = base({
+    variantOf: 'gone',
+    related: ['gone'],
+    projectVariantCycleNames: new Set(['other']),
+  });
+  eq(
+    codes(derivePromptHealth(input)),
+    ['BROKEN_RELATED_PROMPT', 'BROKEN_VARIANT_PARENT'],
+    'variant issues are emitted in fixed order after relation issues'
+  );
+}
+
 console.log('summary fallback (body read failed)');
 
 // summaryEntryFromScan() produces an entry without variableNames/bodyEmpty but

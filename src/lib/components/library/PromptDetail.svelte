@@ -15,6 +15,8 @@
   import PromptHistory from './PromptHistory.svelte';
   import VariableList from './VariableList.svelte';
   import RelatedList from './RelatedList.svelte';
+  import VariantFamilyList from './VariantFamilyList.svelte';
+  import PromptCompare from './PromptCompare.svelte';
 
   interface Props {
     document: PromptDocument | null;
@@ -33,6 +35,7 @@
     onRename: (document: PromptDocument, newName: string) => void;
     onMove: (document: PromptDocument, destination: string) => void;
     onDuplicate: (document: PromptDocument, name: string) => void;
+    onDuplicateAsVariant: (document: PromptDocument, name: string) => void;
     onDeleteRequest: (document: PromptDocument) => void;
     onDirtyChange: (dirty: boolean) => void;
     onDismissExternalChange: () => void;
@@ -50,6 +53,7 @@
     onRename,
     onMove,
     onDuplicate,
+    onDuplicateAsVariant,
     onDeleteRequest,
     onDirtyChange,
     onDismissExternalChange,
@@ -58,6 +62,7 @@
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
+  let compareOpen = $state(false);
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
   let originalBody = $state('');
@@ -86,6 +91,11 @@
     library.allPrompts
       .filter((prompt) => prompt.projectPath === document?.projectPath)
       .map((prompt) => prompt.name)
+  );
+  // Summaries of the selected prompt's project, for the Variant family footer
+  // and the Compare picker (both scoped to the same project, never cross-wired).
+  const projectSummaries = $derived(
+    library.allPrompts.filter((prompt) => prompt.projectPath === document?.projectPath)
   );
 
   $effect(() => {
@@ -211,6 +221,17 @@
     if (next?.trim()) onDuplicate(document, next.trim());
   }
 
+  function actionDuplicateAsVariant(): void {
+    if (!document) return;
+    const next = window.prompt('New filename for variant', document.name + '-variant');
+    if (next?.trim()) onDuplicateAsVariant(document, next.trim());
+  }
+
+  function actionCompare(): void {
+    if (!document) return;
+    compareOpen = true;
+  }
+
   function setMode(next: 'preview' | 'edit' | 'history'): void {
     mode = next;
     if (next === 'history' && document) {
@@ -267,7 +288,9 @@
           <button type="button" class="btn btn--primary btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save changes'}</button>
         {/if}
         <div class="detail-action-group">
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>Compare…</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>Duplicate</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicateAsVariant}>Duplicate as Variant</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionRename}>Rename</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionMove}>Move</button>
           <button type="button" class="btn btn--ghost btn--sm btn--danger-text" onclick={() => onDeleteRequest(document)}>Delete</button>
@@ -348,8 +371,13 @@
       {#if mode !== 'history'}
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
+        <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}
     </div>
   {/if}
 </section>
+
+{#if compareOpen && document}
+  <PromptCompare document={document} summaries={projectSummaries} onClose={() => (compareOpen = false)} />
+{/if}

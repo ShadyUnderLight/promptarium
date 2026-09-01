@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
+  import { getVariantOf, withVariantOf } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
   import { setVariableDoc } from '$lib/variables/contract';
   import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
@@ -94,6 +95,25 @@
   // every duplicate at once). See removeRelatedEntry().
   function removeRelated(index: number): void {
     setField('related', removeRelatedEntry(metadata.related, index));
+  }
+
+  // Variant parent (Issue #14): a single optional `variantOf` value. The picker
+  // offers only prompts in the current project, never the prompt being edited
+  // and never its current parent.
+  const currentVariant = $derived(getVariantOf(metadata));
+  const addableVariant = $derived(
+    promptNames.filter((name) => name !== currentName && name !== currentVariant)
+  );
+  let variantPick = $state('');
+
+  function setVariant(): void {
+    if (!variantPick) return;
+    onChange(withVariantOf(metadata, variantPick));
+    variantPick = '';
+  }
+
+  function clearVariant(): void {
+    onChange(withVariantOf(metadata, undefined));
   }
 </script>
 
@@ -203,6 +223,31 @@
         </div>
       {:else}
         <p class="detail-muted">No other prompt in this project is available to link.</p>
+      {/if}
+    </div>
+    <div class="related-editor">
+      <span class="variables-editor__heading">Variant of</span>
+      {#if currentVariant}
+        <div class="related-edit-list">
+          <div class="variable-doc-edit">
+            <div class="variable-doc-edit__name">
+              <span class="variable-token">{currentVariant}</span>
+              <button type="button" class="variable-doc-edit__remove" onclick={clearVariant}>Remove</button>
+            </div>
+          </div>
+        </div>
+      {/if}
+      {#if addableVariant.length}
+        <div class="related-picker">
+          <select bind:value={variantPick} onchange={setVariant} aria-label="Set variant parent">
+            <option value="" disabled>{currentVariant ? 'Change variant parent…' : 'Set variant parent…'}</option>
+            {#each addableVariant as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </div>
+      {:else if !currentVariant}
+        <p class="detail-muted">No other prompt in this project is available as a variant parent.</p>
       {/if}
     </div>
   </div>

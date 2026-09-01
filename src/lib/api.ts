@@ -255,6 +255,14 @@ const devStore: Record<string, DevPrompt[]> = {
       content: 'Review the PR for {ticket}. Focus especially on {concern}. Check error handling, tests, and naming. Flag anything that reads as a silent failure.',
     },
     {
+      name: 'review/pr-checklist-claude',
+      content: 'Review the PR for {ticket}. Focus on {concern}. Check error handling and tests. Be concise and lead with the most important finding.',
+    },
+    {
+      name: 'review/pr-checklist-gpt',
+      content: 'Review the PR for {ticket}. Focus on {concern}. Check error handling, tests, naming and docs. Provide a checklist at the end.',
+    },
+    {
       name: 'debug/bug-repro-first',
       content: 'Before proposing a fix for {symptom}, write the smallest failing test that reproduces it. If you cannot reproduce it, say so instead of guessing.',
     },
@@ -327,6 +335,26 @@ const devMetadata: Record<string, PromptMetadata> = {
     created: '2026-08-08',
     related: ['testing/test-plan', 'review/retired-check'],
     extra: {},
+  },
+  '/dev/mock/engineering::review/pr-checklist-claude': {
+    description: 'A concise Claude-leaning variant of the PR checklist review.',
+    tags: ['coding', 'review', 'github'],
+    status: 'active',
+    favorite: false,
+    models: ['Claude'],
+    created: '2026-08-09',
+    related: [],
+    extra: { variantOf: 'review/pr-checklist' },
+  },
+  '/dev/mock/engineering::review/pr-checklist-gpt': {
+    description: 'A checklist-heavy GPT-leaning variant of the PR checklist review.',
+    tags: ['coding', 'review', 'github'],
+    status: 'draft',
+    favorite: false,
+    models: ['ChatGPT'],
+    created: '2026-08-09',
+    related: [],
+    extra: { variantOf: 'review/pr-checklist' },
   },
   '/dev/mock/engineering::debug/bug-repro-first': {
     description: 'Turn a symptom into a smallest failing reproduction before proposing a fix.',
