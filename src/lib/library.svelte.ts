@@ -47,13 +47,14 @@ import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 import {
   buildSearchIndexFromPlan,
+  buildUntilRevisionStable,
   fingerprintsMatch,
-  isStaleSearchIndexSwap,
   planIndexRefresh,
   searchEntryFromDocument,
   summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
+import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
   decideSelectedRefresh,
@@ -62,10 +63,13 @@ import {
 import {
   ALL_PROJECTS_CONCURRENCY,
   aggregateScanResults,
+  finalizeAllProjectsScanResults,
   mapWithConcurrency,
   mergeSearchResults,
+  planAllProjectsGlobalCommit,
+  refreshAllProjectsProjectScan,
   searchProjectIndex,
-  summariesContainIdentity,
+  type ProjectScanResult,
 } from './library/all-projects';
 import {
   isAllProjectsScope,
@@ -131,7 +135,6 @@ let documentSerial = 0;
 let searchSerial = 0;
 let historySerial = 0;
 
-const historyCache = new Map<string, GitFileHistoryPage>();
 const diffCache = new Map<string, GitFileDiff>();
 
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
@@ -191,18 +194,23 @@ function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
 }
 
 function summaryOf(document: PromptDocument): PromptSummary {
-  return {
-    projectPath: document.projectPath,
-    relativePath: document.relativePath,
-    name: document.name,
-    folder: document.folder,
-    extension: document.extension,
-    metadata: document.metadata,
-    modifiedAt: document.modifiedAt,
-    sizeBytes: document.sizeBytes,
-    hasFrontmatter: document.hasFrontmatter,
-    frontmatterError: document.frontmatterError,
-  };
+  return summaryFromDocument(document);
+}
+
+function setSelectedDocument(document: PromptDocument): void {
+  library.selectedProjectPath = document.projectPath;
+  library.selectedName = document.name;
+  library.selected = document;
+  selectedOpenedFingerprint = openedFingerprintForDocument(document);
+  library.externalChangeState = null;
+}
+
+function clearSelectedDocument(): void {
+  library.selectedProjectPath = null;
+  library.selectedName = null;
+  library.selected = null;
+  selectedOpenedFingerprint = null;
+  library.externalChangeState = null;
 }
 
 function diffCacheKey(projectPath: string, name: string, commit: string): string {
@@ -251,49 +259,49 @@ async function refreshSearchIndex(
   projectPath: string,
   summaries: PromptSummary[],
   serial: number
-): Promise<void> {
-  const revisionAtStart = searchIndexRevision(projectPath);
-  const oldIndex = searchIndexes.get(projectPath);
-  const plan = planIndexRefresh(oldIndex, summaries);
-  const { index, stats } = await buildSearchIndexFromPlan(plan, {
-    projectPath,
-    readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
-    selectedEntry: (prompt) => {
-      const selected = library.selected;
-      if (
-        selected &&
-        selected.projectPath === projectPath &&
-        selected.name === prompt.name &&
-        fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
-      ) {
-        return searchEntryFromDocument(selected);
+): Promise<{ retried: boolean }> {
+  const result = await buildUntilRevisionStable({
+    getRevision: () => searchIndexRevision(projectPath),
+    shouldAbort: () =>
+      serial !== loadSerial ||
+      (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath),
+    build: async () => {
+      const oldIndex = searchIndexes.get(projectPath);
+      const plan = planIndexRefresh(oldIndex, summaries);
+      const built = await buildSearchIndexFromPlan(plan, {
+        projectPath,
+        readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
+        selectedEntry: (prompt) => {
+          const selected = library.selected;
+          if (
+            selected &&
+            selected.projectPath === projectPath &&
+            selected.name === prompt.name &&
+            fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
+          ) {
+            return searchEntryFromDocument(selected);
+          }
+          return null;
+        },
+      });
+      return { plan, ...built };
+    },
+    commit: ({ index, stats, plan }) => {
+      searchIndexes.set(projectPath, index);
+      syncVariableCounts(projectPath, index);
+      library.searchIndexVersion++;
+      if (import.meta.env.DEV) {
+        console.debug(
+          `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
+        );
       }
-      return null;
     },
   });
 
-  if (serial !== loadSerial) return;
-  if (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath) return;
-
-  if (isStaleSearchIndexSwap(revisionAtStart, searchIndexRevision(projectPath))) {
-    if (import.meta.env.DEV) {
-      console.debug(`[index] project=${projectPath} stale swap discarded, re-planning`);
-    }
-    void refreshSearchIndex(projectPath, summaries, serial);
-    return;
-  }
-
-  searchIndexes.set(projectPath, index);
-  syncVariableCounts(projectPath, index);
-  library.searchIndexVersion++;
-
-  if (import.meta.env.DEV) {
-    console.debug(
-      `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
-    );
-  }
+  if (!result) return { retried: false };
 
   if (library.searchQuery.trim() && !isAllProjects()) void runSearch();
+  return { retried: result.retried };
 }
 
 function saveUiState(): void {
@@ -493,11 +501,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     const selectedProject = library.selectedProjectPath;
     const selectedDocumentSerial = documentSerial;
     if (decision.clearSelection) {
-      library.selectedProjectPath = null;
-      library.selectedName = null;
-      library.selected = null;
-      selectedOpenedFingerprint = null;
-      library.externalChangeState = null;
+      clearSelectedDocument();
     } else if (
       decision.reloadSelected &&
       selectedName &&
@@ -512,9 +516,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
         library.selectedName !== selectedName ||
         library.selectedProjectPath !== selectedProject
       ) return;
-      library.selected = selected;
-      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
-      library.externalChangeState = null;
+      setSelectedDocument(selected);
     }
   } catch (error) {
     if (serial !== loadSerial || project !== library.activeProjectPath) return;
@@ -558,9 +560,13 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
   try {
     const scanResults = await mapWithConcurrency(library.projects, ALL_PROJECTS_CONCURRENCY, async (project) => {
       try {
-        const summaries = await apiScanProject(project.path);
-        await refreshSearchIndex(project.path, summaries, serial);
-        return { projectPath: project.path, summaries };
+        return await refreshAllProjectsProjectScan(
+          project.path,
+          apiScanProject,
+          (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
+          searchIndexRevision,
+          () => !scopeStillCurrent(serial, scope)
+        );
       } catch (error) {
         warnings.push({ projectPath: project.path, error: errorText(error) });
         return null;
@@ -568,66 +574,76 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     });
     if (!scopeStillCurrent(serial, scope)) return;
 
-    const healthy = scanResults.filter((result): result is NonNullable<typeof result> => result !== null);
-    const healthyProjects = library.projects.filter((project) =>
-      healthy.some((result) => result.projectPath === project.path)
-    );
-    library.allProjectsHealthyPaths = healthyProjects.map((project) => project.path);
-    const summaries = aggregateScanResults(healthy);
-    library.allPrompts = summaries;
-    library.folderPaths = [];
-    library.allProjectsWarnings = warnings;
-    library.error = null;
-
-    const query = library.searchQuery;
-    const querySerial = searchSerial;
-    if (library.searchQuery.trim()) {
-      library.prompts = mergeSearchResults(healthyProjects, searchIndexes, query);
-    } else {
-      library.prompts = summaries;
-    }
-    if (!scopeStillCurrent(serial, scope) || querySerial !== searchSerial || query !== library.searchQuery) return;
-
-    const decision = decideSelectedRefresh({
-      selectedProjectPath: library.selectedProjectPath,
-      selectedName: library.selectedName,
-      summaries,
-      editorDirty,
-      openedFingerprint: selectedOpenedFingerprint,
-      reloadSelected,
+    const healthy = scanResults.filter((result): result is ProjectScanResult => result !== null);
+    const committed = await finalizeAllProjectsScanResults({
+      results: healthy,
+      getRevision: searchIndexRevision,
+      shouldAbort: () => !scopeStillCurrent(serial, scope),
+      refreshProjects: async (projectPaths) => {
+        const refreshed = await mapWithConcurrency(projectPaths, ALL_PROJECTS_CONCURRENCY, async (projectPath) =>
+          refreshAllProjectsProjectScan(
+            projectPath,
+            apiScanProject,
+            (path, summaries) => refreshSearchIndex(path, summaries, serial),
+            searchIndexRevision,
+            () => !scopeStillCurrent(serial, scope)
+          )
+        );
+        return refreshed.filter((result): result is ProjectScanResult => result !== null);
+      },
+      commit: (finalized) => {
+        const plan = planAllProjectsGlobalCommit({
+          finalized,
+          projects: library.projects,
+          searchQuery: library.searchQuery,
+          searchIndexes,
+          selectedProjectPath: library.selectedProjectPath,
+          selectedName: library.selectedName,
+          editorDirty,
+          openedFingerprint: selectedOpenedFingerprint,
+          reloadSelected,
+        });
+        library.allProjectsHealthyPaths = plan.healthyProjectPaths;
+        library.allPrompts = plan.summaries;
+        library.prompts = plan.prompts;
+        library.folderPaths = [];
+        library.allProjectsWarnings = warnings;
+        library.error = null;
+        if (plan.decision.externalChange) {
+          library.externalChangeState = plan.decision.externalChange;
+        } else if (plan.decision.reloadSelected) {
+          library.externalChangeState = null;
+        }
+        if (plan.decision.clearSelection) {
+          clearSelectedDocument();
+        }
+        return plan;
+      },
     });
+    if (!committed || !scopeStillCurrent(serial, scope)) return;
 
-    if (decision.externalChange) {
-      library.externalChangeState = decision.externalChange;
-    } else if (decision.reloadSelected) {
-      library.externalChangeState = null;
+    const querySerial = searchSerial;
+    if (
+      !scopeStillCurrent(serial, scope) ||
+      querySerial !== searchSerial ||
+      library.searchQuery !== committed.queryAtCommit
+    ) {
+      return;
     }
 
-    const selectedName = library.selectedName;
-    const selectedProject = library.selectedProjectPath;
-    const selectedDocumentSerial = documentSerial;
-    if (decision.clearSelection) {
-      library.selectedProjectPath = null;
-      library.selectedName = null;
-      library.selected = null;
-      selectedOpenedFingerprint = null;
-      library.externalChangeState = null;
-    } else if (
-      decision.reloadSelected &&
-      selectedName &&
-      selectedProject &&
-      summariesContainIdentity(summaries, selectedProject, selectedName)
-    ) {
-      const selected = await apiReadPrompt(selectedProject, selectedName);
+    if (committed.selectedReload) {
+      const { projectPath, name } = committed.selectedReload;
+      const selectedDocumentSerial = documentSerial;
+      const selected = await apiReadPrompt(projectPath, name);
       if (
         !scopeStillCurrent(serial, scope) ||
         selectedDocumentSerial !== documentSerial ||
-        library.selectedName !== selectedName ||
-        library.selectedProjectPath !== selectedProject
-      ) return;
-      library.selected = selected;
-      selectedOpenedFingerprint = summaryFingerprint(summaryOf(selected));
-      library.externalChangeState = null;
+        library.selectedName !== name ||
+        library.selectedProjectPath !== projectPath
+      ) {
+        return;
+      }
+      setSelectedDocument(selected);
     }
   } catch (error) {
     if (!scopeStillCurrent(serial, scope)) return;
@@ -739,9 +755,7 @@ export async function selectPrompt(project: string, name: string): Promise<void>
   try {
     const document = await apiReadPrompt(project, name);
     if (serial !== documentSerial || !selectedIdentityMatches(project, name)) return;
-    library.selected = document;
-    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
-    library.externalChangeState = null;
+    setSelectedDocument(document);
   } catch (error) {
     if (serial === documentSerial && selectedIdentityMatches(project, name)) library.error = errorText(error);
   } finally {
@@ -755,8 +769,6 @@ export async function loadPromptHistory(project: string, name: string): Promise<
   resetHistoryState();
   library.historyLoading = true;
   try {
-    const cacheKey = promptKey(project, name);
-    const cached = historyCache.get(cacheKey);
     const repo = await apiGitRepositoryInfo(project);
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
@@ -766,11 +778,10 @@ export async function loadPromptHistory(project: string, name: string): Promise<
       library.historyLoading = false;
       return;
     }
-    const page = cached ?? (await apiGitFileHistory(project, name));
+    const page = await apiGitFileHistory(project, name);
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
-    if (!cached) historyCache.set(cacheKey, page);
     library.historyPage = page;
     if (page.commits.length > 0) {
       await selectHistoryCommit(project, name, page.commits[0], serial);
@@ -804,7 +815,6 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
     }
     const merged = appendHistoryPage(page, next);
     library.historyPage = merged;
-    historyCache.set(promptKey(project, name), merged);
   } catch (error) {
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
@@ -924,11 +934,7 @@ export async function saveDocument(
     expectedRaw
   );
   if (selectedIdentityMatches(source.projectPath, source.name)) {
-    library.selected = document;
-    library.selectedProjectPath = document.projectPath;
-    library.selectedName = document.name;
-    selectedOpenedFingerprint = summaryFingerprint(summaryOf(document));
-    library.externalChangeState = null;
+    setSelectedDocument(document);
     replaceSummary(summaryOf(document));
     updateSearchEntry(document);
     if (isAllProjects()) void runSearch();
@@ -948,15 +954,11 @@ export async function createPrompt(
   const document = await apiCreatePrompt(projectPath, name, body, metadata);
   if (isAllProjects()) {
     await refreshAllProjects();
-    library.selectedProjectPath = document.projectPath;
-    library.selectedName = document.name;
-    library.selected = document;
+    setSelectedDocument(document);
   } else if (projectPath === library.activeProjectPath) {
     await refreshLibrary();
     if (projectPath === library.activeProjectPath) {
-      library.selectedProjectPath = document.projectPath;
-      library.selectedName = document.name;
-      library.selected = document;
+      setSelectedDocument(document);
     }
   }
   return document;
@@ -974,7 +976,7 @@ export async function renamePrompt(source: PromptDocument, newName: string): Pro
     library.selectedName = document.name;
   }
   await refreshCurrentScope();
-  if (wasSelected) library.selected = document;
+  if (wasSelected) setSelectedDocument(document);
   return document;
 }
 
@@ -986,7 +988,7 @@ export async function movePrompt(source: PromptDocument, destination: string): P
     library.selectedName = document.name;
   }
   await refreshCurrentScope();
-  if (wasSelected) library.selected = document;
+  if (wasSelected) setSelectedDocument(document);
   return document;
 }
 

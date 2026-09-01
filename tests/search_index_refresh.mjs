@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
   buildSearchIndexFromPlan,
+  buildUntilRevisionStable,
   isStaleSearchIndexSwap,
   planIndexRefresh,
   searchEntryFromDocument,
@@ -198,6 +199,67 @@ console.log('save before first live index bumps revision and blocks stale swap')
   eq(freshIndex.get('a')?.bodyLower, 'saved before live index {x} {y}'.toLowerCase(), 'replan reads saved body for A');
   eq(freshIndex.get('a')?.variableCount, 2, 'replan reads saved variable count for A');
   eq(freshIndex.get('b')?.bodyLower, 'b fresh body'.toLowerCase(), 'replan still builds remaining prompts');
+}
+
+console.log('buildUntilRevisionStable awaits retry until revision stabilizes');
+{
+  let revision = 0;
+  let buildAttempts = 0;
+  let committed = null;
+
+  const result = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => {
+      buildAttempts++;
+      if (buildAttempts === 1) revision = 1;
+      return buildAttempts;
+    },
+    commit: (value) => {
+      committed = value;
+    },
+  });
+
+  eq(buildAttempts, 2, 'stale first candidate triggers awaited rebuild');
+  eq(committed, 2, 'stable revision commits retried candidate');
+  eq(result?.retried, true, 'retry flag is set when revision changed during build');
+}
+
+console.log('buildUntilRevisionStable commits before helper resolves');
+{
+  const order = [];
+
+  await buildUntilRevisionStable({
+    getRevision: () => 0,
+    build: async () => {
+      order.push('build-done');
+      return 'candidate';
+    },
+    commit: () => {
+      order.push('commit');
+    },
+  });
+
+  eq(order, ['build-done', 'commit'], 'commit runs in the same sync continuation as the final revision check');
+}
+
+console.log('refreshSearchIndex must not re-commit after helper resolves');
+{
+  let revision = 5;
+  let index = 'live-before';
+
+  const helperResult = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => 'stale-candidate',
+    commit: (candidate) => {
+      index = candidate;
+    },
+  });
+
+  revision = 6;
+  index = 'saved-live';
+
+  eq(helperResult?.value, 'stale-candidate', 'helper still exposes built candidate to callers');
+  eq(index, 'saved-live', 'post-resolve save must not be overwritten by a second caller commit');
 }
 
 if (failures > 0) {

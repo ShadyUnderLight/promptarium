@@ -8,8 +8,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
   aggregateScanResults,
   compareSearchHits,
+  finalizeAllProjectsScanResults,
   mergeSearchResults,
+  planAllProjectsGlobalCommit,
   projectLabel,
+  refreshAllProjectsProjectScan,
 } = await import(join(root, 'src/lib/library/all-projects.ts'));
 const { promptKey } = await import(join(root, 'src/lib/library/scope.ts'));
 
@@ -37,14 +40,14 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(projectPath, name, description = '', tags = []) {
+function summary(projectPath, name, description = '', tags = [], status = 'active') {
   return {
     projectPath,
     relativePath: name + '.md',
     name,
     folder: name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : '',
     extension: '.md',
-    metadata: { ...defaultMetadata, description, tags: [...tags] },
+    metadata: { ...defaultMetadata, description, tags: [...tags], status },
     modifiedAt: 1000,
     sizeBytes: 100,
     hasFrontmatter: false,
@@ -67,8 +70,8 @@ assert(keyA !== keyB, 'same relative name in different projects must not collide
 
 console.log('aggregateScanResults');
 const aggregated = aggregateScanResults([
-  { projectPath: '/project-a', summaries: [summary('/project-a', 'review/common', 'body A')] },
-  { projectPath: '/project-b', summaries: [summary('/project-b', 'review/common', 'body B')] },
+  { projectPath: '/project-a', revision: 0, summaries: [summary('/project-a', 'review/common', 'body A')] },
+  { projectPath: '/project-b', revision: 0, summaries: [summary('/project-b', 'review/common', 'body B')] },
 ]);
 eq(aggregated.length, 2, 'both same-name prompts are kept');
 eq(
@@ -159,6 +162,179 @@ const tieSameLabel = compareSearchHits(
   sameLabelProjects
 );
 assert(tieSameLabel !== 0, 'same label and prompt name still tie-breaks by projectPath');
+
+console.log('refreshAllProjectsProjectScan retries when mutation happens after index refresh');
+{
+  let revision = 5;
+  let scanCount = 0;
+  const draft = summary('/project-a', 'foo', 'draft body', [], 'draft');
+  const active = summary('/project-a', 'foo', 'active body', ['new-tag'], 'active');
+
+  const result = await refreshAllProjectsProjectScan(
+    '/project-a',
+    async () => {
+      scanCount++;
+      return scanCount === 1 ? [draft] : [active];
+    },
+    async () => {
+      if (scanCount === 1) revision = 6;
+    },
+    () => revision
+  );
+
+  eq(scanCount, 2, 'mutation after index refresh triggers full project rescan');
+  eq(result?.revision, 6, 'returned revision matches bound snapshot interval');
+  eq(result?.summaries[0].metadata.status, 'active', 'summaries and revision stay paired after mutation');
+  eq(result?.summaries[0].metadata.tags, ['new-tag'], 'tag metadata matches post-mutation scan');
+}
+
+console.log('refreshAllProjectsProjectScan keeps first scan when revision stays stable');
+{
+  let scanCount = 0;
+  const stable = summary('/project-a', 'foo', 'stable body');
+
+  const result = await refreshAllProjectsProjectScan(
+    '/project-a',
+    async () => {
+      scanCount++;
+      return [stable];
+    },
+    async () => {},
+    () => 5
+  );
+
+  eq(scanCount, 1, 'stable revision avoids redundant rescan');
+  eq(result?.revision, 5, 'snapshot revision is captured at loop start');
+  eq(result?.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
+}
+
+console.log('finalizeAllProjectsScanResults refreshes project mutated after its scan completed');
+{
+  const revisions = new Map([
+    ['/project-a', 5],
+    ['/project-b', 5],
+  ]);
+  let refreshCount = 0;
+
+  const draft = summary('/project-a', 'foo', 'draft body', [], 'draft');
+  const active = summary('/project-a', 'foo', 'active body', ['new-tag'], 'active');
+  const bStable = summary('/project-b', 'bar', 'stable body');
+
+  const initial = [
+    { projectPath: '/project-a', summaries: [draft], revision: 5 },
+    { projectPath: '/project-b', summaries: [bStable], revision: 5 },
+  ];
+
+  revisions.set('/project-a', 6);
+
+  const committed = await finalizeAllProjectsScanResults({
+    results: initial,
+    getRevision: (path) => revisions.get(path) ?? 0,
+    shouldAbort: () => false,
+    refreshProjects: async (paths) => {
+      refreshCount++;
+      eq(paths, ['/project-a'], 'only stale project is refreshed before global commit');
+      return [{ projectPath: '/project-a', summaries: [active], revision: 6 }];
+    },
+    commit: (results) => aggregateScanResults(results),
+  });
+
+  eq(refreshCount, 1, 'one revision validation refresh round');
+  eq(committed?.find((item) => item.name === 'foo')?.metadata.status, 'active', 'global commit keeps post-save status');
+  eq(committed?.find((item) => item.name === 'foo')?.metadata.tags, ['new-tag'], 'global commit keeps post-save tags');
+  eq(committed?.find((item) => item.name === 'bar')?.metadata.description, 'stable body', 'unaffected project stays stable');
+}
+
+console.log('finalizeAllProjectsScanResults skips refresh when all revisions match');
+{
+  const revisions = new Map([['/project-a', 5]]);
+  let refreshCount = 0;
+
+  const committed = await finalizeAllProjectsScanResults({
+    results: [{ projectPath: '/project-a', summaries: [summary('/project-a', 'foo', 'stable body')], revision: 5 }],
+    getRevision: (path) => revisions.get(path) ?? 0,
+    shouldAbort: () => false,
+    refreshProjects: async () => {
+      refreshCount++;
+      return [];
+    },
+    commit: (results) => aggregateScanResults(results),
+  });
+
+  eq(refreshCount, 0, 'matching revisions commit without extra refresh');
+  eq(committed?.[0].metadata.description, 'stable body', 'initial snapshot is committed');
+}
+
+console.log('finalizeAllProjectsScanResults commits before helper resolves');
+{
+  const revisions = new Map([['/project-a', 5]]);
+  const order = [];
+  let committedSummaries = null;
+
+  const outcome = await finalizeAllProjectsScanResults({
+    results: [{ projectPath: '/project-a', summaries: [summary('/project-a', 'foo', 'stable@5')], revision: 5 }],
+    getRevision: (path) => revisions.get(path) ?? 0,
+    shouldAbort: () => false,
+    refreshProjects: async () => [],
+    commit: (results) => {
+      order.push('commit');
+      committedSummaries = aggregateScanResults(results);
+      return committedSummaries;
+    },
+  });
+
+  order.push('resolved');
+  eq(order, ['commit', 'resolved'], 'global commit runs before promise resolves');
+  eq(outcome?.[0]?.metadata.description, 'stable@5', 'committed snapshot is available from helper result');
+  revisions.set('/project-a', 6);
+  eq(committedSummaries?.[0]?.metadata.description, 'stable@5', 'post-resolve mutation must not retroactively change committed snapshot');
+}
+
+console.log('planAllProjectsGlobalCommit binds visible prompts to the committed snapshot');
+{
+  const summariesAtCommit = [summary('/project-a', 'foo', 'stable@5')];
+  const projects = [{ name: 'Work', path: '/project-a' }];
+
+  const plan = planAllProjectsGlobalCommit({
+    finalized: [{ projectPath: '/project-a', summaries: summariesAtCommit, revision: 5 }],
+    projects,
+    searchQuery: '',
+    searchIndexes: new Map(),
+    selectedProjectPath: null,
+    selectedName: null,
+    editorDirty: false,
+    openedFingerprint: null,
+    reloadSelected: true,
+  });
+
+  eq(plan.prompts, plan.summaries, 'visible prompts use the same aggregated snapshot as allPrompts');
+  eq(plan.prompts[0].metadata.description, 'stable@5', 'prompts are produced during global commit planning');
+
+  const laterSummaries = [summary('/project-a', 'foo', 'saved@6', [], 'active')];
+  assert(plan.prompts !== laterSummaries, 'caller must not reassign prompts from a later snapshot variable');
+}
+
+console.log('planAllProjectsGlobalCommit plans selected refresh from the same snapshot');
+{
+  const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
+  const committedSummary = summary('/project-a', 'foo', 'stable@5', [], 'active');
+  const projects = [{ name: 'Work', path: '/project-a' }];
+
+  const plan = planAllProjectsGlobalCommit({
+    finalized: [{ projectPath: '/project-a', summaries: [committedSummary], revision: 5 }],
+    projects,
+    searchQuery: '',
+    searchIndexes: new Map(),
+    selectedProjectPath: '/project-a',
+    selectedName: 'foo',
+    editorDirty: true,
+    openedFingerprint: summaryFingerprint(committedSummary),
+    reloadSelected: false,
+  });
+
+  eq(plan.decision.externalChange, null, 'selected decision uses the same snapshot as prompts');
+  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved when snapshot matches fingerprint');
+}
 
 if (failures) {
   console.error('\n' + failures + ' test(s) failed.');

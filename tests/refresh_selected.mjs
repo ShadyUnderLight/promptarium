@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { decideSelectedRefresh } = await import(join(root, 'src/lib/library/refresh-selected.ts'));
 const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
+const { openedFingerprintForDocument } = await import(join(root, 'src/lib/library/selected-document.ts'));
 
 let failures = 0;
 
@@ -43,6 +44,14 @@ function summary(projectPath, name, modifiedAt = 1000, sizeBytes = 100) {
     modifiedAt,
     sizeBytes,
     hasFrontmatter: false,
+  };
+}
+
+function document(projectPath, name, modifiedAt, sizeBytes, body = '') {
+  return {
+    ...summary(projectPath, name, modifiedAt, sizeBytes),
+    body,
+    raw: body,
   };
 }
 
@@ -162,6 +171,45 @@ eq(
   },
   'project-scoped dirty external change in all-projects aggregate'
 );
+
+console.log('create/duplicate selected fingerprint must match new document');
+{
+  const newPrompt = document('/project-a', 'new-prompt', 1000, 50, 'fresh body');
+  eq(
+    decideSelectedRefresh({
+      selectedProjectPath: '/project-a',
+      selectedName: 'new-prompt',
+      summaries: [summary('/project-a', 'new-prompt', 1000, 50)],
+      editorDirty: true,
+      openedFingerprint: openedFingerprintForDocument(newPrompt),
+      reloadSelected: false,
+    }),
+    {
+      reloadSelected: false,
+      clearSelection: false,
+      externalChange: null,
+      preserveEditor: true,
+    },
+    'matching fingerprint after create does not false-flag disk_changed'
+  );
+  eq(
+    decideSelectedRefresh({
+      selectedProjectPath: '/project-a',
+      selectedName: 'new-prompt',
+      summaries: [summary('/project-a', 'new-prompt', 1000, 50)],
+      editorDirty: true,
+      openedFingerprint: summaryFingerprint(summary('/project-a', 'old-prompt', 2000, 80)),
+      reloadSelected: false,
+    }),
+    {
+      reloadSelected: false,
+      clearSelection: false,
+      externalChange: 'disk_changed',
+      preserveEditor: true,
+    },
+    'stale fingerprint from previous selection false-flags disk_changed'
+  );
+}
 
 if (failures) {
   console.error('\n' + failures + ' failure(s)');

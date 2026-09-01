@@ -1,4 +1,6 @@
 import type { Project, PromptSummary } from '$lib/prompts/types';
+import { decideSelectedRefresh, type SelectedRefreshDecision } from './refresh-selected';
+import type { EntryFingerprint } from './search-index';
 import { promptKey } from './scope';
 
 const ALL_PROJECTS_CONCURRENCY = 4;
@@ -8,6 +10,7 @@ export { ALL_PROJECTS_CONCURRENCY };
 export interface ProjectScanResult {
   projectPath: string;
   summaries: PromptSummary[];
+  revision: number;
 }
 
 export interface ProjectScanFailure {
@@ -129,6 +132,124 @@ export function aggregateSummaries(summaries: PromptSummary[]): PromptSummary[] 
 
 export function aggregateScanResults(results: ProjectScanResult[]): PromptSummary[] {
   return aggregateSummaries(results.flatMap((result) => result.summaries));
+}
+
+export function staleProjectScanResults(
+  results: ProjectScanResult[],
+  getRevision: (projectPath: string) => number
+): ProjectScanResult[] {
+  return results.filter((result) => result.revision !== getRevision(result.projectPath));
+}
+
+export function replaceProjectScanResults(
+  results: ProjectScanResult[],
+  replacements: ProjectScanResult[]
+): ProjectScanResult[] {
+  const byPath = new Map(replacements.map((result) => [result.projectPath, result]));
+  return results.map((result) => byPath.get(result.projectPath) ?? result);
+}
+
+export interface AllProjectsGlobalCommitInput {
+  finalized: ProjectScanResult[];
+  projects: Project[];
+  searchQuery: string;
+  searchIndexes: Map<string, Map<string, IndexedPrompt>>;
+  selectedProjectPath: string | null;
+  selectedName: string | null;
+  editorDirty: boolean;
+  openedFingerprint: EntryFingerprint | null;
+  reloadSelected: boolean;
+}
+
+export interface AllProjectsGlobalCommitPlan {
+  summaries: PromptSummary[];
+  healthyProjects: Project[];
+  healthyProjectPaths: string[];
+  prompts: PromptSummary[];
+  queryAtCommit: string;
+  decision: SelectedRefreshDecision;
+  selectedReload: { projectPath: string; name: string } | null;
+}
+
+/** Plan every synchronous global snapshot consumer from one finalized project scan set. */
+export function planAllProjectsGlobalCommit(input: AllProjectsGlobalCommitInput): AllProjectsGlobalCommitPlan {
+  const healthyProjects = input.projects.filter((project) =>
+    input.finalized.some((result) => result.projectPath === project.path)
+  );
+  const summaries = aggregateScanResults(input.finalized);
+  const queryAtCommit = input.searchQuery;
+  const prompts = queryAtCommit.trim()
+    ? mergeSearchResults(healthyProjects, input.searchIndexes, queryAtCommit)
+    : summaries;
+  const decision = decideSelectedRefresh({
+    selectedProjectPath: input.selectedProjectPath,
+    selectedName: input.selectedName,
+    summaries,
+    editorDirty: input.editorDirty,
+    openedFingerprint: input.openedFingerprint,
+    reloadSelected: input.reloadSelected,
+  });
+  const selectedReload =
+    decision.reloadSelected &&
+    !decision.clearSelection &&
+    input.selectedName &&
+    input.selectedProjectPath &&
+    summariesContainIdentity(summaries, input.selectedProjectPath, input.selectedName)
+      ? { projectPath: input.selectedProjectPath, name: input.selectedName }
+      : null;
+  return {
+    summaries,
+    healthyProjects,
+    healthyProjectPaths: healthyProjects.map((project) => project.path),
+    prompts,
+    queryAtCommit,
+    decision,
+    selectedReload,
+  };
+}
+
+/** Re-refresh mutated projects until every snapshot revision matches, then commit synchronously. */
+export async function finalizeAllProjectsScanResults<T>(options: {
+  results: ProjectScanResult[];
+  getRevision: (projectPath: string) => number;
+  refreshProjects: (projectPaths: string[]) => Promise<ProjectScanResult[]>;
+  shouldAbort: () => boolean;
+  commit: (results: ProjectScanResult[]) => T;
+}): Promise<T | null> {
+  let results = options.results;
+  while (true) {
+    if (options.shouldAbort()) return null;
+    const stale = staleProjectScanResults(results, options.getRevision);
+    if (stale.length === 0) {
+      return options.commit(results);
+    }
+    const stalePaths = [...new Set(stale.map((result) => result.projectPath))];
+    const refreshed = await options.refreshProjects(stalePaths);
+    if (options.shouldAbort()) return null;
+    results = replaceProjectScanResults(results, refreshed);
+  }
+}
+
+/** Scan + index refresh for one project; summaries and revision share one stable revision interval. */
+export async function refreshAllProjectsProjectScan(
+  projectPath: string,
+  scanProject: (projectPath: string) => Promise<PromptSummary[]>,
+  refreshSearchIndex: (projectPath: string, summaries: PromptSummary[]) => Promise<unknown>,
+  getRevision: (projectPath: string) => number,
+  shouldAbort?: () => boolean
+): Promise<ProjectScanResult | null> {
+  while (true) {
+    if (shouldAbort?.()) return null;
+    const revisionAtStart = getRevision(projectPath);
+    const summaries = await scanProject(projectPath);
+    if (shouldAbort?.()) return null;
+    await refreshSearchIndex(projectPath, summaries);
+    if (shouldAbort?.()) return null;
+    if (revisionAtStart !== getRevision(projectPath)) {
+      continue;
+    }
+    return { projectPath, summaries, revision: revisionAtStart };
+  }
 }
 
 export async function mapWithConcurrency<T, R>(
