@@ -40,6 +40,14 @@ import {
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
+import {
+  fingerprintsMatch,
+  planIndexRefresh,
+  searchEntryFromDocument,
+  summaryEntryFromScan,
+  summaryFingerprint,
+  type SearchEntry,
+} from './library/search-index';
 
 const SEARCH_DEBOUNCE_MS = 100;
 
@@ -83,12 +91,6 @@ let historySerial = 0;
 const historyCache = new Map<string, GitFileHistoryPage>();
 const diffCache = new Map<string, GitFileDiff>();
 
-interface SearchEntry {
-  summary: PromptSummary;
-  bodyLower: string;
-  variableCount?: number;
-}
-
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
 const variableCounts = new Map<string, number>();
 
@@ -114,6 +116,7 @@ function summaryOf(document: PromptDocument): PromptSummary {
     extension: document.extension,
     metadata: document.metadata,
     modifiedAt: document.modifiedAt,
+    sizeBytes: document.sizeBytes,
     hasFrontmatter: document.hasFrontmatter,
     frontmatterError: document.frontmatterError,
   };
@@ -143,59 +146,7 @@ function invalidateHistoryLoad(): void {
   resetHistoryState();
 }
 
-function invalidateSearchIndex(projectPath: string): void {
-  searchIndexes.delete(projectPath);
-  const prefix = projectPath + '\u0000';
-  for (const key of variableCounts.keys()) {
-    if (key.startsWith(prefix)) variableCounts.delete(key);
-  }
-  library.searchIndexVersion++;
-}
-
-function updateSearchEntry(document: PromptDocument): void {
-  const index = searchIndexes.get(document.projectPath);
-  if (!index) return;
-  const variableCount = parseVariables(document.body).length;
-  const entry: SearchEntry = {
-    summary: summaryOf(document),
-    bodyLower: document.body.toLowerCase(),
-    variableCount,
-  };
-  index.set(document.name, entry);
-  variableCounts.set(promptKey(document.projectPath, document.name), variableCount);
-  library.searchIndexVersion++;
-}
-
-async function rebuildSearchIndex(
-  projectPath: string,
-  summaries: PromptSummary[],
-  serial: number
-): Promise<void> {
-  const index = new Map<string, SearchEntry>();
-  let next = 0;
-  const worker = async (): Promise<void> => {
-    while (next < summaries.length) {
-      const prompt = summaries[next++];
-      const fallback: SearchEntry = {
-        summary: prompt,
-        bodyLower: '',
-      };
-      try {
-        const document = await apiReadPrompt(projectPath, prompt.name);
-        fallback.summary = summaryOf(document);
-        fallback.bodyLower = document.body.toLowerCase();
-        fallback.variableCount = parseVariables(document.body).length;
-      } catch {
-        // The summary is still useful for name/path/metadata search when a file
-        // disappears between scan and index construction.
-      }
-      index.set(prompt.name, fallback);
-    }
-  };
-  const workers = Math.min(8, Math.max(1, summaries.length));
-  await Promise.all(Array.from({ length: workers }, () => worker()));
-  if (serial !== loadSerial || projectPath !== library.activeProjectPath) return;
-  searchIndexes.set(projectPath, index);
+function syncVariableCounts(projectPath: string, index: Map<string, SearchEntry>): void {
   const prefix = projectPath + '\u0000';
   for (const key of variableCounts.keys()) {
     if (key.startsWith(prefix)) variableCounts.delete(key);
@@ -205,7 +156,69 @@ async function rebuildSearchIndex(
       variableCounts.set(promptKey(projectPath, entry.summary.name), entry.variableCount);
     }
   }
+}
+
+function updateSearchEntry(document: PromptDocument): void {
+  const index = searchIndexes.get(document.projectPath);
+  if (!index) return;
+  const entry = searchEntryFromDocument(document);
+  index.set(document.name, entry);
+  variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
   library.searchIndexVersion++;
+}
+
+async function refreshSearchIndex(
+  projectPath: string,
+  summaries: PromptSummary[],
+  serial: number
+): Promise<void> {
+  const oldIndex = searchIndexes.get(projectPath);
+  const plan = planIndexRefresh(oldIndex, summaries);
+  const index = new Map(plan.reused);
+  let next = 0;
+  const toRead = plan.toRead;
+
+  const worker = async (): Promise<void> => {
+    while (next < toRead.length) {
+      const prompt = toRead[next++];
+      let entry = summaryEntryFromScan(prompt);
+      try {
+        const selected = library.selected;
+        if (
+          selected &&
+          selected.projectPath === projectPath &&
+          selected.name === prompt.name &&
+          fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
+        ) {
+          entry = searchEntryFromDocument(selected);
+        } else {
+          const document = await apiReadPrompt(projectPath, prompt.name);
+          entry = searchEntryFromDocument(document);
+        }
+      } catch {
+        // The summary is still useful for name/path/metadata search when a file
+        // disappears between scan and index construction.
+      }
+      index.set(prompt.name, entry);
+    }
+  };
+
+  if (toRead.length > 0) {
+    const workers = Math.min(8, Math.max(1, toRead.length));
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+  }
+  if (serial !== loadSerial || projectPath !== library.activeProjectPath) return;
+
+  searchIndexes.set(projectPath, index);
+  syncVariableCounts(projectPath, index);
+  library.searchIndexVersion++;
+
+  if (import.meta.env.DEV) {
+    console.debug(
+      `[index] project=${projectPath} reused=${plan.reused.size} read=${toRead.length} removed=${plan.removed.length}`
+    );
+  }
+
   if (library.searchQuery.trim()) void runSearch();
 }
 
@@ -293,18 +306,18 @@ export async function refreshLibrary(): Promise<void> {
     return;
   }
   library.loading = true;
-  invalidateSearchIndex(project);
   try {
     const [summaries, folders] = await Promise.all([apiScanProject(project), apiListFolders(project)]);
     if (serial !== loadSerial) return;
     library.allPrompts = summaries;
     library.folderPaths = folders;
     library.error = null;
-    void rebuildSearchIndex(project, summaries, serial);
+    void refreshSearchIndex(project, summaries, serial);
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
-      library.prompts = await apiSearchPrompts(project, query);
+      const indexed = searchIndexed(project, query);
+      library.prompts = indexed ?? (await apiSearchPrompts(project, query));
     } else {
       library.prompts = summaries;
     }

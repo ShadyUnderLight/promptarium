@@ -11,7 +11,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "test:smoke": "tsx tests/prompts_smoke.mjs"
+    "test:smoke": "tsx tests/prompts_smoke.mjs && tsx tests/search_index.mjs"
   },
   "license": "MIT",
   "dependencies": {
