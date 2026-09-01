@@ -41,10 +41,11 @@ import {
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
 import {
+  buildSearchIndexFromPlan,
   fingerprintsMatch,
+  isStaleSearchIndexSwap,
   planIndexRefresh,
   searchEntryFromDocument,
-  summaryEntryFromScan,
   summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
@@ -92,7 +93,16 @@ const historyCache = new Map<string, GitFileHistoryPage>();
 const diffCache = new Map<string, GitFileDiff>();
 
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
+const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
+
+function searchIndexRevision(projectPath: string): number {
+  return searchIndexRevisions.get(projectPath) ?? 0;
+}
+
+function bumpSearchIndexRevision(projectPath: string): void {
+  searchIndexRevisions.set(projectPath, searchIndexRevision(projectPath) + 1);
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -164,6 +174,7 @@ function updateSearchEntry(document: PromptDocument): void {
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
   variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
+  bumpSearchIndexRevision(document.projectPath);
   library.searchIndexVersion++;
 }
 
@@ -172,42 +183,35 @@ async function refreshSearchIndex(
   summaries: PromptSummary[],
   serial: number
 ): Promise<void> {
+  const revisionAtStart = searchIndexRevision(projectPath);
   const oldIndex = searchIndexes.get(projectPath);
   const plan = planIndexRefresh(oldIndex, summaries);
-  const index = new Map(plan.reused);
-  let next = 0;
-  const toRead = plan.toRead;
-
-  const worker = async (): Promise<void> => {
-    while (next < toRead.length) {
-      const prompt = toRead[next++];
-      let entry = summaryEntryFromScan(prompt);
-      try {
-        const selected = library.selected;
-        if (
-          selected &&
-          selected.projectPath === projectPath &&
-          selected.name === prompt.name &&
-          fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
-        ) {
-          entry = searchEntryFromDocument(selected);
-        } else {
-          const document = await apiReadPrompt(projectPath, prompt.name);
-          entry = searchEntryFromDocument(document);
-        }
-      } catch {
-        // The summary is still useful for name/path/metadata search when a file
-        // disappears between scan and index construction.
+  const { index, stats } = await buildSearchIndexFromPlan(plan, {
+    projectPath,
+    readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
+    selectedEntry: (prompt) => {
+      const selected = library.selected;
+      if (
+        selected &&
+        selected.projectPath === projectPath &&
+        selected.name === prompt.name &&
+        fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
+      ) {
+        return searchEntryFromDocument(selected);
       }
-      index.set(prompt.name, entry);
-    }
-  };
+      return null;
+    },
+  });
 
-  if (toRead.length > 0) {
-    const workers = Math.min(8, Math.max(1, toRead.length));
-    await Promise.all(Array.from({ length: workers }, () => worker()));
-  }
   if (serial !== loadSerial || projectPath !== library.activeProjectPath) return;
+
+  if (isStaleSearchIndexSwap(revisionAtStart, searchIndexRevision(projectPath))) {
+    if (import.meta.env.DEV) {
+      console.debug(`[index] project=${projectPath} stale swap discarded, re-planning`);
+    }
+    void refreshSearchIndex(projectPath, summaries, serial);
+    return;
+  }
 
   searchIndexes.set(projectPath, index);
   syncVariableCounts(projectPath, index);
@@ -215,7 +219,7 @@ async function refreshSearchIndex(
 
   if (import.meta.env.DEV) {
     console.debug(
-      `[index] project=${projectPath} reused=${plan.reused.size} read=${toRead.length} removed=${plan.removed.length}`
+      `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
     );
   }
 

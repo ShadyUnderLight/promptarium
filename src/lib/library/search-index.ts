@@ -92,3 +92,60 @@ export function summaryEntryFromScan(summary: PromptSummary): SearchEntry {
     bodyLower: '',
   };
 }
+
+export interface RefreshBuildStats {
+  planned: number;
+  bodyReads: number;
+  selectedReuses: number;
+}
+
+export function isStaleSearchIndexSwap(revisionAtStart: number, currentRevision: number): boolean {
+  return revisionAtStart !== currentRevision;
+}
+
+/** Build a candidate index from a refresh plan; stats count actual body reads separately. */
+export async function buildSearchIndexFromPlan(
+  plan: IndexRefreshPlan,
+  options: {
+    projectPath: string;
+    readBody: (summary: PromptSummary) => Promise<SearchEntry>;
+    selectedEntry?: (summary: PromptSummary) => SearchEntry | null;
+  }
+): Promise<{ index: Map<string, SearchEntry>; stats: RefreshBuildStats }> {
+  const index = new Map(plan.reused);
+  const stats: RefreshBuildStats = {
+    planned: plan.toRead.length,
+    bodyReads: 0,
+    selectedReuses: 0,
+  };
+  let next = 0;
+  const toRead = plan.toRead;
+
+  const worker = async (): Promise<void> => {
+    while (next < toRead.length) {
+      const prompt = toRead[next++];
+      let entry = summaryEntryFromScan(prompt);
+      try {
+        const selected = options.selectedEntry?.(prompt);
+        if (selected) {
+          stats.selectedReuses++;
+          entry = selected;
+        } else {
+          stats.bodyReads++;
+          entry = await options.readBody(prompt);
+        }
+      } catch {
+        // The summary is still useful for name/path/metadata search when a file
+        // disappears between scan and index construction.
+      }
+      index.set(prompt.name, entry);
+    }
+  };
+
+  if (toRead.length > 0) {
+    const workers = Math.min(8, Math.max(1, toRead.length));
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+  }
+
+  return { index, stats };
+}
