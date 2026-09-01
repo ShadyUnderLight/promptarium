@@ -137,6 +137,15 @@ console.log('diffMetadata — variantOf and extra');
   eq(extra.right, '(none)', 'missing extra renders as (none)');
 }
 
+console.log('diffMetadata — wrong-type variantOf renders honestly');
+{
+  const diffs = diffMetadata(metadata({ extra: { variantOf: 123 } }), metadata({ extra: { variantOf: 'parent' } }));
+  const variant = diffs.find((d) => d.field === 'variantOf');
+  assert(variant, 'a wrong-type variantOf still produces a variantOf difference');
+  eq(variant.left, 'number: 123', 'left renders the wrong type instead of collapsing to (none)');
+  eq(variant.right, 'parent', 'right renders the string value');
+}
+
 console.log('diffMetadata — deterministic ordering');
 {
   const left = metadata();

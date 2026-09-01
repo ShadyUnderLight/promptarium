@@ -1,19 +1,25 @@
 <script lang="ts">
   import { readPrompt } from '$lib/api';
-  import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
+  import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { diffMetadata, diffTexts } from '$lib/prompts/compare';
   import DiffViewer from './DiffViewer.svelte';
 
   interface Props {
-    /** Left side: the currently selected prompt (loaded document, disk truth —
-     *  Compare never reloads the current buffer, so a dirty editor is never
-     *  overwritten by opening it). */
+    /** Left side identity (project + path). Never used as the diff content. */
     document: PromptDocument;
+    /** Current editor buffer — including unsaved edits, so a dirty compare
+     *  reflects what the user sees, not the last saved disk state. */
+    leftBody: string;
+    leftMetadata: PromptMetadata;
+    /** True when the current buffer differs from the last saved state; the
+     *  header marks the source as "(unsaved)" so the diff is not mistaken for
+     *  the saved file. */
+    leftDirty: boolean;
     summaries: PromptSummary[];
     onClose: () => void;
   }
 
-  let { document, summaries, onClose }: Props = $props();
+  let { document, leftBody, leftMetadata, leftDirty, summaries, onClose }: Props = $props();
 
   const others = $derived(
     summaries
@@ -52,8 +58,8 @@
     };
   });
 
-  const bodyPatch = $derived(target ? diffTexts(document.body, target.body) : '');
-  const metadataDiff = $derived(target ? diffMetadata(document.metadata, target.metadata) : []);
+  const bodyPatch = $derived(target ? diffTexts(leftBody, target.body) : '');
+  const metadataDiff = $derived(target ? diffMetadata(leftMetadata, target.metadata) : []);
 
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
@@ -76,6 +82,14 @@
         </select>
         <button type="button" class="btn btn--ghost btn--sm" onclick={onClose}>Close</button>
       </div>
+    </div>
+
+    <div class="compare-paths">
+      <span class="compare-paths__source">
+        {document.projectPath}/{document.name}.md{#if leftDirty} <span class="compare-paths__unsaved">(unsaved)</span>{/if}
+      </span>
+      <span class="compare-paths__arrow" aria-hidden="true">→</span>
+      <span class="compare-paths__target">{target ? `${target.projectPath}/${target.name}.md` : '…'}</span>
     </div>
 
     {#if !others.length}

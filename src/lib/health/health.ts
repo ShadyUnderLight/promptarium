@@ -62,6 +62,10 @@ export interface PromptHealthInput {
   /** The prompt's explicit variant parent path (from `variantOf`), when
    *  present. Absent when the prompt has no variantOf. */
   variantOf?: string;
+  /** True when variantOf is present but is not a non-empty string (a YAML
+   *  number / array / object written by hand). Such a value is invalid — it is
+   *  reported as an INVALID_VARIANT_PARENT instead of being treated as absent. */
+  variantOfTypeInvalid?: boolean;
   /** Names participating in a variantOf cycle of length >= 2, derived once per
    *  project by the caller. When this prompt is a member, a cycle issue is
    *  reported. Absent when no cycle check was run. */
@@ -172,10 +176,17 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
   }
 
   // Variant parent (Issue #14). Same classification order as related: self →
-  // invalid → missing. Cycle membership is a project-wide derived set, so a
-  // 2+ chain that loops back is reported deterministically on every member
-  // without ever recursing here.
-  if (input.variantOf) {
+  // invalid → missing. A present-but-wrong-type value is invalid, not absent.
+  // Cycle membership is a project-wide derived set, so a 2+ chain that loops
+  // back is reported deterministically on every member without recursing here.
+  if (input.variantOfTypeInvalid) {
+    issues.push({
+      code: 'INVALID_VARIANT_PARENT',
+      severity: 'error',
+      message: 'Variant parent is not a string',
+      detail: 'variantOf must be a project-relative prompt path string, but its value is not a string.',
+    });
+  } else if (input.variantOf) {
     if (input.variantOf === input.name) {
       issues.push({
         code: 'SELF_VARIANT_PARENT',

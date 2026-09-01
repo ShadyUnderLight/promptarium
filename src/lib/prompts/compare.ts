@@ -14,7 +14,7 @@
  * reused by the temporary Compare sheet.
  */
 import type { VariableDoc } from './types';
-import { getVariantOf } from './types';
+import { getVariantOfRaw } from './types';
 import type { PromptMetadata } from './types';
 
 /** Number of unchanged lines of context around a change in the rendered patch. */
@@ -186,12 +186,19 @@ function renderExtra(value: Record<string, unknown>): string {
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
 }
 
+function renderVariantOf(metadata: PromptMetadata): string {
+  const raw = getVariantOfRaw(metadata);
+  if (raw === undefined) return '(none)';
+  if (typeof raw === 'string') return raw;
+  // Wrong YAML type (number / array / …): show the type so the diff is honest
+  // about the mismatch instead of collapsing it to "(none)".
+  return `${typeof raw}: ${JSON.stringify(raw)}`;
+}
+
 /** Deterministic list of metadata field differences between two prompts. The
  *  `variantOf` field is compared on its own row and excluded from `extra`, so
  *  a change is never reported twice. Order is fixed for stable output. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
-  const av = getVariantOf(a);
-  const bv = getVariantOf(b);
   const pairs: Array<[string, string, string]> = [
     ['description', a.description, b.description],
     ['status', a.status, b.status],
@@ -200,7 +207,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['tags', renderList(a.tags), renderList(b.tags)],
     ['related', renderList(a.related), renderList(b.related)],
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
-    ['variantOf', av ?? '(none)', bv ?? '(none)'],
+    ['variantOf', renderVariantOf(a), renderVariantOf(b)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];

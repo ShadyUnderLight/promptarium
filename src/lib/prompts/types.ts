@@ -58,12 +58,30 @@ export function defaultPromptMetadata(): PromptMetadata {
  *  #14 needs no backend change: the value is read and written through `extra`. */
 const VARIANT_OF_KEY = 'variantOf';
 
-/** Read the explicit variant parent path from metadata, if any. Only a
- *  non-empty string is a meaningful variant parent; an invalid or missing
- *  value is surfaced by the variant resolver / Health, never normalized. */
-export function getVariantOf(metadata: PromptMetadata): string | undefined {
+/** Raw variantOf value from frontmatter, whatever its YAML type. `undefined`
+ *  only when the field is absent or explicitly null — a hand-written value of
+ *  the wrong type (number / array / object) is surfaced here so callers can
+ *  report it as invalid instead of silently treating it as "no variantOf". */
+export function getVariantOfRaw(metadata: PromptMetadata): unknown {
   const value = metadata.extra[VARIANT_OF_KEY];
+  return value === undefined || value === null ? undefined : value;
+}
+
+/** Read the explicit variant parent path from metadata, if any. Only a
+ *  non-empty string is a meaningful variant parent; a present-but-wrong-type
+ *  value is surfaced by hasInvalidVariantOfType (and Health / the variant
+ *  resolver), never normalized away. */
+export function getVariantOf(metadata: PromptMetadata): string | undefined {
+  const value = getVariantOfRaw(metadata);
   return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+/** True when variantOf is present but is not a non-empty string — e.g. a YAML
+ *  number, array or object written by hand. Such a value is not a valid parent
+ *  path and must be reported as invalid rather than ignored as absent. */
+export function hasInvalidVariantOfType(metadata: PromptMetadata): boolean {
+  const value = getVariantOfRaw(metadata);
+  return value !== undefined && typeof value !== 'string';
 }
 
 /** Return a copy of `metadata` with `variantOf` set to `path` (removed when

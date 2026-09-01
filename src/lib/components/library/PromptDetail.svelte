@@ -352,7 +352,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -362,7 +362,7 @@
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
         </div>
       </div>
     {/if}
@@ -378,6 +378,13 @@
   {/if}
 </section>
 
-{#if compareOpen && document}
-  <PromptCompare document={document} summaries={projectSummaries} onClose={() => (compareOpen = false)} />
+{#if compareOpen && document && metadata}
+  <PromptCompare
+    document={document}
+    leftBody={body}
+    leftMetadata={metadata}
+    leftDirty={dirty}
+    summaries={projectSummaries}
+    onClose={() => (compareOpen = false)}
+  />
 {/if}

@@ -44,7 +44,7 @@ import {
   isStaleHistoryResponse,
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
-import { defaultPromptMetadata, getVariantOf, withVariantOf } from './prompts/types';
+import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType, withVariantOf } from './prompts/types';
 import { findVariantCycleMembers } from './variants/variants';
 import {
   buildSearchIndexFromPlan,
@@ -280,6 +280,7 @@ function projectHealthInput(
     variables: entry.summary.metadata.variables,
     related: entry.summary.metadata.related,
     variantOf: getVariantOf(entry.summary.metadata),
+    variantOfTypeInvalid: hasInvalidVariantOfType(entry.summary.metadata),
     projectVariantCycleNames: variantCycleNames,
     projectPromptNames: projectNames,
   };
@@ -312,12 +313,11 @@ function updateSearchEntry(document: PromptDocument): void {
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
   variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
-  const summaries = [...index.values()].map((value) => value.summary);
-  const variantCycleNames = new Set(findVariantCycleMembers(summaries, document.projectPath));
-  healthIndex.set(
-    promptKey(document.projectPath, document.name),
-    derivePromptHealth(projectHealthInput(document.projectPath, entry, new Set(index.keys()), variantCycleNames))
-  );
+  // Health depends on project-wide variantOf state: a cycle is a cross-prompt
+  // derived relation, so after any save the whole project must be re-derived —
+  // updating only this entry would leave the other cycle members (and prompts
+  // that just broke out of a cycle) with stale VARIANT_CYCLE / health output.
+  rebuildProjectHealth(document.projectPath, index);
   library.searchIndexVersion++;
 }
 

@@ -1714,6 +1714,34 @@ body {
   font-size: 0.72rem;
 }
 
+.compare-paths {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+}
+
+.compare-paths__source {
+  color: var(--text);
+}
+
+.compare-paths__unsaved {
+  color: var(--accent-result-err);
+  font-style: italic;
+}
+
+.compare-paths__arrow {
+  color: var(--text-faint);
+}
+
+.compare-paths__target {
+  color: var(--text);
+}
+
 .compare-section {
   margin-top: 1.1rem;
 }

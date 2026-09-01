@@ -14,7 +14,7 @@
  * derived state and are never written back to any Markdown file.
  */
 import type { PromptSummary } from '$lib/prompts/types';
-import { getVariantOf } from '$lib/prompts/types';
+import { getVariantOf, getVariantOfRaw, hasInvalidVariantOfType } from '$lib/prompts/types';
 import { isCanonicalRelationPath } from '$lib/relations/relations';
 
 export type VariantStatus = 'ok' | 'missing' | 'invalid' | 'self';
@@ -53,8 +53,17 @@ export function classifyVariantParent(
   const own = summaries.find(
     (summary) => summary.projectPath === target.projectPath && summary.name === target.name
   );
-  const raw = own ? getVariantOf(own.metadata) : undefined;
-  if (!raw) return null;
+  if (!own) return null;
+  const raw = getVariantOf(own.metadata);
+  if (!raw) {
+    // Present but wrong YAML type (number / array / …) is an invalid parent,
+    // not an absent one — surface it so Health and the family UI can flag it.
+    if (hasInvalidVariantOfType(own.metadata)) {
+      const rawValue = getVariantOfRaw(own.metadata);
+      return { path: `${typeof rawValue}: ${JSON.stringify(rawValue)}`, status: 'invalid' };
+    }
+    return null;
+  }
   if (raw === target.name) return { path: raw, status: 'self' };
   if (!isCanonicalRelationPath(raw)) return { path: raw, status: 'invalid' };
   const project = new Set(
@@ -157,4 +166,38 @@ export function findVariantCycleMembers(summaries: PromptSummary[], projectPath:
     }
   }
   return [...inCycle].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * True when setting `source.variantOf = candidateParent` would create a cycle:
+ * the candidate is the source itself, or the candidate is a (direct or
+ * transitive) descendant of the source — i.e. walking the candidate's own
+ * parent chain reaches the source. Blocking descendants is required: with
+ * C.variantOf = B and B.variantOf = A, letting A pick B or C would build
+ * A -> B -> A / A -> C -> B -> A. A pre-existing cycle that does not contain
+ * the source is not this call's problem: pointing at it adds no cycle through
+ * the source, so it returns false. The UI uses this to filter the parent
+ * picker and guard the set action; a hand-written file that already forms a
+ * cycle is still surfaced by Health, never silently "fixed" here.
+ */
+export function wouldCreateVariantCycle(
+  summaries: PromptSummary[],
+  source: { projectPath: string; name: string },
+  candidateParent: string
+): boolean {
+  if (candidateParent === source.name) return true;
+  const project = new Map<string, PromptSummary>();
+  for (const summary of summaries) {
+    if (summary.projectPath === source.projectPath) project.set(summary.name, summary);
+  }
+  const seen = new Set<string>();
+  let current: string | undefined = candidateParent;
+  while (current !== undefined && project.has(current)) {
+    if (current === source.name) return true;
+    if (seen.has(current)) return false; // pre-existing cycle elsewhere
+    seen.add(current);
+    const raw = getVariantOf(project.get(current)!.metadata);
+    current = raw && raw !== current && isCanonicalRelationPath(raw) ? raw : undefined;
+  }
+  return false;
 }

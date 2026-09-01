@@ -12,10 +12,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { resolveVariantFamily, classifyVariantParent, findVariantCycleMembers } = await import(
+const { resolveVariantFamily, classifyVariantParent, findVariantCycleMembers, wouldCreateVariantCycle } = await import(
   join(root, 'src/lib/variants/variants.ts')
 );
-const { getVariantOf, withVariantOf } = await import(join(root, 'src/lib/prompts/types.ts'));
+const { getVariantOf, getVariantOfRaw, hasInvalidVariantOfType, withVariantOf } = await import(
+  join(root, 'src/lib/prompts/types.ts')
+);
 
 let failures = 0;
 function assert(condition, message) {
@@ -73,6 +75,20 @@ console.log('variantOf read / write helpers');
   eq(withVariantOf(base, '  coding/review ').extra.variantOf, 'coding/review', 'withVariantOf trims the path');
 }
 
+console.log('variantOf — wrong YAML types are surfaced, not treated as absent');
+{
+  const num = summary('/p/A', 'a', 123).metadata;
+  assert(getVariantOf(num) === undefined, 'getVariantOf returns undefined for a number');
+  assert(hasInvalidVariantOfType(num), 'a number value is detected as a wrong type');
+  const arr = summary('/p/A', 'a', ['foo']).metadata;
+  assert(hasInvalidVariantOfType(arr), 'an array value is detected as a wrong type');
+  eq(getVariantOfRaw(arr), ['foo'], 'the raw value is still readable');
+  const missing = summary('/p/A', 'a').metadata;
+  assert(!hasInvalidVariantOfType(missing), 'absent variantOf is not a wrong type');
+  const empty = summary('/p/A', 'a', '').metadata;
+  assert(!hasInvalidVariantOfType(empty), 'an empty string is treated as absent, not wrong type');
+}
+
 console.log('classifyVariantParent');
 {
   const summaries = [summary('/p/A', 'review'), summary('/p/A', 'review-claude', 'review')];
@@ -92,6 +108,10 @@ console.log('classifyVariantParent');
   eq(self.status, 'self', 'self variantOf is self');
   const abs = classifyVariantParent([summary('/p/A', 'x', '/Users/me/p')], { projectPath: '/p/A', name: 'x' });
   eq(abs.status, 'invalid', 'absolute variantOf is invalid');
+  const num = classifyVariantParent([summary('/p/A', 'x', 123)], { projectPath: '/p/A', name: 'x' });
+  eq(num, { path: 'number: 123', status: 'invalid' }, 'a number variantOf is invalid, not absent');
+  const arr = classifyVariantParent([summary('/p/A', 'x', ['foo'])], { projectPath: '/p/A', name: 'x' });
+  eq(arr, { path: 'object: ["foo"]', status: 'invalid' }, 'an array variantOf is invalid, not absent');
 }
 
 console.log('resolveVariantFamily — parent');
@@ -187,6 +207,39 @@ console.log('findVariantCycleMembers');
 
   const crossProject = [summary('/p/A', 'a', 'b'), summary('/p/A', 'b', 'a'), summary('/p/B', 'a', 'b')];
   eq(findVariantCycleMembers(crossProject, '/p/A'), ['a', 'b'], 'cycle detection is scoped to the project');
+}
+
+console.log('wouldCreateVariantCycle — the UI must never create a cycle');
+{
+  // A <- B (B is a variant of A): A must not be able to pick B as its parent.
+  const direct = [summary('/p/A', 'a'), summary('/p/A', 'b', 'a')];
+  assert(wouldCreateVariantCycle(direct, { projectPath: '/p/A', name: 'a' }, 'b'), 'direct child of A is rejected as A\'s parent');
+  assert(!wouldCreateVariantCycle(direct, { projectPath: '/p/A', name: 'b' }, 'a'), 'B may still pick A (A -> B is not a cycle)');
+
+  // A <- B, B <- C: A must not pick B or C.
+  const chain = [summary('/p/A', 'a'), summary('/p/A', 'b', 'a'), summary('/p/A', 'c', 'b')];
+  assert(wouldCreateVariantCycle(chain, { projectPath: '/p/A', name: 'a' }, 'b'), 'direct descendant B is rejected for A');
+  assert(wouldCreateVariantCycle(chain, { projectPath: '/p/A', name: 'a' }, 'c'), 'transitive descendant C is rejected for A');
+  assert(!wouldCreateVariantCycle(chain, { projectPath: '/p/A', name: 'b' }, 'a'), 'middle node B may pick A');
+  assert(!wouldCreateVariantCycle(chain, { projectPath: '/p/A', name: 'c' }, 'a'), 'leaf C may pick A');
+  assert(!wouldCreateVariantCycle(chain, { projectPath: '/p/A', name: 'c' }, 'b'), 'leaf C may pick B');
+
+  // Self is always rejected.
+  assert(wouldCreateVariantCycle(direct, { projectPath: '/p/A', name: 'a' }, 'a'), 'a prompt can never be its own parent');
+
+  // A missing candidate is broken, not a cycle.
+  assert(!wouldCreateVariantCycle(direct, { projectPath: '/p/A', name: 'a' }, 'gone'), 'a missing candidate is not a cycle');
+
+  // A pre-existing cycle elsewhere does not make a new cycle through A.
+  const elsewhere = [summary('/p/A', 'a'), summary('/p/A', 'd', 'e'), summary('/p/A', 'e', 'd')];
+  assert(!wouldCreateVariantCycle(elsewhere, { projectPath: '/p/A', name: 'a' }, 'd'), 'pointing at a pre-existing cycle not containing A is allowed');
+
+  // No cross-project wiring: same names in another project are not A's family.
+  const cross = [
+    summary('/p/A', 'a'),
+    summary('/p/B', 'b', 'a'),
+  ];
+  assert(!wouldCreateVariantCycle(cross, { projectPath: '/p/A', name: 'a' }, 'b'), 'a same-named prompt in another project is not a descendant');
 }
 
 console.log(failures === 0 ? 'variant contract: ok' : `variant contract: ${failures} failure(s)`);

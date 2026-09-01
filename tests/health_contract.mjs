@@ -167,6 +167,17 @@ eq(
 }
 
 eq(
+  codes(derivePromptHealth(base({ variantOfTypeInvalid: true }))),
+  ['INVALID_VARIANT_PARENT'],
+  'a non-string variantOf value is INVALID_VARIANT_PARENT, not absent'
+);
+
+{
+  const issue = derivePromptHealth(base({ variantOfTypeInvalid: true }))[0];
+  assert(issue && issue.severity === 'error', 'wrong-type variant parent is severity error');
+}
+
+eq(
   codes(
     derivePromptHealth(
       base({ variantOf: 'parent', projectPromptNames: new Set(['review', 'parent']), projectVariantCycleNames: new Set(['review', 'other']) })
