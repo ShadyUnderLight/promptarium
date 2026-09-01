@@ -72,6 +72,12 @@ import {
   promptKey,
   type LibraryScope,
 } from './library/scope';
+import {
+  allProjectsRefreshFlagsAtStart,
+  finalizeAllProjectsRefreshFlags,
+  projectScopeRefreshFlags,
+  resolveLibraryScopeAfterRosterRefresh,
+} from './library/scope-refresh';
 
 const SEARCH_DEBOUNCE_MS = 100;
 
@@ -391,6 +397,7 @@ export async function stopFilesystemWatch(): Promise<void> {
 
 export async function refreshProjects(): Promise<void> {
   try {
+    const previousScope = library.libraryScope;
     const result = await apiListProjects();
     if (result.active !== library.activeProjectPath) {
       invalidateDocumentLoad();
@@ -400,9 +407,11 @@ export async function refreshProjects(): Promise<void> {
     }
     library.projects = result.projects;
     library.activeProjectPath = result.active;
-    library.libraryScope = result.active
-      ? { kind: 'project', projectPath: result.active }
-      : { kind: 'all-projects' };
+    library.libraryScope = resolveLibraryScopeAfterRosterRefresh(
+      previousScope,
+      result.projects,
+      result.active
+    );
     library.error = null;
     if (isAllProjects()) await refreshAllProjects();
     else await refreshLibrary();
@@ -442,6 +451,8 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     await refreshAllProjects(options);
     return;
   }
+  const projectRefreshFlags = projectScopeRefreshFlags();
+  library.refreshing = projectRefreshFlags.refreshing;
   library.loading = true;
   try {
     const [summaries, folders] = await Promise.all([apiScanProject(project), apiListFolders(project)]);
@@ -533,11 +544,13 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     library.folderPaths = [];
     library.allProjectsWarnings = [];
     library.allProjectsHealthyPaths = [];
+    library.loading = false;
+    library.refreshing = false;
     return;
   }
-  const initialLoad = library.allPrompts.length === 0;
-  library.loading = initialLoad;
-  library.refreshing = !initialLoad;
+  const startFlags = allProjectsRefreshFlagsAtStart(library.allPrompts.length);
+  library.loading = startFlags.loading;
+  library.refreshing = startFlags.refreshing;
   const warnings: Array<{ projectPath: string; error: string }> = [];
   try {
     const scanResults = await mapWithConcurrency(library.projects, ALL_PROJECTS_CONCURRENCY, async (project) => {
@@ -619,9 +632,10 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     library.allPrompts = [];
     library.prompts = [];
   } finally {
-    if (serial === loadSerial && isAllProjects()) {
-      library.loading = false;
-      library.refreshing = false;
+    const cleared = finalizeAllProjectsRefreshFlags(serial, loadSerial, library.libraryScope);
+    if (cleared) {
+      library.loading = cleared.loading;
+      library.refreshing = cleared.refreshing;
     }
   }
 }
@@ -651,6 +665,9 @@ export async function setActiveProject(path: string): Promise<void> {
   library.tagFilter = '';
   library.smartView = 'all';
   library.allProjectsWarnings = [];
+  const projectRefreshFlags = projectScopeRefreshFlags();
+  library.loading = projectRefreshFlags.loading;
+  library.refreshing = projectRefreshFlags.refreshing;
   await refreshLibrary();
   await startFilesystemWatch();
 }
