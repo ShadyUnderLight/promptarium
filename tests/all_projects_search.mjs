@@ -10,6 +10,7 @@ const {
   compareSearchHits,
   mergeSearchResults,
   projectLabel,
+  refreshAllProjectsProjectScan,
 } = await import(join(root, 'src/lib/library/all-projects.ts'));
 const { promptKey } = await import(join(root, 'src/lib/library/scope.ts'));
 
@@ -37,14 +38,14 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(projectPath, name, description = '', tags = []) {
+function summary(projectPath, name, description = '', tags = [], status = 'active') {
   return {
     projectPath,
     relativePath: name + '.md',
     name,
     folder: name.includes('/') ? name.slice(0, name.lastIndexOf('/')) : '',
     extension: '.md',
-    metadata: { ...defaultMetadata, description, tags: [...tags] },
+    metadata: { ...defaultMetadata, description, tags: [...tags], status },
     modifiedAt: 1000,
     sizeBytes: 100,
     hasFrontmatter: false,
@@ -159,6 +160,44 @@ const tieSameLabel = compareSearchHits(
   sameLabelProjects
 );
 assert(tieSameLabel !== 0, 'same label and prompt name still tie-breaks by projectPath');
+
+console.log('refreshAllProjectsProjectScan rescans summaries after index retry');
+{
+  let scanCount = 0;
+  const draft = summary('/project-a', 'foo', 'draft body', [], 'draft');
+  const active = summary('/project-a', 'foo', 'active body', ['new-tag'], 'active');
+
+  const result = await refreshAllProjectsProjectScan(
+    '/project-a',
+    async () => {
+      scanCount++;
+      return scanCount === 1 ? [draft] : [active];
+    },
+    async () => ({ retried: true })
+  );
+
+  eq(scanCount, 2, 'stale index retry triggers a second summary scan');
+  eq(result.summaries[0].metadata.status, 'active', 'aggregated summaries match post-save scan');
+  eq(result.summaries[0].metadata.tags, ['new-tag'], 'aggregated tag metadata matches post-save scan');
+}
+
+console.log('refreshAllProjectsProjectScan keeps first scan when index did not retry');
+{
+  let scanCount = 0;
+  const stable = summary('/project-a', 'foo', 'stable body');
+
+  const result = await refreshAllProjectsProjectScan(
+    '/project-a',
+    async () => {
+      scanCount++;
+      return [stable];
+    },
+    async () => ({ retried: false })
+  );
+
+  eq(scanCount, 1, 'no retry avoids redundant rescan');
+  eq(result.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
+}
 
 if (failures) {
   console.error('\n' + failures + ' test(s) failed.');

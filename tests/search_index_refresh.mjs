@@ -205,18 +205,61 @@ console.log('buildUntilRevisionStable awaits retry until revision stabilizes');
 {
   let revision = 0;
   let buildAttempts = 0;
+  let committed = null;
 
-  const index = await buildUntilRevisionStable({
+  const result = await buildUntilRevisionStable({
     getRevision: () => revision,
     build: async () => {
       buildAttempts++;
       if (buildAttempts === 1) revision = 1;
-      return new Map([['attempt', buildAttempts]]);
+      return buildAttempts;
+    },
+    commit: (value) => {
+      committed = value;
     },
   });
 
   eq(buildAttempts, 2, 'stale first candidate triggers awaited rebuild');
-  eq(index?.get('attempt'), 2, 'stable revision returns retried candidate');
+  eq(committed, 2, 'stable revision commits retried candidate');
+  eq(result?.retried, true, 'retry flag is set when revision changed during build');
+}
+
+console.log('buildUntilRevisionStable commits before helper resolves');
+{
+  const order = [];
+
+  await buildUntilRevisionStable({
+    getRevision: () => 0,
+    build: async () => {
+      order.push('build-done');
+      return 'candidate';
+    },
+    commit: () => {
+      order.push('commit');
+    },
+  });
+
+  eq(order, ['build-done', 'commit'], 'commit runs in the same sync continuation as the final revision check');
+}
+
+console.log('refreshSearchIndex must not re-commit after helper resolves');
+{
+  let revision = 5;
+  let index = 'live-before';
+
+  const helperResult = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => 'stale-candidate',
+    commit: (candidate) => {
+      index = candidate;
+    },
+  });
+
+  revision = 6;
+  index = 'saved-live';
+
+  eq(helperResult?.value, 'stale-candidate', 'helper still exposes built candidate to callers');
+  eq(index, 'saved-live', 'post-resolve save must not be overwritten by a second caller commit');
 }
 
 if (failures > 0) {

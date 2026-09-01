@@ -103,20 +103,30 @@ export function isStaleSearchIndexSwap(revisionAtStart: number, currentRevision:
   return revisionAtStart !== currentRevision;
 }
 
-/** Rebuild until revision is stable so callers can await a committed index snapshot. */
+export interface BuildUntilRevisionStableResult<T> {
+  value: T;
+  retried: boolean;
+}
+
+/** Rebuild until revision is stable; commit runs in the same sync continuation as the final revision check. */
 export async function buildUntilRevisionStable<T>(options: {
   getRevision: () => number;
   shouldAbort?: () => boolean;
   build: () => Promise<T>;
-}): Promise<T | null> {
+  commit: (candidate: T) => void;
+}): Promise<BuildUntilRevisionStableResult<T> | null> {
+  let retried = false;
   while (true) {
     if (options.shouldAbort?.()) return null;
     const revisionAtStart = options.getRevision();
     const candidate = await options.build();
     if (options.shouldAbort?.()) return null;
-    if (!isStaleSearchIndexSwap(revisionAtStart, options.getRevision())) {
-      return candidate;
+    if (isStaleSearchIndexSwap(revisionAtStart, options.getRevision())) {
+      retried = true;
+      continue;
     }
+    options.commit(candidate);
+    return { value: candidate, retried };
   }
 }
 

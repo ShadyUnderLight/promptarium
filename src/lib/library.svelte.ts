@@ -42,7 +42,6 @@ import {
   appendHistoryPage,
   isStaleHistoryDiffResponse,
   isStaleHistoryResponse,
-  loadHistoryFirstPage,
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
 import { defaultPromptMetadata } from './prompts/types';
@@ -66,6 +65,7 @@ import {
   aggregateScanResults,
   mapWithConcurrency,
   mergeSearchResults,
+  refreshAllProjectsProjectScan,
   searchProjectIndex,
   summariesContainIdentity,
 } from './library/all-projects';
@@ -133,7 +133,6 @@ let documentSerial = 0;
 let searchSerial = 0;
 let historySerial = 0;
 
-const historyCache = new Map<string, GitFileHistoryPage>();
 const diffCache = new Map<string, GitFileDiff>();
 
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
@@ -258,14 +257,13 @@ async function refreshSearchIndex(
   projectPath: string,
   summaries: PromptSummary[],
   serial: number
-): Promise<void> {
+): Promise<{ retried: boolean }> {
   const result = await buildUntilRevisionStable({
     getRevision: () => searchIndexRevision(projectPath),
     shouldAbort: () =>
       serial !== loadSerial ||
       (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath),
     build: async () => {
-      const revisionAtStart = searchIndexRevision(projectPath);
       const oldIndex = searchIndexes.get(projectPath);
       const plan = planIndexRefresh(oldIndex, summaries);
       const built = await buildSearchIndexFromPlan(plan, {
@@ -284,25 +282,24 @@ async function refreshSearchIndex(
           return null;
         },
       });
-      return { revisionAtStart, plan, ...built };
+      return { plan, ...built };
+    },
+    commit: ({ index, stats, plan }) => {
+      searchIndexes.set(projectPath, index);
+      syncVariableCounts(projectPath, index);
+      library.searchIndexVersion++;
+      if (import.meta.env.DEV) {
+        console.debug(
+          `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
+        );
+      }
     },
   });
 
-  if (!result) return;
-
-  const { index, stats, plan } = result;
-
-  searchIndexes.set(projectPath, index);
-  syncVariableCounts(projectPath, index);
-  library.searchIndexVersion++;
-
-  if (import.meta.env.DEV) {
-    console.debug(
-      `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
-    );
-  }
+  if (!result) return { retried: false };
 
   if (library.searchQuery.trim() && !isAllProjects()) void runSearch();
+  return { retried: result.retried };
 }
 
 function saveUiState(): void {
@@ -561,9 +558,11 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
   try {
     const scanResults = await mapWithConcurrency(library.projects, ALL_PROJECTS_CONCURRENCY, async (project) => {
       try {
-        const summaries = await apiScanProject(project.path);
-        await refreshSearchIndex(project.path, summaries, serial);
-        return { projectPath: project.path, summaries };
+        return await refreshAllProjectsProjectScan(
+          project.path,
+          apiScanProject,
+          (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial)
+        );
       } catch (error) {
         warnings.push({ projectPath: project.path, error: errorText(error) });
         return null;
@@ -750,7 +749,6 @@ export async function loadPromptHistory(project: string, name: string): Promise<
   resetHistoryState();
   library.historyLoading = true;
   try {
-    const cacheKey = promptKey(project, name);
     const repo = await apiGitRepositoryInfo(project);
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
@@ -760,11 +758,10 @@ export async function loadPromptHistory(project: string, name: string): Promise<
       library.historyLoading = false;
       return;
     }
-    const page = await loadHistoryFirstPage(() => apiGitFileHistory(project, name));
+    const page = await apiGitFileHistory(project, name);
     if (isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)) {
       return;
     }
-    historyCache.set(cacheKey, page);
     library.historyPage = page;
     if (page.commits.length > 0) {
       await selectHistoryCommit(project, name, page.commits[0], serial);
@@ -798,7 +795,6 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
     }
     const merged = appendHistoryPage(page, next);
     library.historyPage = merged;
-    historyCache.set(promptKey(project, name), merged);
   } catch (error) {
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)

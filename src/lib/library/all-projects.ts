@@ -131,6 +131,21 @@ export function aggregateScanResults(results: ProjectScanResult[]): PromptSummar
   return aggregateSummaries(results.flatMap((result) => result.summaries));
 }
 
+/** Scan + index refresh for one project; re-scan summaries when index rebuild retried after a mutation. */
+export async function refreshAllProjectsProjectScan(
+  projectPath: string,
+  scanProject: (projectPath: string) => Promise<PromptSummary[]>,
+  refreshSearchIndex: (
+    projectPath: string,
+    summaries: PromptSummary[]
+  ) => Promise<{ retried: boolean }>
+): Promise<ProjectScanResult> {
+  const summaries = await scanProject(projectPath);
+  const { retried } = await refreshSearchIndex(projectPath, summaries);
+  const stableSummaries = retried ? await scanProject(projectPath) : summaries;
+  return { projectPath, summaries: stableSummaries };
+}
+
 export async function mapWithConcurrency<T, R>(
   items: T[],
   limit: number,
