@@ -213,6 +213,14 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
                                 let mut variable = VariableDoc::default();
                                 for (key, value) in doc {
                                     let Some(key) = key.as_str() else {
+                                        // Never drop a nested unknown field
+                                        // silently: mirror the top-level
+                                        // "frontmatter keys must be strings"
+                                        // behaviour so the user sees a warning
+                                        // instead of data loss on the next save.
+                                        errors.push(format!(
+                                            "variables.{name} keys must be strings"
+                                        ));
                                         continue;
                                     };
                                     match key {
@@ -1483,6 +1491,25 @@ mod tests {
             fs::read_to_string(dir.join("p.md")).unwrap(),
             "external edit"
         );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn non_string_keys_under_a_variable_report_a_parse_error() {
+        let dir = tmp_dir("vars-nonstring-key");
+        write(
+            &dir,
+            "p.md",
+            "---\nvariables:\n  repository:\n    1: keep-me\n---\nbody {repository}\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("variables.repository keys must be strings"),
+            "non-string nested keys must be loud, got: {error}"
+        );
+        // Supported fields under the same variable still parse.
+        assert!(document.summary.metadata.variables.contains_key("repository"));
         fs::remove_dir_all(dir).unwrap();
     }
 }

@@ -47,7 +47,10 @@ export function deriveVariableContract(
   const documented: DocumentedVariable[] = [];
   const undocumented: UndocumentedVariable[] = [];
   for (const variable of vars) {
-    const doc = docs[variable.name];
+    // Own-property check only: the grammar allows any [A-Za-z0-9_-]+ name,
+    // so {constructor}, {toString} and {__proto__} are legal variables and
+    // must not match Object.prototype members when no annotation exists.
+    const doc = Object.hasOwn(docs, variable.name) ? docs[variable.name] : undefined;
     if (doc) {
       documented.push({ name: variable.name, description: doc.description, example: doc.example });
     } else {
@@ -63,4 +66,22 @@ export function deriveVariableContract(
   }
 
   return { documented, undocumented, stale };
+}
+
+/**
+ * Return `variables` with `name`'s annotation set to `doc` (or removed when
+ * `doc` is undefined or empty). Rebuilt immutably via `Object.fromEntries` so
+ * a variable literally named `__proto__` becomes an own data property instead
+ * of mutating the map's prototype. Returns undefined when nothing is left.
+ */
+export function setVariableDoc(
+  variables: Record<string, VariableDoc> | undefined,
+  name: string,
+  doc: VariableDoc | undefined
+): Record<string, VariableDoc> | undefined {
+  const entries = Object.entries(variables ?? {}).filter(([key]) => key !== name);
+  if (doc && (doc.description || doc.example || Object.keys(doc.extra ?? {}).length)) {
+    entries.push([name, doc]);
+  }
+  return entries.length ? Object.fromEntries(entries) : undefined;
 }

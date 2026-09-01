@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
+  import { setVariableDoc } from '$lib/variables/contract';
 
   interface Props {
     metadata: Metadata;
@@ -45,37 +46,27 @@
   }
 
   function docFor(name: string): VariableDoc | undefined {
-    return metadata.variables?.[name];
+    const variables = metadata.variables;
+    // Own-property check: {constructor} / {toString} / {__proto__} are legal
+    // variable names and must not match Object.prototype members.
+    return variables && Object.hasOwn(variables, name) ? variables[name] : undefined;
   }
 
   function setDocField(name: string, field: 'description' | 'example', value: string): void {
     const next = clone();
-    const variables = next.variables ?? {};
-    const current = variables[name] ?? {};
+    const current = docFor(name) ?? {};
     const doc: VariableDoc = { ...current, [field]: value || undefined };
-    if (doc.description || doc.example || Object.keys(doc.extra ?? {}).length) {
-      variables[name] = doc;
-    } else {
-      delete variables[name];
-    }
-    if (Object.keys(variables).length) {
-      next.variables = variables;
-    } else {
-      delete next.variables;
-    }
+    const variables = setVariableDoc(next.variables, name, doc);
+    if (variables) next.variables = variables;
+    else delete next.variables;
     onChange(next);
   }
 
   function removeStaleDoc(name: string): void {
     const next = clone();
-    const variables = next.variables;
-    if (!variables) return;
-    delete variables[name];
-    if (Object.keys(variables).length) {
-      next.variables = variables;
-    } else {
-      delete next.variables;
-    }
+    const variables = setVariableDoc(next.variables, name, undefined);
+    if (variables) next.variables = variables;
+    else delete next.variables;
     onChange(next);
   }
 </script>

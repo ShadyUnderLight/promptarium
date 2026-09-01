@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { deriveVariableContract } = await import(
+const { deriveVariableContract, setVariableDoc } = await import(
   join(root, 'src/lib/variables/contract.ts')
 );
 
@@ -72,6 +72,47 @@ eq(
   },
   'first-appearance order is preserved and hyphen/underscore names are documented'
 );
+
+console.log('prototype-key variable names');
+for (const name of ['constructor', 'toString', '__proto__', 'valueOf']) {
+  eq(
+    deriveVariableContract(`Review {${name}}.`, undefined),
+    { documented: [], undocumented: [{ name }], stale: [] },
+    `${name} with no annotation is undocumented, not inherited from Object.prototype`
+  );
+  eq(
+    deriveVariableContract(`Review {${name}}.`, { [name]: { description: 'has doc' } }),
+    { documented: [{ name, description: 'has doc', example: undefined }], undocumented: [], stale: [] },
+    `${name} with an own annotation is documented`
+  );
+  eq(
+    deriveVariableContract('No variables here.', { [name]: { description: 'has doc' } }),
+    { documented: [], undocumented: [], stale: [{ name, description: 'has doc', example: undefined }] },
+    `${name} annotation without a body variable is stale`
+  );
+}
+
+console.log('setVariableDoc with __proto__');
+{
+  const doc = { description: 'proto doc', example: 'x' };
+  const added = setVariableDoc(undefined, '__proto__', doc);
+  assert(added !== undefined, '__proto__ annotation can be added');
+  assert(Object.hasOwn(added, '__proto__'), '__proto__ is an own data property');
+  assert(Object.keys(added).length === 1, '__proto__ counts as one entry, got ' + Object.keys(added).length);
+  assert(added['__proto__'] === doc, '__proto__ own value is readable');
+  assert(!(added instanceof Object) || Object.getPrototypeOf(added) === Object.prototype, 'map prototype is untouched');
+  const updated = setVariableDoc(added, '__proto__', { ...doc, description: 'edited' });
+  assert(updated['__proto__'].description === 'edited', '__proto__ annotation can be edited');
+  const removed = setVariableDoc(updated, '__proto__', undefined);
+  assert(removed === undefined, '__proto__ annotation can be removed entirely');
+}
+{
+  const doc = { description: 'ctor doc' };
+  const added = setVariableDoc(undefined, 'constructor', doc);
+  assert(Object.hasOwn(added, 'constructor') && added.constructor === doc, 'constructor annotation is an own property');
+  const removed = setVariableDoc(added, 'constructor', undefined);
+  assert(removed === undefined, 'constructor annotation can be removed');
+}
 
 console.log(failures === 0 ? 'variable contract: ok' : `variable contract: ${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);
