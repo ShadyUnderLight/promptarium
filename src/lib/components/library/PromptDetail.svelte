@@ -1,8 +1,17 @@
 <script lang="ts">
   import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
-  import { formatModifiedAt, promptTitle } from '$lib/library.svelte';
+  import {
+    formatModifiedAt,
+    library,
+    loadPromptHistory,
+    promptTitle,
+    selectHistoryCommit,
+    loadMorePromptHistory,
+  } from '$lib/library.svelte';
+  import type { GitFileCommit } from '$lib/prompts/git-types';
   import PromptMetadataEditor from './PromptMetadata.svelte';
   import PromptPreview from './PromptPreview.svelte';
+  import PromptHistory from './PromptHistory.svelte';
   import VariableList from './VariableList.svelte';
 
   interface Props {
@@ -42,7 +51,7 @@
     onNotice,
   }: Props = $props();
 
-  let mode = $state<'preview' | 'edit'>('preview');
+  let mode = $state<'preview' | 'edit' | 'history'>('preview');
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
   let originalBody = $state('');
@@ -168,6 +177,23 @@
     const next = window.prompt('New filename for duplicate', document.name + '-copy');
     if (next?.trim()) onDuplicate(document, next.trim());
   }
+
+  function setMode(next: 'preview' | 'edit' | 'history'): void {
+    mode = next;
+    if (next === 'history' && document) {
+      void loadPromptHistory(document.projectPath, document.name);
+    }
+  }
+
+  function handleSelectCommit(commit: GitFileCommit): void {
+    if (!document) return;
+    void selectHistoryCommit(document.projectPath, document.name, commit);
+  }
+
+  function handleLoadMoreHistory(): void {
+    if (!document) return;
+    void loadMorePromptHistory(document.projectPath, document.name);
+  }
 </script>
 
 <section class="prompt-detail" aria-label="Prompt detail">
@@ -199,8 +225,9 @@
 
     <div class="detail-toolbar">
       <div class="detail-tabs" role="tablist" aria-label="Prompt content">
-        <button type="button" role="tab" aria-selected={mode === 'preview'} class:detail-tab--active={mode === 'preview'} class="detail-tab" onclick={() => (mode = 'preview')}>Preview</button>
-        <button type="button" role="tab" aria-selected={mode === 'edit'} class:detail-tab--active={mode === 'edit'} class="detail-tab" onclick={() => (mode = 'edit')}>Edit</button>
+        <button type="button" role="tab" aria-selected={mode === 'preview'} class:detail-tab--active={mode === 'preview'} class="detail-tab" onclick={() => setMode('preview')}>Preview</button>
+        <button type="button" role="tab" aria-selected={mode === 'edit'} class:detail-tab--active={mode === 'edit'} class="detail-tab" onclick={() => setMode('edit')}>Edit</button>
+        <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>History</button>
       </div>
       <div class="detail-actions">
         {#if mode === 'edit'}
@@ -225,6 +252,19 @@
 
     {#if rawVisible}
       <pre class="raw-file">{document.raw}</pre>
+    {:else if mode === 'history'}
+      <PromptHistory
+        loading={library.historyLoading}
+        loadingMore={library.historyLoadingMore}
+        repo={library.historyRepo}
+        page={library.historyPage}
+        selectedCommit={library.historySelectedCommit}
+        diff={library.historyDiff}
+        diffLoading={library.historyDiffLoading}
+        error={library.historyError}
+        onSelectCommit={handleSelectCommit}
+        onLoadMore={handleLoadMoreHistory}
+      />
     {:else if mode === 'preview'}
       <PromptMetadataEditor metadata={metadata} editing={false} onChange={updateMetadata} />
       <PromptPreview body={body} />
@@ -242,8 +282,10 @@
     {/if}
 
     <div class="detail-footer">
-      <VariableList body={body} />
-      {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
+      {#if mode !== 'history'}
+        <VariableList body={body} />
+        {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
+      {/if}
     </div>
   {/if}
 </section>

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::appstate::{self, Project, ProjectList};
+use super::git::{self, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo};
 use super::store::{self, PromptDocument, PromptMetadata, PromptSummary};
 
 pub struct PromptsState;
@@ -230,4 +231,31 @@ pub async fn reveal_in_finder(project: String, name: Option<String>) -> Result<(
         let _ = target;
         Err("Reveal in Finder is only available on macOS".to_string())
     }
+}
+
+#[tauri::command]
+pub async fn git_repository_info(project: String) -> Result<GitRepositoryInfo, String> {
+    let project = registered_project(&project)?;
+    blocking(move || git::repository_info(&project)).await
+}
+
+#[tauri::command]
+pub async fn git_file_history(
+    project: String,
+    name: String,
+    limit: Option<usize>,
+    cursor: Option<String>,
+) -> Result<GitFileHistoryPage, String> {
+    let project = registered_project(&project)?;
+    blocking(move || git::file_history(&project, &name, limit, cursor.as_deref())).await
+}
+
+#[tauri::command]
+pub async fn git_file_diff(
+    project: String,
+    name: String,
+    commit: String,
+) -> Result<GitFileDiff, String> {
+    let project = registered_project(&project)?;
+    blocking(move || git::file_diff(&project, &name, &commit)).await
 }

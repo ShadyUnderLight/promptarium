@@ -966,6 +966,138 @@ body {
   color: var(--text);
 }
 
+.prompt-history {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.history-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
+  gap: 0.85rem;
+  min-height: 0;
+  flex: 1;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  overflow: auto;
+  min-height: 0;
+  padding-right: 0.15rem;
+}
+
+.history-item {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-item:hover,
+.history-item--active {
+  border-color: var(--border-strong);
+  background: var(--bg-subtle);
+}
+
+.history-item__time {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.history-item__subject {
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.history-item__meta {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.history-item__hash {
+  font-family: var(--font-mono);
+}
+
+.history-diff-panel {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 0.45rem;
+  background: var(--bg-subtle);
+}
+
+.history-empty {
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.history-empty--compact {
+  padding: 1.25rem 0.85rem;
+}
+
+.history-loading {
+  display: flex;
+  gap: 0.35rem;
+  padding: 1rem 0;
+}
+
+.history-loading--compact {
+  padding: 0.75rem;
+}
+
+.diff-viewer {
+  display: block;
+  overflow: auto;
+  margin: 0;
+  padding: 0.85rem;
+  font: 0.72rem/1.55 var(--font-mono);
+  white-space: pre;
+}
+
+.diff-line {
+  display: block;
+}
+
+.diff-line--add {
+  background: color-mix(in srgb, #16a34a 12%, transparent);
+  color: #15803d;
+}
+
+.diff-line--remove {
+  background: color-mix(in srgb, #dc2626 12%, transparent);
+  color: #b91c1c;
+}
+
+.diff-line--meta {
+  color: var(--text-muted);
+}
+
+.diff-line--context {
+  color: var(--text);
+}
+
+.history-load-more {
+  align-self: flex-start;
+  margin-top: 0.15rem;
+}
+
 .frontmatter-warning,
 .detail-error {
   display: flex;
