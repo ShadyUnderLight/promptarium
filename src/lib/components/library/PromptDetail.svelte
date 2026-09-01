@@ -104,7 +104,16 @@
   });
 
   function cloneMetadata(value: PromptMetadata): PromptMetadata {
-    return { ...value, tags: [...value.tags], models: [...value.models], extra: { ...value.extra } };
+    const variables = value.variables
+      ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
+      : undefined;
+    return {
+      ...value,
+      tags: [...value.tags],
+      models: [...value.models],
+      extra: { ...value.extra },
+      ...(variables ? { variables } : {}),
+    };
   }
 
   function updateMetadata(value: PromptMetadata): void {
@@ -290,7 +299,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} editing={false} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -300,14 +309,14 @@
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} editing={true} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} onChange={updateMetadata} />
         </div>
       </div>
     {/if}
 
     <div class="detail-footer">
       {#if mode !== 'history'}
-        <VariableList body={body} />
+        <VariableList body={body} annotations={metadata.variables} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}
     </div>

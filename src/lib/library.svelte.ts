@@ -185,11 +185,15 @@ async function refreshCurrentScope(options: RefreshLibraryOptions = {}): Promise
 }
 
 function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
+  const variables = metadata.variables
+    ? Object.fromEntries(Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }]))
+    : undefined;
   return {
     ...metadata,
     tags: [...metadata.tags],
     models: [...metadata.models],
     extra: { ...metadata.extra },
+    ...(variables ? { variables } : {}),
   };
 }
 

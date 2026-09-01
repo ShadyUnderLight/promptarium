@@ -210,7 +210,16 @@
       return false;
     }
     const failures = await batchUpdate(prompts, (metadata) => {
-      const next = { ...metadata, tags: [...metadata.tags], models: [...metadata.models], extra: { ...metadata.extra } };
+      const variables = metadata.variables
+        ? Object.fromEntries(Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }]))
+        : undefined;
+      const next = {
+        ...metadata,
+        tags: [...metadata.tags],
+        models: [...metadata.models],
+        extra: { ...metadata.extra },
+        ...(variables ? { variables } : {}),
+      };
       if (action === 'favorite') next.favorite = true;
       if (action === 'unfavorite') next.favorite = false;
       if (action === 'archive') next.status = 'archived';

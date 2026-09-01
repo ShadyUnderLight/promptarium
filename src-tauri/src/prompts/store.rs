@@ -24,6 +24,21 @@ impl Default for PromptStatus {
     }
 }
 
+/// A single variable's optional human-readable annotation. Both fields are
+/// optional; the variable's *existence* is decided exclusively by the body
+/// parser on the frontend, never by this struct. Unknown nested YAML keys are
+/// preserved in `extra` so a future `variables.<name>.<field>` survives edits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct VariableDoc {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub example: Option<String>,
+    #[serde(default)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptMetadata {
@@ -39,6 +54,8 @@ pub struct PromptMetadata {
     pub models: Vec<String>,
     #[serde(default)]
     pub created: Option<String>,
+    #[serde(default)]
+    pub variables: BTreeMap<String, VariableDoc>,
     #[serde(default)]
     pub extra: BTreeMap<String, JsonValue>,
 }
@@ -183,6 +200,51 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
             "created" => match value.as_str() {
                 Some(date) if valid_created_date(date) => metadata.created = Some(date.to_string()),
                 Some(_) | None => errors.push("created must be a YYYY-MM-DD string".to_string()),
+            },
+            "variables" => match value.as_mapping() {
+                Some(variables) => {
+                    for (name, doc_value) in variables {
+                        let Some(name) = name.as_str() else {
+                            errors.push("variables keys must be strings".to_string());
+                            continue;
+                        };
+                        match doc_value.as_mapping() {
+                            Some(doc) => {
+                                let mut variable = VariableDoc::default();
+                                for (key, value) in doc {
+                                    let Some(key) = key.as_str() else {
+                                        continue;
+                                    };
+                                    match key {
+                                        "description" => match value.as_str() {
+                                            Some(text) => variable.description = Some(text.to_string()),
+                                            None => errors.push(format!(
+                                                "variables.{name}.description must be a string"
+                                            )),
+                                        },
+                                        "example" => match value.as_str() {
+                                            Some(text) => variable.example = Some(text.to_string()),
+                                            None => errors.push(format!(
+                                                "variables.{name}.example must be a string"
+                                            )),
+                                        },
+                                        unknown => match json_from_yaml(value) {
+                                            Ok(value) => {
+                                                variable.extra.insert(unknown.to_string(), value);
+                                            }
+                                            Err(error) => errors.push(error),
+                                        },
+                                    }
+                                }
+                                metadata.variables.insert(name.to_string(), variable);
+                            }
+                            None => errors.push(format!(
+                                "variables.{name} must be a mapping of description/example"
+                            )),
+                        }
+                    }
+                }
+                None => errors.push("variables must be a mapping".to_string()),
             },
             unknown => match json_from_yaml(value) {
                 Ok(value) => {
@@ -488,6 +550,7 @@ fn metadata_has_values(metadata: &PromptMetadata) -> bool {
         || metadata.favorite
         || !metadata.models.is_empty()
         || metadata.created.is_some()
+        || !metadata.variables.is_empty()
         || !metadata.extra.is_empty()
 }
 
@@ -541,6 +604,23 @@ fn serialize_frontmatter(
     }
     if let Some(created) = &metadata.created {
         mapping.insert(yaml_string("created"), yaml_string(created));
+    }
+    if !metadata.variables.is_empty() {
+        let mut variables = Mapping::new();
+        for (name, doc) in &metadata.variables {
+            let mut fields = Mapping::new();
+            if let Some(description) = &doc.description {
+                fields.insert(yaml_string("description"), yaml_string(description));
+            }
+            if let Some(example) = &doc.example {
+                fields.insert(yaml_string("example"), yaml_string(example));
+            }
+            for (key, value) in &doc.extra {
+                fields.insert(yaml_string(key), yaml_from_json(value)?);
+            }
+            variables.insert(yaml_string(name), YamlValue::Mapping(fields));
+        }
+        mapping.insert(yaml_string("variables"), YamlValue::Mapping(variables));
     }
     for (key, value) in &metadata.extra {
         mapping.insert(yaml_string(key), yaml_from_json(value)?);
@@ -1156,6 +1236,253 @@ mod tests {
         let results = search_prompts(&dir, "review").unwrap();
         assert_eq!(results[0].name, "review-pr");
         assert_eq!(results.len(), 2);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // ── variable contracts ────────────────────────────────────────────────
+
+    #[test]
+    fn variables_missing_defaults_to_empty_annotations_without_migration() {
+        let dir = tmp_dir("vars-missing");
+        write(&dir, "plain.md", "body {repository}\n");
+        let document = read_prompt(&dir, "plain").unwrap();
+        assert!(document.summary.metadata.variables.is_empty());
+        // Body-only save of a plain markdown file must not add a `variables` field.
+        save_prompt(
+            &dir,
+            "plain",
+            "body {repository}\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("plain.md")).unwrap(), "body {repository}\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn variables_parse_description_and_example_variants() {
+        let cases: Vec<(&str, &str, Option<&str>, Option<&str>)> = vec![
+            ("---\nvariables:\n  a:\n    description: repo\n---\n{a}", "a", Some("repo"), None),
+            ("---\nvariables:\n  a:\n    example: \"9\"\n---\n{a}", "a", None, Some("9")),
+            (
+                "---\nvariables:\n  a:\n    description: Pull request\n    example: \"9\"\n---\n{a}",
+                "a",
+                Some("Pull request"),
+                Some("9"),
+            ),
+            (
+                "---\nvariables:\n  a:\n    description: 仓库 名称\n    example: 示例\n---\n{a}",
+                "a",
+                Some("仓库 名称"),
+                Some("示例"),
+            ),
+        ];
+        for (raw, name, description, example) in cases {
+            let dir = tmp_dir("vars-variant");
+            write(&dir, "p.md", raw);
+            let document = read_prompt(&dir, "p").unwrap();
+            let doc = &document.summary.metadata.variables[name];
+            assert_eq!(doc.description.as_deref(), description, "case {raw:?}");
+            assert_eq!(doc.example.as_deref(), example, "case {raw:?}");
+            assert!(!document.summary.metadata.extra.contains_key("variables"));
+            fs::remove_dir_all(dir).unwrap();
+        }
+    }
+
+    #[test]
+    fn multiline_and_quoted_variable_strings_round_trip() {
+        let dir = tmp_dir("vars-multiline");
+        write(
+            &dir,
+            "p.md",
+            "---\nvariables:\n  a:\n    description: |-\n      First line\n      Second line\n---\n{a}\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            document.summary.metadata.variables["a"].description.as_deref(),
+            Some("First line\nSecond line")
+        );
+        let mut metadata = document.summary.metadata.clone();
+        save_prompt(
+            &dir,
+            "p",
+            "{a}\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.variables["a"].description.as_deref(),
+            Some("First line\nSecond line")
+        );
+        assert_eq!(reread.summary.metadata.variables["a"].example, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn variables_keep_unknown_nested_fields_and_top_level_unknown_fields() {
+        let dir = tmp_dir("vars-unknown");
+        write(
+            &dir,
+            "p.md",
+            "---\nvariables:\n  a:\n    description: repo\n    owner: lmz\n  b:\n    hint: x\ntop: keep\n---\n{a} {b}\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            document.summary.metadata.variables["a"].extra["owner"],
+            JsonValue::String("lmz".into())
+        );
+        assert_eq!(
+            document.summary.metadata.variables["b"].extra["hint"],
+            JsonValue::String("x".into())
+        );
+        assert_eq!(
+            document.summary.metadata.extra["top"],
+            JsonValue::String("keep".into())
+        );
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "{a} {b}\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(saved.contains("owner: lmz"), "nested unknown must survive: {saved}");
+        assert!(saved.contains("hint: x"), "nested unknown must survive: {saved}");
+        assert!(saved.contains("top: keep"), "top-level unknown must survive: {saved}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn body_only_save_does_not_reorder_or_add_variables() {
+        let dir = tmp_dir("vars-body-save");
+        let raw = "---\nvariables:\n  a:\n    description: A\n  b:\n    description: B\n---\nbody {a} {b}\n";
+        write(&dir, "p.md", raw);
+        let document = read_prompt(&dir, "p").unwrap();
+        save_prompt(
+            &dir,
+            "p",
+            "changed {a} {b}\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        // Non-dirty body save keeps the exact original frontmatter prefix bytes.
+        assert_eq!(
+            fs::read_to_string(dir.join("p.md")).unwrap(),
+            "---\nvariables:\n  a:\n    description: A\n  b:\n    description: B\n---\nchanged {a} {b}\n"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn explicit_variable_metadata_save_writes_expected_fields() {
+        let dir = tmp_dir("vars-explicit-save");
+        write(&dir, "p.md", "body {a}\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.variables.insert(
+            "a".into(),
+            VariableDoc {
+                description: Some("Repo".into()),
+                example: Some("org/repo".into()),
+                extra: BTreeMap::new(),
+            },
+        );
+        save_prompt(
+            &dir,
+            "p",
+            "body {a}\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(saved.contains("variables:"), "{saved}");
+        assert!(saved.contains("description: Repo"), "{saved}");
+        assert!(saved.contains("example: org/repo"), "{saved}");
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.variables["a"].description.as_deref(),
+            Some("Repo")
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn removing_a_stale_annotation_only_removes_that_annotation() {
+        let dir = tmp_dir("vars-remove-stale");
+        write(
+            &dir,
+            "p.md",
+            "---\nvariables:\n  a:\n    description: A\n  b:\n    description: B\n---\nbody {a}\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.variables.remove("b");
+        save_prompt(
+            &dir,
+            "p",
+            "body {a}\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(!saved.contains("description: B"), "removed annotation must be gone: {saved}");
+        assert!(saved.contains("description: A"), "other annotation must stay: {saved}");
+        assert!(saved.contains("body {a}"), "body must stay untouched: {saved}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn variables_save_still_refuses_to_overwrite_an_external_change() {
+        let dir = tmp_dir("vars-conflict");
+        create_prompt(&dir, "p", "body {a}", &PromptMetadata::default()).unwrap();
+        let document = read_prompt(&dir, "p").unwrap();
+        fs::write(dir.join("p.md"), "external edit").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.variables.insert(
+            "a".into(),
+            VariableDoc {
+                description: Some("A".into()),
+                example: None,
+                extra: BTreeMap::new(),
+            },
+        );
+        let error = save_prompt(
+            &dir,
+            "p",
+            "body {a}",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap_err();
+        assert!(error.contains("PROMPT_CONFLICT"));
+        assert_eq!(
+            fs::read_to_string(dir.join("p.md")).unwrap(),
+            "external edit"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

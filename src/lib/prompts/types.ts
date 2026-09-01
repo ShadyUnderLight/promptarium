@@ -14,6 +14,15 @@ export interface ProjectList {
 
 export type PromptStatus = 'draft' | 'active' | 'archived';
 
+/** A variable's optional human-readable annotation. Existence is decided
+ *  exclusively by the body parser; this only describes a variable. Unknown
+ *  nested YAML fields are preserved in `extra` and never dropped on save. */
+export interface VariableDoc {
+  description?: string;
+  example?: string;
+  extra?: Record<string, unknown>;
+}
+
 export interface PromptMetadata {
   description: string;
   tags: string[];
@@ -21,6 +30,9 @@ export interface PromptMetadata {
   favorite: boolean;
   models: string[];
   created?: string;
+  /** Variable annotations keyed by variable name; never the source of a
+   *  variable's existence (that is `parseVariables(body)`). */
+  variables?: Record<string, VariableDoc>;
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }

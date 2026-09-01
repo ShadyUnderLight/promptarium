@@ -1,16 +1,37 @@
 <script lang="ts">
-  import type { PromptMetadata as Metadata, PromptStatus } from '$lib/prompts/types';
+  import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
+  import { parseVariables } from '$lib/variables/variables';
 
   interface Props {
     metadata: Metadata;
+    body: string;
     editing: boolean;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, editing, onChange }: Props = $props();
+  let { metadata, body, editing, onChange }: Props = $props();
+
+  // Variable names come live from the body parser. The editor never creates or
+  // renames variables in frontmatter; a body edit immediately surfaces a new
+  // row, but nothing is written until an explicit Save.
+  const variableNames = $derived(parseVariables(body).map((variable) => variable.name));
+  const staleNames = $derived(
+    Object.keys(metadata.variables ?? {}).filter((name) => !variableNames.includes(name))
+  );
 
   function clone(): Metadata {
-    return { ...metadata, tags: [...metadata.tags], models: [...metadata.models], extra: { ...metadata.extra } };
+    const variables = metadata.variables
+      ? Object.fromEntries(
+          Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }])
+        )
+      : undefined;
+    return {
+      ...metadata,
+      tags: [...metadata.tags],
+      models: [...metadata.models],
+      extra: { ...metadata.extra },
+      ...(variables ? { variables } : {}),
+    };
   }
 
   function setField<K extends keyof Metadata>(field: K, value: Metadata[K]): void {
@@ -21,6 +42,41 @@
 
   function listValue(value: string): string[] {
     return [...new Set(value.split(',').map((item) => item.trim()).filter(Boolean))];
+  }
+
+  function docFor(name: string): VariableDoc | undefined {
+    return metadata.variables?.[name];
+  }
+
+  function setDocField(name: string, field: 'description' | 'example', value: string): void {
+    const next = clone();
+    const variables = next.variables ?? {};
+    const current = variables[name] ?? {};
+    const doc: VariableDoc = { ...current, [field]: value || undefined };
+    if (doc.description || doc.example || Object.keys(doc.extra ?? {}).length) {
+      variables[name] = doc;
+    } else {
+      delete variables[name];
+    }
+    if (Object.keys(variables).length) {
+      next.variables = variables;
+    } else {
+      delete next.variables;
+    }
+    onChange(next);
+  }
+
+  function removeStaleDoc(name: string): void {
+    const next = clone();
+    const variables = next.variables;
+    if (!variables) return;
+    delete variables[name];
+    if (Object.keys(variables).length) {
+      next.variables = variables;
+    } else {
+      delete next.variables;
+    }
+    onChange(next);
   }
 </script>
 
@@ -55,6 +111,55 @@
         <span>Created</span>
         <input type="date" value={metadata.created ?? ''} oninput={(event) => setField('created', event.currentTarget.value || undefined)} />
       </label>
+    </div>
+    <div class="variables-editor">
+      <span class="variables-editor__heading">Variables</span>
+      {#each variableNames as name (name)}
+        <div class="variable-doc-edit">
+          <div class="variable-doc-edit__name">
+            <span class="variable-token">{name}</span>
+            {#if !docFor(name)}<span class="variable-doc-edit__status">Undocumented</span>{/if}
+          </div>
+          <div class="variable-doc-edit__fields">
+            <input
+              value={docFor(name)?.description ?? ''}
+              oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
+              placeholder="Description"
+            />
+            <input
+              value={docFor(name)?.example ?? ''}
+              oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
+              placeholder="Example"
+            />
+          </div>
+        </div>
+      {/each}
+      {#if staleNames.length}
+        <span class="variables-editor__heading">Stale documentation</span>
+        {#each staleNames as name (name)}
+          <div class="variable-doc-edit">
+            <div class="variable-doc-edit__name">
+              <span class="variable-token">{name}</span>
+              <button type="button" class="variable-doc-edit__remove" onclick={() => removeStaleDoc(name)}>Remove documentation</button>
+            </div>
+            <div class="variable-doc-edit__fields">
+              <input
+                value={docFor(name)?.description ?? ''}
+                oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
+                placeholder="Description"
+              />
+              <input
+                value={docFor(name)?.example ?? ''}
+                oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
+                placeholder="Example"
+              />
+            </div>
+          </div>
+        {/each}
+      {/if}
+      {#if !variableNames.length && !staleNames.length}
+        <p class="detail-muted">No variables detected in the prompt body.</p>
+      {/if}
     </div>
   </div>
 {:else}

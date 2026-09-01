@@ -453,11 +453,15 @@ function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
     models: [],
     extra: {},
   };
+  const variables = value.variables
+    ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
+    : undefined;
   return {
     ...value,
     tags: [...value.tags],
     models: [...value.models],
     extra: { ...value.extra },
+    ...(variables ? { variables } : {}),
   };
 }
 
@@ -469,6 +473,7 @@ function hasMetadata(metadata: PromptMetadata): boolean {
       metadata.favorite ||
       metadata.models.length ||
       metadata.created ||
+      (metadata.variables && Object.keys(metadata.variables).length) ||
       Object.keys(metadata.extra).length
   );
 }
