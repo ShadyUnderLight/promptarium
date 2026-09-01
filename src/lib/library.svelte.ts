@@ -622,14 +622,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     });
     if (!committed || !scopeStillCurrent(serial, scope)) return;
 
-    const querySerial = searchSerial;
-    if (
-      !scopeStillCurrent(serial, scope) ||
-      querySerial !== searchSerial ||
-      library.searchQuery !== committed.queryAtCommit
-    ) {
-      return;
-    }
+    if (library.searchQuery !== committed.queryAtCommit) return;
 
     if (committed.selectedReload) {
       const { projectPath, name } = committed.selectedReload;
