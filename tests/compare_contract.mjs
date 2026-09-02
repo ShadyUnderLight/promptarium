@@ -57,8 +57,9 @@ function metadata(overrides = {}) {
 }
 
 /** Build a `RawYaml` sequence of example mappings from a plain JS shape,
- *  mirroring how the Rust side projects one. Numbers become number nodes (so a
- *  wrong-typed `input: 123` stays distinct from `input: 456` in the raw AST);
+ *  mirroring how the Rust side projects one. Numbers become integer nodes with
+ *  the value carried as a decimal string (so a wrong-typed `input: 123` stays
+ *  distinct from `input: 456`, and 64-bit values never lose precision);
  *  everything else is a string node. */
 function examplesRaw(examples) {
   return {
@@ -68,7 +69,7 @@ function examplesRaw(examples) {
       pairs: Object.entries(example).map(([key, value]) => [
         { kind: 'string', value: key },
         typeof value === 'number'
-          ? { kind: 'number', value: { kind: 'i64', value } }
+          ? { kind: 'number', value: { kind: 'i64', value: String(value) } }
           : { kind: 'string', value: String(value) },
       ]),
     })),
@@ -294,6 +295,50 @@ console.log('diffMetadata — examples (Issue #24)');
   assert(
     diffs.find((d) => d.field === 'examples'),
     'reordered raw examples must produce an examples diff (array order is meaningful)'
+  );
+}
+
+{
+  // P1: 64-bit integers are carried as decimal strings, so a JS
+  // JSON.parse/JSON.stringify round trip (what IPC applies to the payload)
+  // must not coerce 9007199254740993 -> 9007199254740992.
+  const raw = {
+    kind: 'sequence',
+    items: [
+      {
+        kind: 'mapping',
+        pairs: [
+          [{ kind: 'string', value: 'input' }, { kind: 'string', value: 'hello' }],
+          [
+            { kind: 'string', value: 'custom' },
+            { kind: 'number', value: { kind: 'i64', value: '9007199254740993' } },
+          ],
+          [
+            { kind: 'string', value: 'custom2' },
+            { kind: 'number', value: { kind: 'u64', value: '18446744073709551615' } },
+          ],
+        ],
+      },
+    ],
+  };
+  const roundTripped = JSON.parse(JSON.stringify(raw));
+  eq(
+    roundTripped.items[0].pairs[1][1].value.value,
+    '9007199254740993',
+    'i64 carried as a string survives a JS JSON round trip without precision loss'
+  );
+  eq(
+    roundTripped.items[0].pairs[2][1].value.value,
+    '18446744073709551615',
+    'u64 carried as a string survives a JS JSON round trip without precision loss'
+  );
+  const diffs = diffMetadata(
+    metadata({ examplesRaw: raw }),
+    metadata({ examplesRaw: roundTripped })
+  );
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    '64-bit integers carried as strings produce no spurious examples diff'
   );
 }
 

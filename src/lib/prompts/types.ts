@@ -40,13 +40,14 @@ export interface PromptExample {
   extra?: Record<string, unknown>;
 }
 
-/** A YAML scalar number kept in its source integer/floating form, mirroring the
- *  Rust `RawNumber` DTO (Issue #24) so a round trip through IPC JSON does not
- *  coerce precision. */
+/** A YAML scalar number, mirroring the Rust `RawNumber` DTO (Issue #24) so an
+ *  IPC JSON round trip is lossless: 64-bit integers are decimal strings (a JS
+ *  number silently coerces values past 2^53−1) and floats are IEEE-754 bit
+ *  strings (so NaN / ±Inf / −0.0 never touch JSON float semantics). */
 export type RawNumber =
-  | { kind: 'i64'; value: number }
-  | { kind: 'u64'; value: number }
-  | { kind: 'f64'; value: number };
+  | { kind: 'i64'; value: string }
+  | { kind: 'u64'; value: string }
+  | { kind: 'f64'; bits: string };
 
 /** IPC-safe semantic AST for arbitrary YAML, mirroring the Rust `RawYaml` DTO
  *  (Issue #24). Every `serde_yaml::Value` variant is represented explicitly so

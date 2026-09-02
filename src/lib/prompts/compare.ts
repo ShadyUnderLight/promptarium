@@ -198,7 +198,15 @@ function normalizeRawYaml(node: RawYaml): string {
     case 'bool':
       return String(node.value);
     case 'number':
-      return node.value.kind + ':' + String(node.value.value);
+      switch (node.value.kind) {
+        case 'i64':
+          return 'i:' + node.value.value;
+        case 'u64':
+          return 'u:' + node.value.value;
+        case 'f64':
+          return 'f:' + node.value.bits;
+      }
+      break;
     case 'string':
       return JSON.stringify(node.value);
     case 'sequence':

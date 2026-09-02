@@ -42,9 +42,9 @@ pub enum RawYaml {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RawNumber {
-    I64 { value: i64 },
-    U64 { value: u64 },
-    F64 { value: f64 },
+    I64 { value: String },
+    U64 { value: String },
+    F64 { bits: String },
 }
 
 impl RawYaml {
@@ -55,13 +55,20 @@ impl RawYaml {
             YamlValue::Null => RawYaml::Null,
             YamlValue::Bool(value) => RawYaml::Bool { value: *value },
             YamlValue::Number(number) => RawYaml::Number {
+                // Integers are carried as decimal strings (JS numbers lose
+                // precision past 2^53−1); floats as IEEE-754 bit strings (so
+                // NaN / ±Inf / −0.0 never touch JSON float semantics).
                 value: if let Some(value) = number.as_i64() {
-                    RawNumber::I64 { value }
+                    RawNumber::I64 {
+                        value: value.to_string(),
+                    }
                 } else if let Some(value) = number.as_u64() {
-                    RawNumber::U64 { value }
+                    RawNumber::U64 {
+                        value: value.to_string(),
+                    }
                 } else {
                     RawNumber::F64 {
-                        value: number.as_f64().unwrap_or(f64::NAN),
+                        bits: format!("{:#x}", number.as_f64().unwrap_or(f64::NAN).to_bits()),
                     }
                 },
             },
@@ -84,33 +91,51 @@ impl RawYaml {
         }
     }
 
-    /// Convert the AST back into a `serde_yaml::Value` for serialization.
-    fn into_serde(&self) -> YamlValue {
+    /// Convert the AST back into a `serde_yaml::Value` for serialization. The
+    /// number decode is fallible only in the impossible case that an IPC
+    /// payload corrupted the decimal/bit string; surfacing it as an error (the
+    /// save fails) is safer than writing a wrong number.
+    fn into_serde(&self) -> Result<YamlValue, String> {
         match self {
-            RawYaml::Null => YamlValue::Null,
-            RawYaml::Bool { value } => YamlValue::Bool(*value),
-            RawYaml::Number { value } => YamlValue::Number(match value {
-                RawNumber::I64 { value } => serde_yaml::Number::from(*value),
-                RawNumber::U64 { value } => serde_yaml::Number::from(*value),
-                RawNumber::F64 { value } => serde_yaml::Number::from(*value),
-            }),
-            RawYaml::String { value } => YamlValue::String(value.clone()),
-            RawYaml::Sequence { items } => {
-                YamlValue::Sequence(items.iter().map(RawYaml::into_serde).collect())
-            }
+            RawYaml::Null => Ok(YamlValue::Null),
+            RawYaml::Bool { value } => Ok(YamlValue::Bool(*value)),
+            RawYaml::Number { value } => Ok(YamlValue::Number(match value {
+                RawNumber::I64 { value } => serde_yaml::Number::from(
+                    value
+                        .parse::<i64>()
+                        .map_err(|e| format!("invalid i64 raw number {value:?}: {e}"))?,
+                ),
+                RawNumber::U64 { value } => serde_yaml::Number::from(
+                    value
+                        .parse::<u64>()
+                        .map_err(|e| format!("invalid u64 raw number {value:?}: {e}"))?,
+                ),
+                RawNumber::F64 { bits } => {
+                    let bits = u64::from_str_radix(bits.trim_start_matches("0x"), 16)
+                        .map_err(|e| format!("invalid f64 raw bits {bits:?}: {e}"))?;
+                    serde_yaml::Number::from(f64::from_bits(bits))
+                }
+            })),
+            RawYaml::String { value } => Ok(YamlValue::String(value.clone())),
+            RawYaml::Sequence { items } => Ok(YamlValue::Sequence(
+                items
+                    .iter()
+                    .map(RawYaml::into_serde)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )),
             RawYaml::Mapping { pairs } => {
                 let mut mapping = Mapping::new();
                 for (key, value) in pairs {
-                    mapping.insert(key.into_serde(), value.into_serde());
+                    mapping.insert(key.into_serde()?, value.into_serde()?);
                 }
-                YamlValue::Mapping(mapping)
+                Ok(YamlValue::Mapping(mapping))
             }
-            RawYaml::Tagged { tag, value } => {
-                YamlValue::Tagged(Box::new(serde_yaml::value::TaggedValue {
+            RawYaml::Tagged { tag, value } => Ok(YamlValue::Tagged(Box::new(
+                serde_yaml::value::TaggedValue {
                     tag: serde_yaml::value::Tag::new(tag.clone()),
-                    value: value.into_serde(),
-                }))
-            }
+                    value: value.into_serde()?,
+                },
+            ))),
         }
     }
 }
@@ -1005,7 +1030,7 @@ fn serialize_frontmatter(
     // duplicate producing a typed value) is the typed projection serialized. An
     // empty typed list is omitted, matching `notes`.
     if let Some(raw) = &metadata.examples_raw {
-        mapping.insert(yaml_string("examples"), raw.into_serde());
+        mapping.insert(yaml_string("examples"), raw.into_serde()?);
     } else if let Some(examples) = &metadata.examples {
         if !examples.is_empty() {
             let sequence = examples
@@ -2770,6 +2795,90 @@ mod tests {
             fs::read_to_string(dir.join("p.md")).unwrap(),
             original,
             "the file must be left untouched when the save fails"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_raw_i64_u64_survive_json_round_trip_as_strings() {
+        let dir = tmp_dir("examples-int-ipc");
+        // 9007199254740993 = 2^53 + 1 (a JS number silently coerces it to
+        // 9007199254740992); 18446744073709551615 = u64::MAX. Both must survive
+        // the IPC JSON round trip exactly, or an unrelated metadata save would
+        // silently rewrite the user's YAML (Issue #24 P0).
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - input: hello\n    custom: 9007199254740993\n    custom2: 18446744073709551615\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let raw = document.summary.metadata.examples_raw.clone().unwrap();
+        // The JSON form must carry the integers as exact decimal strings.
+        let json_text = serde_json::to_string(&raw).unwrap();
+        assert!(
+            json_text.contains("9007199254740993"),
+            "i64 must be carried verbatim as a decimal string, got: {json_text}"
+        );
+        assert!(
+            json_text.contains("18446744073709551615"),
+            "u64 must be carried verbatim, got: {json_text}"
+        );
+        // Simulating the IPC return path: a JSON round trip must reproduce the AST.
+        let back: RawYaml = serde_json::from_str(&json_text).unwrap();
+        assert_eq!(back, raw, "raw AST must survive a JSON round trip exactly");
+        // And an unrelated metadata save re-emits the exact integers.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("9007199254740993") && saved.contains("18446744073709551615"),
+            "large integers must survive an unrelated save verbatim, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_raw_f64_special_values_round_trip_via_bits() {
+        let dir = tmp_dir("examples-f64-ipc");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - a: .nan\n    b: .inf\n    c: -.inf\n    d: -0.0\n    e: 1.5\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let raw = document.summary.metadata.examples_raw.clone().unwrap();
+        // Floats travel as IEEE-754 bit strings, so NaN / ±Inf / −0.0 never hit
+        // JSON floating-point semantics; a JSON round trip is lossless.
+        let json_text = serde_json::to_string(&raw).unwrap();
+        let back: RawYaml = serde_json::from_str(&json_text).unwrap();
+        assert_eq!(back, raw, "f64 bits must survive a JSON round trip exactly");
+        // An unrelated save re-emits them as readable YAML scalar tags.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains(".nan") && saved.contains(".inf") && saved.contains("-0.0"),
+            "special float values must survive an unrelated save, got:\n{saved}"
         );
         fs::remove_dir_all(dir).unwrap();
     }
