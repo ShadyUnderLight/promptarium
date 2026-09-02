@@ -1249,6 +1249,30 @@ body {
   margin-left: 0.25rem;
 }
 
+.notes-editor {
+  min-height: 5.5rem;
+  resize: vertical;
+}
+
+.usage-notes {
+  margin: 0 0 1.2rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.usage-notes__heading {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  margin-bottom: 0.4rem;
+}
+
+.usage-notes__body {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 .markdown-preview {
   max-width: 54rem;
   color: var(--text);
@@ -1784,6 +1808,7 @@ body {
   text-decoration: line-through;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .compare-meta-row__arrow {
@@ -1795,6 +1820,7 @@ body {
   color: #15803d;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .raw-file {

@@ -130,11 +130,42 @@ console.log('diffMetadata — variantOf and extra');
 }
 
 {
-  const diffs = diffMetadata(metadata({ extra: { notes: 'hi' } }), metadata({ extra: {} }));
+  const diffs = diffMetadata(metadata({ extra: { owner: 'lmz' } }), metadata({ extra: {} }));
   const extra = diffs.find((d) => d.field === 'extra');
   assert(extra, 'an unknown extra field difference is reported on the extra row');
-  eq(extra.left, 'notes: "hi"', 'left extra renders deterministically');
+  eq(extra.left, 'owner: "lmz"', 'left extra renders deterministically');
   eq(extra.right, '(none)', 'missing extra renders as (none)');
+}
+
+console.log('diffMetadata — notes');
+{
+  const diffs = diffMetadata(metadata({ notes: 'Works best on small PRs.' }), metadata({ notes: 'Works best on large PRs.' }));
+  const notes = diffs.find((d) => d.field === 'notes');
+  assert(notes, 'a notes difference is reported on its own row');
+  eq(notes.left, 'Works best on small PRs.', 'left side renders the selected prompt notes');
+  eq(notes.right, 'Works best on large PRs.', 'right side renders the compared prompt notes');
+  assert(!diffs.find((d) => d.field === 'extra'), 'notes is excluded from the extra row to avoid double reporting');
+}
+
+{
+  const diffs = diffMetadata(metadata(), metadata({ notes: 'added' }));
+  const notes = diffs.find((d) => d.field === 'notes');
+  assert(notes, 'a notes add is reported');
+  eq(notes.left, '(none)', 'missing notes renders as (none)');
+  eq(notes.right, 'added', 'added notes render on the right');
+}
+
+{
+  const diffs = diffMetadata(metadata({ notes: '' }), metadata());
+  assert(!diffs.find((d) => d.field === 'notes'), 'empty notes and missing notes are the same state — no notes diff');
+}
+
+{
+  const diffs = diffMetadata(metadata({ notes: '   ' }), metadata());
+  const notes = diffs.find((d) => d.field === 'notes');
+  assert(notes, 'whitespace-only notes are NOT normalized to (none)');
+  eq(notes.left, '   ', 'whitespace-only notes render as-is');
+  eq(notes.right, '(none)', 'missing notes renders as (none)');
 }
 
 console.log('diffMetadata — wrong-type variantOf renders honestly');

@@ -180,7 +180,7 @@ function renderVariables(value: Record<string, VariableDoc> | undefined): string
 
 function renderExtra(value: Record<string, unknown>): string {
   const keys = Object.keys(value)
-    .filter((key) => key !== 'variantOf')
+    .filter((key) => key !== 'variantOf' && key !== 'notes')
     .sort();
   if (!keys.length) return '(none)';
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
@@ -195,9 +195,18 @@ function renderVariantOf(metadata: PromptMetadata): string {
   return `${typeof raw}: ${JSON.stringify(raw)}`;
 }
 
+/** Normalize "no notes" and "empty notes" to a single value: the storage
+ *  contract treats both as "no Usage Notes" (empty notes are removed from the
+ *  frontmatter on the next metadata save). Only the exact empty string is
+ *  normalized — whitespace-only values are preserved as real content. */
+function renderNotes(value: string | undefined): string {
+  return value === undefined || value === '' ? '(none)' : value;
+}
+
 /** Deterministic list of metadata field differences between two prompts. The
- *  `variantOf` field is compared on its own row and excluded from `extra`, so
- *  a change is never reported twice. Order is fixed for stable output. */
+ *  `variantOf` and `notes` fields are compared on their own rows and excluded
+ *  from `extra`, so a change is never reported twice. Order is fixed for
+ *  stable output. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
   const pairs: Array<[string, string, string]> = [
     ['description', a.description, b.description],
@@ -208,6 +217,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['related', renderList(a.related), renderList(b.related)],
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
+    ['notes', renderNotes(a.notes), renderNotes(b.notes)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];

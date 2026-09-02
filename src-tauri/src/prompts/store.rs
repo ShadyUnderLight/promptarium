@@ -58,6 +58,11 @@ pub struct PromptMetadata {
     pub variables: BTreeMap<String, VariableDoc>,
     #[serde(default)]
     pub related: Vec<String>,
+    /// Usage notes that are not part of the prompt body (Issue #15). Copy
+    /// Prompt never includes them. Multiline values serialize as readable YAML
+    /// block scalars; an empty value is omitted from the frontmatter on save.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
     #[serde(default)]
     pub extra: BTreeMap<String, JsonValue>,
 }
@@ -239,6 +244,10 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
                 Some(_) | None => errors.push("created must be a YYYY-MM-DD string".to_string()),
             },
             "related" => metadata.related = relation_list(value, &mut errors),
+            "notes" => match value.as_str() {
+                Some(text) => metadata.notes = Some(text.to_string()),
+                None => errors.push("notes must be a string".to_string()),
+            },
             "variables" => match value.as_mapping() {
                 Some(variables) => {
                     for (name, doc_value) in variables {
@@ -598,6 +607,7 @@ fn metadata_has_values(metadata: &PromptMetadata) -> bool {
         || metadata.created.is_some()
         || !metadata.variables.is_empty()
         || !metadata.related.is_empty()
+        || metadata.notes.as_deref().is_some_and(|notes| !notes.is_empty())
         || !metadata.extra.is_empty()
 }
 
@@ -674,6 +684,14 @@ fn serialize_frontmatter(
             yaml_string("related"),
             YamlValue::Sequence(metadata.related.iter().map(|related| yaml_string(related)).collect()),
         );
+    }
+    if let Some(notes) = &metadata.notes {
+        // Empty notes are deliberately omitted so clearing the field removes it
+        // from the frontmatter instead of leaving `notes: ""` behind. Multiline
+        // values are emitted as readable YAML block scalars by the serializer.
+        if !notes.is_empty() {
+            mapping.insert(yaml_string("notes"), yaml_string(notes));
+        }
     }
     for (key, value) in &metadata.extra {
         mapping.insert(yaml_string(key), yaml_from_json(value)?);
@@ -1699,6 +1717,280 @@ mod tests {
         .unwrap();
         let saved = fs::read_to_string(dir.join("p.md")).unwrap();
         assert_eq!(saved.matches("- coding/a").count(), 2, "{saved}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // ── usage notes (Issue #15) ─────────────────────────────────────────────
+
+    #[test]
+    fn notes_missing_defaults_to_none_without_migration() {
+        let dir = tmp_dir("notes-missing");
+        write(&dir, "plain.md", "body\n");
+        let document = read_prompt(&dir, "plain").unwrap();
+        assert_eq!(document.summary.metadata.notes, None);
+        // A body-only save of a plain Markdown file must not add a `notes` field.
+        save_prompt(
+            &dir,
+            "plain",
+            "body\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("plain.md")).unwrap(), "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_parse_single_line_and_multiline_block_scalar() {
+        let dir = tmp_dir("notes-parse");
+        write(
+            &dir,
+            "single.md",
+            "---\nnotes: Works best with concise repository context.\n---\nbody\n",
+        );
+        write(
+            &dir,
+            "multi.md",
+            "---\nnotes: |-\n  Works best for normal-sized pull requests.\n\n  For architecture reviews, set the focus to:\n  architecture, boundaries and dependency direction.\n---\nbody\n",
+        );
+        let single = read_prompt(&dir, "single").unwrap();
+        assert_eq!(
+            single.summary.metadata.notes.as_deref(),
+            Some("Works best with concise repository context.")
+        );
+        assert!(single.summary.frontmatter_error.is_none());
+        assert!(!single.summary.metadata.extra.contains_key("notes"));
+        let multi = read_prompt(&dir, "multi").unwrap();
+        assert_eq!(
+            multi.summary.metadata.notes.as_deref(),
+            Some(
+                "Works best for normal-sized pull requests.\n\nFor architecture reviews, set the focus to:\narchitecture, boundaries and dependency direction."
+            )
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_multiline_save_writes_a_readable_block_scalar() {
+        let dir = tmp_dir("notes-multiline-save");
+        write(&dir, "p.md", "body\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = Some(
+            "First paragraph.\n\nSecond paragraph with blank lines and unicode ✅.\nColon: value, hash #, --- dash".into(),
+        );
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("notes: |"),
+            "multiline notes must serialize as a readable block scalar, got:\n{saved}"
+        );
+        assert!(
+            !saved.contains("\\n"),
+            "multiline notes must not serialize as an escaped string, got:\n{saved}"
+        );
+        // parse -> explicit save -> parse must preserve the value semantically.
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.notes,
+            metadata.notes,
+            "round trip must preserve multiline notes semantically"
+        );
+        assert_eq!(reread.body, "body\n", "notes edit must not touch the body");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_blank_lines_and_unicode_survive_a_round_trip() {
+        let dir = tmp_dir("notes-blank-unicode");
+        let notes = "用法说明：在中文场景使用。\n\n✅ 稳定；✅ 边界需人工检查。\n\n最后一行。";
+        let raw = format!(
+            "---\nnotes: |-\n  用法说明：在中文场景使用。\n\n  ✅ 稳定；✅ 边界需人工检查。\n\n  最后一行。\n---\nbody\n"
+        );
+        write(&dir, "p.md", &raw);
+        let document = read_prompt(&dir, "p").unwrap();
+        assert_eq!(document.summary.metadata.notes.as_deref(), Some(notes));
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.notes.as_deref(),
+            Some(notes),
+            "blank lines and unicode must survive an explicit save"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_cleared_on_save_removes_the_field() {
+        let dir = tmp_dir("notes-clear");
+        write(
+            &dir,
+            "p.md",
+            "---\nnotes: |\n  Some guidance.\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = None;
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            !saved.contains("notes"),
+            "cleared notes must be removed from the frontmatter, got:\n{saved}"
+        );
+        assert!(
+            !saved.contains("notes: \"\""),
+            "cleared notes must not leave an empty string, got:\n{saved}"
+        );
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(reread.summary.metadata.notes, None);
+        assert_eq!(reread.body, "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_wrong_type_warns_and_defaults_to_none() {
+        let dir = tmp_dir("notes-wrong-type");
+        write(&dir, "p.md", "---\nnotes:\n  - item\n---\nbody\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("notes must be a string"),
+            "non-string notes must be loud, got: {error}"
+        );
+        assert_eq!(document.summary.metadata.notes, None);
+        assert_eq!(document.body, "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn empty_notes_are_treated_like_missing_and_removed_on_save() {
+        let dir = tmp_dir("notes-empty");
+        write(&dir, "p.md", "---\nnotes: \"\"\n---\nbody\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        // An explicit empty string parses as an empty note; it is not a
+        // frontmatter error and behaves like no notes.
+        assert_eq!(document.summary.metadata.notes, Some(String::new()));
+        assert!(document.summary.frontmatter_error.is_none());
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            !saved.contains("notes"),
+            "an empty note must be omitted from the frontmatter on save, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_only_prompt_writes_frontmatter() {
+        let dir = tmp_dir("notes-only");
+        let mut metadata = PromptMetadata::default();
+        metadata.notes = Some("Works best on large pull requests.".into());
+        create_prompt(&dir, "p", "body", &metadata).unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(saved.starts_with("---\n"), "{saved}");
+        assert!(saved.contains("notes: Works best on large pull requests."), "{saved}");
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.notes.as_deref(),
+            Some("Works best on large pull requests.")
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_edit_preserves_body_bytes_and_unknown_fields() {
+        let dir = tmp_dir("notes-preserve");
+        let raw = "---\nowner: lmz\nnotes: |\n  Original.\n---\n\nbody  {ticket}\n";
+        write(&dir, "p.md", raw);
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = Some("Edited.\n\nSecond line.".into());
+        save_prompt(
+            &dir,
+            "p",
+            &document.body,
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("body  {ticket}\n"),
+            "body bytes must stay untouched, got:\n{saved}"
+        );
+        assert!(saved.contains("owner: lmz"), "unknown field must survive, got:\n{saved}");
+        assert!(saved.contains("notes: |"), "multiline notes block scalar, got:\n{saved}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn notes_save_still_refuses_to_overwrite_an_external_change() {
+        let dir = tmp_dir("notes-conflict");
+        create_prompt(&dir, "p", "body", &PromptMetadata::default()).unwrap();
+        let document = read_prompt(&dir, "p").unwrap();
+        fs::write(dir.join("p.md"), "external edit").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = Some("local note".into());
+        let error = save_prompt(
+            &dir,
+            "p",
+            "body",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap_err();
+        assert!(error.contains("PROMPT_CONFLICT"));
+        assert_eq!(
+            fs::read_to_string(dir.join("p.md")).unwrap(),
+            "external edit"
+        );
         fs::remove_dir_all(dir).unwrap();
     }
 }

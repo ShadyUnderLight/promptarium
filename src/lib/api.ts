@@ -13,6 +13,7 @@ import type {
   PromptSummary,
 } from './prompts/types';
 import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
+import { cloneMetadata } from './prompts/duplicate';
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -324,6 +325,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     models: ['ChatGPT', 'Claude'],
     created: '2026-08-20',
     related: ['review/pr-checklist', 'refactor/refactor-safely'],
+    notes: 'Works best on normal-sized pull requests.\n\nFor architecture reviews, set the focus to: architecture, boundaries and dependency direction.',
     extra: {},
   },
   '/dev/mock/engineering::review/pr-checklist': {
@@ -487,29 +489,6 @@ const devFolders: Record<string, Set<string>> = {};
 const devMtimes: Record<string, number> = {};
 let devClock = Date.now();
 
-function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
-  const value = metadata ?? {
-    description: '',
-    tags: [],
-    status: 'active' as const,
-    favorite: false,
-    models: [],
-    related: [],
-    extra: {},
-  };
-  const variables = value.variables
-    ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
-    : undefined;
-  return {
-    ...value,
-    tags: [...value.tags],
-    models: [...value.models],
-    related: [...value.related],
-    extra: { ...value.extra },
-    ...(variables ? { variables } : {}),
-  };
-}
-
 function hasMetadata(metadata: PromptMetadata): boolean {
   return Boolean(
     metadata.description ||
@@ -520,6 +499,7 @@ function hasMetadata(metadata: PromptMetadata): boolean {
       metadata.created ||
       (metadata.variables && Object.keys(metadata.variables).length) ||
       metadata.related.length ||
+      Boolean(metadata.notes) ||
       Object.keys(metadata.extra).length
   );
 }
