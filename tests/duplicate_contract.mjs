@@ -87,6 +87,52 @@ console.log('variantMetadata — Duplicate as Variant preserves notes + variantO
   eq(source.extra.variantOf, undefined, 'mutating the variant copy does not touch the source extra');
 }
 
+console.log('cloneMetadata — examples deep copy (Issue #24)');
+
+{
+  const source = metadata({
+    examples: [
+      {
+        name: 'Small PR',
+        input: 'Repo: foo/bar',
+        output: 'Looks good',
+        assets: ['a.png', 'b.png'],
+        extra: { custom: 1, nested: { list: ['x', 'y'] } },
+      },
+    ],
+    examplesRaw: {
+      kind: 'sequence',
+      items: [{ kind: 'string', value: 'raw' }],
+    },
+  });
+  const copy = cloneMetadata(source);
+  eq(copy.examples, source.examples, 'cloneMetadata preserves examples');
+  assert(copy.examples !== source.examples, 'cloneMetadata returns a new examples array');
+  assert(copy.examples[0] !== source.examples[0], 'cloneMetadata deep-copies each example');
+  assert(copy.examples[0].assets !== source.examples[0].assets, 'cloneMetadata deep-copies example assets');
+  assert(copy.examples[0].extra !== source.examples[0].extra, 'cloneMetadata deep-copies example extra');
+  assert(
+    copy.examples[0].extra.nested !== source.examples[0].extra.nested,
+    'cloneMetadata deep-copies nested objects inside examples[].extra'
+  );
+  assert(
+    copy.examples[0].extra.nested.list !== source.examples[0].extra.nested.list,
+    'cloneMetadata deep-copies nested arrays inside examples[].extra'
+  );
+  copy.examples[0].input = 'changed';
+  copy.examples[0].extra.nested.list.push('z');
+  eq(source.examples[0].input, 'Repo: foo/bar', 'mutating the copy does not touch the source example');
+  eq(source.examples[0].extra.nested.list, ['x', 'y'], 'mutating a nested copy array does not touch the source');
+  eq(copy.examplesRaw, source.examplesRaw, 'cloneMetadata preserves the raw examples AST');
+  assert(copy.examplesRaw !== source.examplesRaw, 'cloneMetadata deep-copies examplesRaw');
+}
+
+{
+  const fresh = cloneMetadata(metadata());
+  eq(fresh.examples, undefined, 'cloning metadata without examples yields no examples');
+  eq(fresh.examplesRaw, undefined, 'cloning metadata without examplesRaw yields none');
+}
+
 if (failures) {
   console.error(`\n${failures} assertion(s) failed.`);
   process.exit(1);

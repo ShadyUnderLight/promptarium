@@ -56,6 +56,26 @@ function metadata(overrides = {}) {
   };
 }
 
+/** Build a `RawYaml` sequence of example mappings from a plain JS shape,
+ *  mirroring how the Rust side projects one. Numbers become integer nodes with
+ *  the value carried as a decimal string (so a wrong-typed `input: 123` stays
+ *  distinct from `input: 456`, and 64-bit values never lose precision);
+ *  everything else is a string node. */
+function examplesRaw(examples) {
+  return {
+    kind: 'sequence',
+    items: examples.map((example) => ({
+      kind: 'mapping',
+      pairs: Object.entries(example).map(([key, value]) => [
+        { kind: 'string', value: key },
+        typeof value === 'number'
+          ? { kind: 'number', value: { kind: 'i64', value: String(value) } }
+          : { kind: 'string', value: String(value) },
+      ]),
+    })),
+  };
+}
+
 console.log('diffTexts — identical bodies');
 eq(diffTexts('same', 'same'), '', 'identical bodies produce an empty patch');
 eq(diffTexts('', ''), '', 'two empty bodies produce an empty patch');
@@ -175,6 +195,151 @@ console.log('diffMetadata — wrong-type variantOf renders honestly');
   assert(variant, 'a wrong-type variantOf still produces a variantOf difference');
   eq(variant.left, 'number: 123', 'left renders the wrong type instead of collapsing to (none)');
   eq(variant.right, 'parent', 'right renders the string value');
+}
+
+console.log('diffMetadata — examples (Issue #24)');
+
+{
+  const left = metadata({
+    examples: [{ name: 'Small PR', input: 'Repo: foo/bar', output: 'Looks good' }],
+  });
+  const right = metadata({
+    examples: [{ name: 'Small PR', input: 'Repo: foo/bar', output: 'Add a test' }],
+  });
+  const diffs = diffMetadata(left, right);
+  const examples = diffs.find((d) => d.field === 'examples');
+  assert(examples, 'an examples semantic change is reported on its own row');
+  assert(!diffs.find((d) => d.field === 'extra'), 'examples is excluded from the extra row to avoid double reporting');
+  eq(examples.left, JSON.stringify(left.examples[0]), 'left side renders the selected prompt examples');
+  eq(examples.right, JSON.stringify(right.examples[0]), 'right side renders the compared prompt examples');
+}
+
+{
+  const diffs = diffMetadata(metadata(), metadata({ examples: [{ input: 'x', output: 'y' }] }));
+  const examples = diffs.find((d) => d.field === 'examples');
+  assert(examples, 'an examples add is reported');
+  eq(examples.left, '(none)', 'missing examples renders as (none)');
+}
+
+{
+  const same = { examples: [{ input: 'x', output: 'y', assets: ['a.png'] }] };
+  const diffs = diffMetadata(metadata(same), metadata(same));
+  assert(!diffs.find((d) => d.field === 'examples'), 'equal examples produce no examples diff');
+}
+
+{
+  const a = [{ input: 'a', output: '1' }, { input: 'b', output: '2' }];
+  const b = [{ input: 'b', output: '2' }, { input: 'a', output: '1' }];
+  const diffs = diffMetadata(metadata({ examples: a }), metadata({ examples: b }));
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'reordered examples produce an examples diff (array order is meaningful)'
+  );
+}
+
+{
+  // P2: malformed examples with identical typed projections still diff through
+  // the authoritative raw AST — the typed projection cannot see the wrong-typed
+  // `input`, so Compare must look at `examplesRaw`.
+  const left = metadata({ examplesRaw: examplesRaw([{ name: 'Broken', input: 123 }]) });
+  const right = metadata({ examplesRaw: examplesRaw([{ name: 'Broken', input: 456 }]) });
+  const diffs = diffMetadata(left, right);
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'different malformed raw examples must produce an examples diff'
+  );
+}
+
+{
+  // Raw examples are authoritative over the typed projection in Compare: two
+  // prompts with identical typed projections but different raw values still
+  // report an examples change.
+  const base = { examples: [{ name: 'Broken' }] };
+  const left = metadata({ ...base, examplesRaw: examplesRaw([{ name: 'Broken', input: 123 }]) });
+  const right = metadata({ ...base, examplesRaw: examplesRaw([{ name: 'Broken', input: 456 }]) });
+  const diffs = diffMetadata(left, right);
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'raw examples must take precedence over identical typed projections'
+  );
+}
+
+{
+  // Identical raw AST produces no examples diff.
+  const raw = examplesRaw([{ name: 'Broken', input: 123 }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: raw }), metadata({ examplesRaw: raw }));
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    'identical raw examples produce no examples diff'
+  );
+}
+
+{
+  // P2: mapping key order is not semantically meaningful in YAML, so two raw
+  // examples that differ only in key order must NOT produce an examples diff.
+  const left = examplesRaw([{ input: 'x', output: 'y' }]);
+  const right = examplesRaw([{ output: 'y', input: 'x' }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: left }), metadata({ examplesRaw: right }));
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    'mapping key order must not produce a spurious examples diff'
+  );
+}
+
+{
+  // Example array position is meaningful: reordering raw examples must still
+  // produce an examples diff even with normalized (key-sorted) rendering.
+  const left = examplesRaw([{ input: 'a' }, { input: 'b' }]);
+  const right = examplesRaw([{ input: 'b' }, { input: 'a' }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: left }), metadata({ examplesRaw: right }));
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'reordered raw examples must produce an examples diff (array order is meaningful)'
+  );
+}
+
+{
+  // P1: 64-bit integers are carried as decimal strings, so a JS
+  // JSON.parse/JSON.stringify round trip (what IPC applies to the payload)
+  // must not coerce 9007199254740993 -> 9007199254740992.
+  const raw = {
+    kind: 'sequence',
+    items: [
+      {
+        kind: 'mapping',
+        pairs: [
+          [{ kind: 'string', value: 'input' }, { kind: 'string', value: 'hello' }],
+          [
+            { kind: 'string', value: 'custom' },
+            { kind: 'number', value: { kind: 'i64', value: '9007199254740993' } },
+          ],
+          [
+            { kind: 'string', value: 'custom2' },
+            { kind: 'number', value: { kind: 'u64', value: '18446744073709551615' } },
+          ],
+        ],
+      },
+    ],
+  };
+  const roundTripped = JSON.parse(JSON.stringify(raw));
+  eq(
+    roundTripped.items[0].pairs[1][1].value.value,
+    '9007199254740993',
+    'i64 carried as a string survives a JS JSON round trip without precision loss'
+  );
+  eq(
+    roundTripped.items[0].pairs[2][1].value.value,
+    '18446744073709551615',
+    'u64 carried as a string survives a JS JSON round trip without precision loss'
+  );
+  const diffs = diffMetadata(
+    metadata({ examplesRaw: raw }),
+    metadata({ examplesRaw: roundTripped })
+  );
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    '64-bit integers carried as strings produce no spurious examples diff'
+  );
 }
 
 console.log('diffMetadata — deterministic ordering');

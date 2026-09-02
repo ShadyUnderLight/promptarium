@@ -23,6 +23,46 @@ export interface VariableDoc {
   extra?: Record<string, unknown>;
 }
 
+/** One prompt example (Issue #24), mirroring the Rust `PromptExample` DTO.
+ *  camelCase in IPC, snake_case in YAML. A typed projection is read-only for
+ *  now (no Examples editor in this issue); invalid/hand-written examples are
+ *  preserved semantically through `examplesRaw` on an unrelated metadata save,
+ *  never through truncation of this typed Vec. */
+export interface PromptExample {
+  name?: string;
+  input?: string;
+  inputFile?: string;
+  output?: string;
+  outputFile?: string;
+  notes?: string;
+  assets?: string[];
+  /** Unknown nested YAML keys inside one example, carried through a save. */
+  extra?: Record<string, unknown>;
+}
+
+/** A YAML scalar number, mirroring the Rust `RawNumber` DTO (Issue #24) so an
+ *  IPC JSON round trip is lossless: 64-bit integers are decimal strings (a JS
+ *  number silently coerces values past 2^53−1) and floats are IEEE-754 bit
+ *  strings (so NaN / ±Inf / −0.0 never touch JSON float semantics). */
+export type RawNumber =
+  | { kind: 'i64'; value: string }
+  | { kind: 'u64'; value: string }
+  | { kind: 'f64'; bits: string };
+
+/** IPC-safe semantic AST for arbitrary YAML, mirroring the Rust `RawYaml` DTO
+ *  (Issue #24). Every `serde_yaml::Value` variant is represented explicitly so
+ *  no node — non-string mapping keys, tagged values — is dropped or flattened
+ *  into a JSON-only shape. Mapping keys are kept as a pair list so non-string
+ *  keys survive. */
+export type RawYaml =
+  | { kind: 'null' }
+  | { kind: 'bool'; value: boolean }
+  | { kind: 'number'; value: RawNumber }
+  | { kind: 'string'; value: string }
+  | { kind: 'sequence'; items: RawYaml[] }
+  | { kind: 'mapping'; pairs: [RawYaml, RawYaml][] }
+  | { kind: 'tagged'; tag: string; value: RawYaml };
+
 export interface PromptMetadata {
   description: string;
   tags: string[];
@@ -40,6 +80,15 @@ export interface PromptMetadata {
    *  never includes them. Multiline values serialize as readable YAML block
    *  scalars; clearing the field removes `notes` from the frontmatter. */
   notes?: string;
+  /** Prompt examples (Issue #24). Typed projection; the authoritative value for
+   *  an unrelated metadata save is `examplesRaw`, so invalid/hand-written
+   *  examples are never truncated to this typed Vec. */
+  examples?: PromptExample[];
+  /** IPC-safe semantic AST of the `examples` frontmatter field as read from
+   *  disk, carried from Rust. The preservation base for an unrelated metadata
+   *  save (conversion from YAML is exhaustive and infallible); pass it back
+   *  unchanged unless explicitly editing examples. */
+  examplesRaw?: RawYaml;
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }

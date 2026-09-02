@@ -15,6 +15,7 @@
  */
 import type { VariableDoc } from './types';
 import { getVariantOfRaw } from './types';
+import type { RawYaml } from './types';
 import type { PromptMetadata } from './types';
 
 /** Number of unchanged lines of context around a change in the rendered patch. */
@@ -180,10 +181,64 @@ function renderVariables(value: Record<string, VariableDoc> | undefined): string
 
 function renderExtra(value: Record<string, unknown>): string {
   const keys = Object.keys(value)
-    .filter((key) => key !== 'variantOf' && key !== 'notes')
+    .filter((key) => key !== 'variantOf' && key !== 'notes' && key !== 'examples')
     .sort();
   if (!keys.length) return '(none)';
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
+}
+
+/** Deterministic, order-insensitive normalization of a `RawYaml` node for the
+ *  Compare sheet: mapping keys are sorted so key order never produces a spurious
+ *  diff, while sequence order is preserved because example array position is
+ *  meaningful. Covers every `RawYaml` kind exhaustively. */
+function normalizeRawYaml(node: RawYaml): string {
+  switch (node.kind) {
+    case 'null':
+      return 'null';
+    case 'bool':
+      return String(node.value);
+    case 'number':
+      switch (node.value.kind) {
+        case 'i64':
+          return 'i:' + node.value.value;
+        case 'u64':
+          return 'u:' + node.value.value;
+        case 'f64':
+          return 'f:' + node.value.bits;
+      }
+      break;
+    case 'string':
+      return JSON.stringify(node.value);
+    case 'sequence':
+      return '[' + node.items.map(normalizeRawYaml).join(',') + ']';
+    case 'mapping':
+      return (
+        '{' +
+        node.pairs
+          .map(([key, value]) => normalizeRawYaml(key) + ':' + normalizeRawYaml(value))
+          .sort()
+          .join(',') +
+        '}'
+      );
+    case 'tagged':
+      return '!' + node.tag + '(' + normalizeRawYaml(node.value) + ')';
+  }
+}
+
+/** Deterministic rendering of examples for the Compare sheet. The authoritative
+ *  representation is the raw semantic AST when present — it carries
+ *  invalid/hand-written examples that the typed projection cannot, so two
+ *  malformed examples that project identically still diff, while mapping key
+ *  order does not produce a spurious diff. Falls back to the typed projection
+ *  only when no raw exists (fresh create/duplicate). Compared on its own row;
+ *  never reported through the generic `extra` diff as well. */
+function renderExamples(metadata: PromptMetadata): string {
+  if (metadata.examplesRaw !== undefined) {
+    return normalizeRawYaml(metadata.examplesRaw);
+  }
+  const value = metadata.examples;
+  if (!value || !value.length) return '(none)';
+  return value.map((example) => JSON.stringify(example)).join('\n');
 }
 
 function renderVariantOf(metadata: PromptMetadata): string {
@@ -204,9 +259,9 @@ function renderNotes(value: string | undefined): string {
 }
 
 /** Deterministic list of metadata field differences between two prompts. The
- *  `variantOf` and `notes` fields are compared on their own rows and excluded
- *  from `extra`, so a change is never reported twice. Order is fixed for
- *  stable output. */
+ *  `variantOf`, `notes` and `examples` fields are compared on their own rows
+ *  and excluded from `extra`, so a change is never reported twice. Order is
+ *  fixed for stable output. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
   const pairs: Array<[string, string, string]> = [
     ['description', a.description, b.description],
@@ -218,6 +273,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
     ['notes', renderNotes(a.notes), renderNotes(b.notes)],
+    ['examples', renderExamples(a), renderExamples(b)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];
