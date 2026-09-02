@@ -15,7 +15,7 @@
  */
 import type { VariableDoc } from './types';
 import { getVariantOfRaw } from './types';
-import type { PromptExample, PromptMetadata } from './types';
+import type { PromptMetadata } from './types';
 
 /** Number of unchanged lines of context around a change in the rendered patch. */
 const CONTEXT_LINES = 3;
@@ -186,10 +186,18 @@ function renderExtra(value: Record<string, unknown>): string {
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
 }
 
-/** Deterministic one-line rendering of the examples projection for the Compare
- *  sheet. `examples` is a typed field (Issue #24) and is compared on its own
- *  row — it must never be reported through the generic `extra` diff as well. */
-function renderExamples(value: PromptExample[] | undefined): string {
+/** Deterministic rendering of examples for the Compare sheet. The
+ *  authoritative representation is the raw canonical YAML text when present —
+ *  it carries invalid/hand-written examples that the typed projection cannot —
+ *  so two malformed examples that project identically still diff. Falls back to
+ *  the typed projection only when no raw exists (fresh create/duplicate).
+ *  Compared on its own row; never reported through the generic `extra` diff as
+ *  well. */
+function renderExamples(metadata: PromptMetadata): string {
+  if (metadata.examplesRawYaml !== undefined) {
+    return metadata.examplesRawYaml;
+  }
+  const value = metadata.examples;
   if (!value || !value.length) return '(none)';
   return value.map((example) => JSON.stringify(example)).join('\n');
 }
@@ -226,7 +234,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
     ['notes', renderNotes(a.notes), renderNotes(b.notes)],
-    ['examples', renderExamples(a.examples), renderExamples(b.examples)],
+    ['examples', renderExamples(a), renderExamples(b)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];

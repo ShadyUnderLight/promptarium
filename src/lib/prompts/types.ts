@@ -58,13 +58,14 @@ export interface PromptMetadata {
    *  scalars; clearing the field removes `notes` from the frontmatter. */
   notes?: string;
   /** Prompt examples (Issue #24). Typed projection; the authoritative value for
-   *  an unrelated metadata save is `examplesRaw`, so invalid/hand-written
+   *  an unrelated metadata save is `examplesRawYaml`, so invalid/hand-written
    *  examples are never truncated to this typed Vec. */
   examples?: PromptExample[];
-  /** Raw semantic value of the `examples` frontmatter field as read from disk,
-   *  carried from Rust. The preservation base for an unrelated metadata save;
-   *  pass it back unchanged unless explicitly editing examples. */
-  examplesRaw?: unknown;
+  /** Canonical YAML text of the `examples` frontmatter field as read from disk,
+   *  carried from Rust. The preservation base for an unrelated metadata save
+   *  (a string carries *any* YAML semantics, including structures JSON cannot
+   *  express); pass it back unchanged unless explicitly editing examples. */
+  examplesRawYaml?: string;
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }

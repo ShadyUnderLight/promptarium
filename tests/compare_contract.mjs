@@ -217,6 +217,43 @@ console.log('diffMetadata — examples (Issue #24)');
   );
 }
 
+{
+  // P2: malformed examples with identical typed projections still diff through
+  // the authoritative raw YAML carrier — the typed projection cannot see the
+  // wrong-typed `input`, so Compare must look at `examplesRawYaml`.
+  const left = metadata({ examplesRawYaml: '- name: Broken\n  input: 123' });
+  const right = metadata({ examplesRawYaml: '- name: Broken\n  input: 456' });
+  const diffs = diffMetadata(left, right);
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'different malformed raw examples must produce an examples diff'
+  );
+}
+
+{
+  // Raw examples are authoritative over the typed projection in Compare: two
+  // prompts with identical typed projections but different raw values still
+  // report an examples change.
+  const base = { examples: [{ name: 'Broken' }] };
+  const left = metadata({ ...base, examplesRawYaml: '- name: Broken\n  input: 123' });
+  const right = metadata({ ...base, examplesRawYaml: '- name: Broken\n  input: 456' });
+  const diffs = diffMetadata(left, right);
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'raw examples must take precedence over identical typed projections'
+  );
+}
+
+{
+  // Identical raw canonical YAML produces no examples diff.
+  const raw = '- name: Broken\n  input: 123';
+  const diffs = diffMetadata(metadata({ examplesRawYaml: raw }), metadata({ examplesRawYaml: raw }));
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    'identical raw examples produce no examples diff'
+  );
+}
+
 console.log('diffMetadata — deterministic ordering');
 {
   const left = metadata();

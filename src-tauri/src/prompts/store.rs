@@ -92,19 +92,22 @@ pub struct PromptMetadata {
     pub notes: Option<String>,
     /// Prompt examples (Issue #24). The typed Vec is a read-only projection for
     /// IPC/frontend use; it is *not* the authoritative value for a save. The
-    /// authoritative representation is `examples_raw` — the semantic YAML value
-    /// as read from disk — so invalid or hand-written examples are never
-    /// truncated to this typed Vec on an unrelated metadata save. Only an
-    /// explicit editor-produced typed value (create / duplicate, where no raw
-    /// exists) is serialized from `examples`.
+    /// authoritative representation is `examples_raw_yaml` — the canonical YAML
+    /// text of the `examples` value as read from disk — so invalid or
+    /// hand-written examples are never truncated to this typed Vec on an
+    /// unrelated metadata save. Only an explicit editor-produced typed value
+    /// (create / duplicate, where no raw exists) is serialized from `examples`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub examples: Option<Vec<PromptExample>>,
-    /// Raw semantic value of the `examples` frontmatter field as read from disk.
-    /// Preservation base for an unrelated metadata save (Issue #24 P0 contract);
-    /// it travels through IPC so the frontend round-trips it without loss.
-    /// `None` when the field is absent.
+    /// Canonical YAML text of the `examples` frontmatter field as read from
+    /// disk. This is the preservation base for an unrelated metadata save
+    /// (Issue #24 P0 contract): a string carries *any* YAML semantics — including
+    /// structures JSON cannot express, such as mapping keys that are sequences —
+    /// so preservation never depends on JSON representability. It travels
+    /// through IPC and is re-parsed to `serde_yaml::Value` on save. `None` when
+    /// the field is absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub examples_raw: Option<JsonValue>,
+    pub examples_raw_yaml: Option<String>,
     #[serde(default)]
     pub extra: BTreeMap<String, JsonValue>,
 }
@@ -344,13 +347,15 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
                 None => errors.push("variables must be a mapping".to_string()),
             },
             "examples" => {
-                // The raw semantic value is always retained first: it is the
-                // preservation base for an unrelated metadata save (Issue #24
-                // P0), so no parse outcome below can ever drop the original
-                // YAML. Lexical formatting is not preserved — only semantics.
-                match json_from_yaml(value) {
-                    Ok(raw) => metadata.examples_raw = Some(raw),
-                    Err(error) => errors.push(error),
+                // The raw value is always retained first, as canonical YAML
+                // text: it is the preservation base for an unrelated metadata
+                // save (Issue #24 P0) and can carry *any* YAML semantics — even
+                // structures JSON cannot express — so no parse outcome below can
+                // ever drop the original YAML. Lexical formatting is not
+                // preserved — only semantics.
+                match serde_yaml::to_string(value) {
+                    Ok(raw) => metadata.examples_raw_yaml = Some(raw),
+                    Err(error) => errors.push(error.to_string()),
                 }
                 match value {
                     YamlValue::Sequence(items) => {
@@ -767,7 +772,7 @@ fn metadata_has_values(metadata: &PromptMetadata) -> bool {
         || !metadata.variables.is_empty()
         || !metadata.related.is_empty()
         || metadata.notes.as_deref().is_some_and(|notes| !notes.is_empty())
-        || metadata.examples_raw.is_some()
+        || metadata.examples_raw_yaml.is_some()
         || metadata
             .examples
             .as_ref()
@@ -899,12 +904,17 @@ fn serialize_frontmatter(
             mapping.insert(yaml_string("notes"), yaml_string(notes));
         }
     }
-    // Examples (Issue #24): an unrelated metadata save re-emits the raw semantic
-    // value (the preservation base for invalid/hand-written examples); only when
-    // no raw exists (create / duplicate producing a typed value) is the typed
-    // projection serialized. An empty typed list is omitted, matching `notes`.
-    if let Some(raw) = &metadata.examples_raw {
-        mapping.insert(yaml_string("examples"), yaml_from_json(raw)?);
+    // Examples (Issue #24): an unrelated metadata save re-emits the raw
+    // canonical YAML text (the preservation base for invalid/hand-written
+    // examples). Restoring it must never fall back to the typed projection:
+    // re-parsing our own canonical text is deterministic, and any failure is a
+    // save error rather than silent data loss. Only when no raw exists (create /
+    // duplicate producing a typed value) is the typed projection serialized. An
+    // empty typed list is omitted, matching `notes`.
+    if let Some(raw_yaml) = &metadata.examples_raw_yaml {
+        let value = serde_yaml::from_str::<YamlValue>(raw_yaml)
+            .map_err(|e| format!("cannot restore preserved examples: {e}"))?;
+        mapping.insert(yaml_string("examples"), value);
     } else if let Some(examples) = &metadata.examples {
         if !examples.is_empty() {
             let sequence = examples
@@ -2223,7 +2233,7 @@ mod tests {
         write(&dir, "plain.md", "body\n");
         let document = read_prompt(&dir, "plain").unwrap();
         assert_eq!(document.summary.metadata.examples, None);
-        assert_eq!(document.summary.metadata.examples_raw, None);
+        assert_eq!(document.summary.metadata.examples_raw_yaml, None);
         // A body-only save of a plain Markdown file must not add an `examples` field.
         save_prompt(
             &dir,
@@ -2267,7 +2277,7 @@ mod tests {
         assert_eq!(examples[1].name.as_deref(), Some("Large PR"));
         assert_eq!(examples[1].input.as_deref(), Some("inline input text"));
         // The raw semantic value is always retained for an unrelated save.
-        assert!(document.summary.metadata.examples_raw.is_some());
+        assert!(document.summary.metadata.examples_raw_yaml.is_some());
         assert!(!document.summary.metadata.extra.contains_key("examples"));
         fs::remove_dir_all(dir).unwrap();
     }
@@ -2409,7 +2419,7 @@ mod tests {
             document.summary.metadata.examples.as_deref().unwrap().len(),
             1
         );
-        assert!(document.summary.metadata.examples_raw.is_some());
+        assert!(document.summary.metadata.examples_raw_yaml.is_some());
         assert_eq!(document.body, "body\n");
         // An unrelated save keeps the empty example intact semantically.
         let mut metadata = document.summary.metadata.clone();
@@ -2495,7 +2505,7 @@ mod tests {
             None,
             "typed projection has no value for the wrong-typed field"
         );
-        assert!(document.summary.metadata.examples_raw.is_some());
+        assert!(document.summary.metadata.examples_raw_yaml.is_some());
         // The raw value keeps the wrong-typed scalar; an unrelated save preserves it.
         let mut metadata = document.summary.metadata.clone();
         metadata.tags = vec!["review".into()];
@@ -2534,7 +2544,7 @@ mod tests {
         // A non-list shape cannot be projected into typed examples; the typed
         // view reports nothing while the raw value stays authoritative.
         assert_eq!(document.summary.metadata.examples, None);
-        assert!(document.summary.metadata.examples_raw.is_some());
+        assert!(document.summary.metadata.examples_raw_yaml.is_some());
         assert_eq!(document.body, "body\n");
         // description-only save must preserve the malformed examples semantically.
         let mut metadata = document.summary.metadata.clone();
@@ -2582,6 +2592,54 @@ mod tests {
         assert!(
             saved.contains("input: 123") && saved.contains("weird_nested"),
             "malformed item fields must not be dropped on an unrelated save, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_non_json_representable_yaml_survives_an_unrelated_save() {
+        let dir = tmp_dir("examples-non-json");
+        // A nested mapping whose key is a YAML sequence cannot be represented as
+        // a JSON object key; the raw preservation carrier must keep it verbatim
+        // regardless of JSON representability (Issue #24 P0).
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - input: hello\n    custom:\n      ? [a, b]\n      : preserve-me\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        assert!(
+            document.summary.metadata.examples_raw_yaml.is_some(),
+            "raw carrier must exist even for non-JSON-representable YAML"
+        );
+        let before = document.summary.metadata.examples_raw_yaml.clone().unwrap();
+        // An unrelated metadata save must keep the full raw YAML semantics.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        // Lexical formatting is not preserved (the sequence key may re-emit as a
+        // block list instead of flow `[a, b]`) — only semantics are. The value
+        // and the sequence-key members must survive; the strongest proof is the
+        // canonical raw text being stable across the save below.
+        assert!(
+            saved.contains("preserve-me"),
+            "sequence-key example value must survive an unrelated save, got:\n{saved}"
+        );
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.examples_raw_yaml.as_deref(),
+            Some(before.as_str()),
+            "raw examples semantics must be stable across an unrelated save"
         );
         fs::remove_dir_all(dir).unwrap();
     }
