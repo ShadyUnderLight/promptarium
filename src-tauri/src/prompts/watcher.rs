@@ -223,6 +223,11 @@ pub fn event_relevant(event: &Event, targets: &WatchTargets) -> bool {
         });
     }
 
+    // Issue #25 watcher boundary: a non-`.md` Create refreshes so an asset that
+    // appears later flips from `missing` to `resolved`. non-`.md` content
+    // Modify must NOT refresh (binary outputs churn and would event-storm the
+    // full library refresh); only prompt `.md` and directories do.
+    let created_file = matches!(event.kind, EventKind::Create(_)) && !event_path_is_dir(&event);
     event.paths.iter().any(|path| {
         if should_ignore_event_path(path.as_path(), targets) {
             return false;
@@ -230,8 +235,15 @@ pub fn event_relevant(event: &Event, targets: &WatchTargets) -> bool {
         if !event_path_belongs_to_watch(path.as_path(), targets) {
             return false;
         }
-        path_triggers_refresh(path.as_path(), targets)
+        path_triggers_refresh(path.as_path(), targets) || created_file
     })
+}
+
+/// True when the event's first path is an existing directory. Used only to
+/// refine the Create boundary: directories already refresh via
+/// `path_triggers_refresh`, so a non-`.md` Create counts only for files.
+fn event_path_is_dir(event: &Event) -> bool {
+    event.paths.first().is_some_and(|path| path.is_dir())
 }
 
 fn is_remove_or_rename_kind(kind: &EventKind) -> bool {
@@ -575,6 +587,38 @@ mod tests {
         let md = root.join("new.md");
         assert!(event_relevant(
             &event(EventKind::Create(CreateKind::File), vec![md]),
+            &watch
+        ));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn non_markdown_create_event_refreshes_asset_freshness() {
+        let root = std::env::temp_dir().join(format!(
+            "promptarium-watcher-create-asset-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let watch = targets(&root);
+        let asset = root.join("assets/reference.png");
+        assert!(event_relevant(
+            &event(EventKind::Create(CreateKind::File), vec![asset]),
+            &watch
+        ));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn non_markdown_create_in_dot_path_is_still_ignored() {
+        let root = std::env::temp_dir().join(format!(
+            "promptarium-watcher-create-dot-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let watch = targets(&root);
+        let asset = root.join(".hidden/reference.png");
+        assert!(!event_relevant(
+            &event(EventKind::Create(CreateKind::File), vec![asset]),
             &watch
         ));
         std::fs::remove_dir_all(root).ok();

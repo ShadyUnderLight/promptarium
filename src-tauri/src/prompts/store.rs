@@ -767,6 +767,152 @@ pub fn prompt_absolute_path(project: &Path, name: &str) -> Result<PathBuf, Strin
     prompt_path(project, name)
 }
 
+/// Resolution state of one asset reference (Issue #25). `resolved` = an
+/// existing regular non-`.md` file inside the Project; `missing` = syntactically
+/// valid but absent (a broken reference, not invalid syntax); `invalid` = an
+/// unsafe / unsupported path (absolute, escape, symlink, `.md`, non-regular
+/// target, canonicalization failure).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AssetResolutionState {
+    Resolved,
+    Missing,
+    Invalid,
+}
+
+/// Display-only kind hint derived from the reference extension (Issue #25).
+/// Explicitly not a security boundary: any safe non-`.md` regular file may be
+/// referenced regardless of its kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AssetKind {
+    Image,
+    Pdf,
+    Text,
+    Json,
+    Binary,
+}
+
+/// One classified asset reference (Issue #25). `reference` is the raw
+/// project-relative string as written in frontmatter; filesystem state is
+/// classified by Rust alone — the frontend never resolves paths itself.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedPromptAsset {
+    pub reference: String,
+    pub state: AssetResolutionState,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AssetKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Whether a reference's leaf name ends in `.md` (case-insensitive). The
+/// scanner treats every visible `.md` as a prompt (#16 invariant), so an asset
+/// reference can never point at one — making the scanner collision structurally
+/// impossible without any scanner special-casing.
+fn has_markdown_leaf(reference: &str) -> bool {
+    let leaf = reference.rsplit('/').next().unwrap_or(reference);
+    leaf.to_ascii_lowercase().ends_with(".md")
+}
+
+/// Extension-derived display hint for an asset reference. Not a security
+/// boundary — see `AssetKind`.
+fn asset_kind_for(reference: &str) -> AssetKind {
+    let extension = Path::new(reference)
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_ascii_lowercase());
+    match extension.as_deref() {
+        Some("png" | "jpg" | "jpeg" | "webp" | "gif") => AssetKind::Image,
+        Some("pdf") => AssetKind::Pdf,
+        Some("json") => AssetKind::Json,
+        Some("txt" | "log" | "csv" | "tsv" | "yaml" | "yml" | "toml" | "xml" | "html") => {
+            AssetKind::Text
+        }
+        _ => AssetKind::Binary,
+    }
+}
+
+/// Classify a single asset reference against the current filesystem (Issue
+/// #25). Path safety reuses the prompt machinery (`validate_name` +
+/// `safe_relative_path`), so there is exactly one path-authority implementation
+/// in Rust; the only new rule is the non-`.md` asset invariant. A bad reference
+/// never fails a caller: every reference maps to exactly one classification.
+fn resolve_asset(project: &Path, reference: &str) -> ResolvedPromptAsset {
+    let invalid = |error: String| ResolvedPromptAsset {
+        reference: reference.to_string(),
+        state: AssetResolutionState::Invalid,
+        kind: None,
+        size_bytes: None,
+        modified_at: None,
+        error: Some(error),
+    };
+    if has_markdown_leaf(reference) {
+        return invalid(format!(
+            "asset reference may not point at a Markdown prompt: {reference}"
+        ));
+    }
+    let path = match safe_relative_path(project, reference, None) {
+        Ok(path) => path,
+        Err(error) => return invalid(error),
+    };
+    let kind = asset_kind_for(reference);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.is_file() => ResolvedPromptAsset {
+            reference: reference.to_string(),
+            state: AssetResolutionState::Resolved,
+            kind: Some(kind),
+            size_bytes: Some(metadata.len()),
+            modified_at: Some(modified_at(&path)),
+            error: None,
+        },
+        Ok(_) => invalid(format!("asset target is not a regular file: {reference}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ResolvedPromptAsset {
+            reference: reference.to_string(),
+            state: AssetResolutionState::Missing,
+            kind: None,
+            size_bytes: None,
+            modified_at: None,
+            error: None,
+        },
+        Err(error) => invalid(error.to_string()),
+    }
+}
+
+/// Classify every reference independently (Issue #25). The batch never fails as
+/// a whole: an unsupported reference yields an `invalid` entry while the rest
+/// are still classified.
+pub fn resolve_prompt_assets(project: &Path, references: &[String]) -> Vec<ResolvedPromptAsset> {
+    references
+        .iter()
+        .map(|reference| resolve_asset(project, reference))
+        .collect()
+}
+
+/// Re-validate an asset reference for Reveal (Issue #25). Fails closed with a
+/// clear error — never a parent-folder fallback — unless the reference is a
+/// safe, existing regular non-`.md` file inside the Project. Kept as a separate
+/// seam from the Prompt-only reveal contract so the two path contracts never
+/// mix.
+pub fn asset_absolute_path_for_reveal(project: &Path, reference: &str) -> Result<PathBuf, String> {
+    if has_markdown_leaf(reference) {
+        return Err(format!(
+            "asset reference may not point at a Markdown prompt: {reference}"
+        ));
+    }
+    let path = safe_relative_path(project, reference, None)?;
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| format!("asset target cannot be read: {reference}: {error}"))?;
+    if !metadata.is_file() {
+        return Err(format!("asset target is not a regular file: {reference}"));
+    }
+    Ok(path)
+}
+
 fn parse_prompt(project: &Path, path: &Path) -> Result<PromptDocument, String> {
     let raw = fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let Some((summary, parsed)) = summary(project, path, &raw) else {
@@ -2936,6 +3082,237 @@ mod tests {
             fs::read_to_string(dir.join("p.md")).unwrap(),
             "external edit"
         );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn existing_regular_asset_resolves() {
+        let dir = tmp_dir("asset-resolved");
+        write(&dir, "assets/reference.png", "image-bytes");
+        let result = resolve_prompt_assets(&dir, &["assets/reference.png".to_string()]);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].state, AssetResolutionState::Resolved);
+        assert_eq!(result[0].kind, Some(AssetKind::Image));
+        assert_eq!(result[0].size_bytes, Some("image-bytes".len() as u64));
+        assert!(result[0].modified_at.is_some());
+        assert_eq!(result[0].error, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn nested_unicode_asset_resolves() {
+        let dir = tmp_dir("asset-unicode");
+        write(&dir, "示例/引用-图片.png", "x");
+        let result = resolve_prompt_assets(&dir, &["示例/引用-图片.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Resolved);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn missing_safe_path_is_missing_not_invalid() {
+        let dir = tmp_dir("asset-missing");
+        let result = resolve_prompt_assets(&dir, &["assets/never-created.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Missing);
+        assert_eq!(result[0].error, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn absolute_path_is_invalid() {
+        let dir = tmp_dir("asset-absolute");
+        let result = resolve_prompt_assets(&dir, &["/tmp/foo.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        assert!(result[0].error.is_some());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn parent_escape_is_invalid() {
+        let dir = tmp_dir("asset-escape");
+        let result = resolve_prompt_assets(&dir, &["../foo.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn nested_dotdot_is_invalid() {
+        let dir = tmp_dir("asset-dotdot");
+        let result = resolve_prompt_assets(&dir, &["a/../../foo.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn windows_drive_prefix_is_invalid() {
+        let dir = tmp_dir("asset-windows");
+        for reference in ["C:\\foo.png", "C:/foo.png"] {
+            let result = resolve_prompt_assets(&dir, &[reference.to_string()]);
+            assert_eq!(
+                result[0].state,
+                AssetResolutionState::Invalid,
+                "{reference}"
+            );
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn markdown_reference_is_invalid_case_insensitive() {
+        let dir = tmp_dir("asset-md");
+        for reference in ["foo.md", "nested/foo.MD", ".md"] {
+            let result = resolve_prompt_assets(&dir, &[reference.to_string()]);
+            assert_eq!(
+                result[0].state,
+                AssetResolutionState::Invalid,
+                "{reference}"
+            );
+            let message = result[0].error.as_deref().unwrap_or_default();
+            assert!(message.contains("Markdown prompt"), "{message}");
+        }
+        // Even an existing file with a `.md` leaf must be refused: the scanner
+        // invariant makes it a Prompt by identity, never an asset.
+        write(&dir, "existing.md", "x");
+        let result = resolve_prompt_assets(&dir, &["existing.md".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn directory_target_is_invalid() {
+        let dir = tmp_dir("asset-dir");
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        let result = resolve_prompt_assets(&dir, &["assets".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        let message = result[0].error.as_deref().unwrap_or_default();
+        assert!(message.contains("not a regular file"), "{message}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_file_is_invalid() {
+        use std::os::unix::fs::symlink;
+        let dir = tmp_dir("asset-symlink-file");
+        write(&dir, "real.png", "x");
+        symlink(dir.join("real.png"), dir.join("link.png")).unwrap();
+        let result = resolve_prompt_assets(&dir, &["link.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        let message = result[0].error.as_deref().unwrap_or_default();
+        assert!(message.contains("symlink"), "{message}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn path_traversing_symlinked_directory_is_invalid() {
+        use std::os::unix::fs::symlink;
+        let dir = tmp_dir("asset-symlink-dir");
+        fs::create_dir_all(dir.join("real")).unwrap();
+        write(&dir, "real/inside.png", "x");
+        symlink(dir.join("real"), dir.join("alias")).unwrap();
+        let result = resolve_prompt_assets(&dir, &["alias/inside.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn broken_symlink_is_invalid_not_missing() {
+        use std::os::unix::fs::symlink;
+        let dir = tmp_dir("asset-symlink-broken");
+        symlink(dir.join("does-not-exist.png"), dir.join("broken.png")).unwrap();
+        let result = resolve_prompt_assets(&dir, &["broken.png".to_string()]);
+        assert_eq!(result[0].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn batch_resolver_isolates_bad_references() {
+        let dir = tmp_dir("asset-batch");
+        write(&dir, "ok.png", "x");
+        let results = resolve_prompt_assets(
+            &dir,
+            &[
+                "ok.png".to_string(),
+                "missing.png".to_string(),
+                "../escape.png".to_string(),
+                "bad.md".to_string(),
+            ],
+        );
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0].state, AssetResolutionState::Resolved);
+        assert_eq!(results[1].state, AssetResolutionState::Missing);
+        assert_eq!(results[2].state, AssetResolutionState::Invalid);
+        assert_eq!(results[3].state, AssetResolutionState::Invalid);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn same_reference_resolves_independently_per_project() {
+        let a = tmp_dir("asset-proj-a");
+        let b = tmp_dir("asset-proj-b");
+        write(&a, "assets/ref.png", "a");
+        write(&b, "assets/ref.png", "b");
+        let result_a = resolve_prompt_assets(&a, &["assets/ref.png".to_string()]);
+        let result_b = resolve_prompt_assets(&b, &["assets/ref.png".to_string()]);
+        assert_eq!(result_a[0].state, AssetResolutionState::Resolved);
+        assert_eq!(result_a[0].size_bytes, Some(1));
+        assert_eq!(result_b[0].state, AssetResolutionState::Resolved);
+        assert_eq!(result_b[0].size_bytes, Some(1));
+        // A reference that exists only in A stays missing in B (never leaks).
+        write(&a, "only-a.png", "x");
+        let result_b_missing = resolve_prompt_assets(&b, &["only-a.png".to_string()]);
+        assert_eq!(result_b_missing[0].state, AssetResolutionState::Missing);
+        fs::remove_dir_all(a).unwrap();
+        fs::remove_dir_all(b).unwrap();
+    }
+
+    #[test]
+    fn asset_kind_hint_follows_extension() {
+        let dir = tmp_dir("asset-kind");
+        for (reference, expected) in [
+            ("img.png", AssetKind::Image),
+            ("doc.pdf", AssetKind::Pdf),
+            ("data.json", AssetKind::Json),
+            ("notes.txt", AssetKind::Text),
+            ("archive.zip", AssetKind::Binary),
+        ] {
+            write(&dir, reference, "x");
+            let result = resolve_prompt_assets(&dir, &[reference.to_string()]);
+            assert_eq!(
+                result[0].state,
+                AssetResolutionState::Resolved,
+                "{reference}"
+            );
+            assert_eq!(result[0].kind, Some(expected), "{reference}");
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reveal_requires_existing_regular_file() {
+        let dir = tmp_dir("asset-reveal-ok");
+        write(&dir, "assets/ok.png", "x");
+        let path = asset_absolute_path_for_reveal(&dir, "assets/ok.png").unwrap();
+        assert!(path.is_file());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn reveal_fails_closed_for_unsafe_or_missing_targets() {
+        let dir = tmp_dir("asset-reveal-bad");
+        write(&dir, "ok.png", "x");
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        for reference in [
+            "../escape.png",
+            "/tmp/foo.png",
+            "missing.png",
+            "bad.md",
+            "assets", // directory target
+        ] {
+            let error = asset_absolute_path_for_reveal(&dir, reference).unwrap_err();
+            assert!(!error.is_empty(), "{reference}");
+        }
         fs::remove_dir_all(dir).unwrap();
     }
 }

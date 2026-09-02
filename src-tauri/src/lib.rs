@@ -44,6 +44,8 @@ pub fn run() {
             prompts::state::delete_empty_folder,
             prompts::state::search_prompts,
             prompts::state::reveal_in_finder,
+            prompts::state::resolve_prompt_assets,
+            prompts::state::reveal_asset_in_finder,
             prompts::state::git_repository_info,
             prompts::state::git_file_history,
             prompts::state::git_file_diff,

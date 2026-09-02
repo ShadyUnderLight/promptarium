@@ -9,7 +9,7 @@ use tauri::AppHandle;
 
 use super::appstate::{self, Project, ProjectList};
 use super::git::{self, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo};
-use super::store::{self, PromptDocument, PromptMetadata, PromptSummary};
+use super::store::{self, PromptDocument, PromptMetadata, PromptSummary, ResolvedPromptAsset};
 use super::watcher::{ProjectFsWatcher, ProjectWatcherStatus};
 
 pub struct PromptsState {
@@ -297,6 +297,49 @@ pub async fn reveal_in_finder(project: String, name: Option<String>) -> Result<(
             .arg(&target)
             .spawn()
             .map_err(|error| format!("could not reveal {} in Finder: {error}", target.display()))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = target;
+        Err("Reveal in Finder is only available on macOS".to_string())
+    }
+}
+
+/// Classify every asset reference in a batch (Issue #25). The command never
+/// trusts an arbitrary project path: it goes through the registered-project
+/// trust boundary first, then the store classifies each reference
+/// independently — one bad reference never fails the batch.
+#[tauri::command]
+pub async fn resolve_prompt_assets(
+    project: String,
+    references: Vec<String>,
+) -> Result<Vec<ResolvedPromptAsset>, String> {
+    let project = registered_project(&project)?;
+    blocking(move || Ok(store::resolve_prompt_assets(&project, &references))).await
+}
+
+/// Reveal an asset in Finder (Issue #25). This is a distinct seam from the
+/// Prompt-only `reveal_in_finder` on purpose: before revealing, the reference
+/// is re-validated in full (registered Project, safe relative path, no escape,
+/// no symlink, non-`.md`, existing regular file). Missing / invalid targets
+/// fail closed with a clear error — never a parent-folder fallback.
+#[tauri::command]
+pub async fn reveal_asset_in_finder(project: String, relative_path: String) -> Result<(), String> {
+    let project = registered_project(&project)?;
+    let target = store::asset_absolute_path_for_reveal(&project, &relative_path)?;
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(&target)
+            .spawn()
+            .map_err(|error| {
+                format!(
+                    "could not reveal asset {} in Finder: {error}",
+                    target.display()
+                )
+            })?;
         Ok(())
     }
     #[cfg(not(target_os = "macos"))]
