@@ -340,7 +340,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -350,7 +350,7 @@
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
         </div>
       </div>
     {/if}

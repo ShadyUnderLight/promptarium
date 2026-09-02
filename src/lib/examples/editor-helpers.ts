@@ -116,6 +116,44 @@ export function updateAsset(
   return next;
 }
 
+/** Editor-only pending asset rows (Issue #26 §6): an "Add blank" click must
+ *  show an editable row without writing an empty string into `examples`. A
+ *  draft row is committed only once it has non-blank content. Drafts are pure
+ *  UI state keyed by example array index (no persistent IDs) and are never
+ *  serialized. */
+export interface AssetDrafts {
+  /** Count of open draft rows per example (by array index). */
+  [exampleIndex: number]: number;
+}
+
+/** Open one more editable draft row for an example. This is what the "Add
+ *  blank" action must do — a previous implementation called `addAsset` with an
+ *  empty reference, which `addAsset` (correctly) ignores, so nothing appeared. */
+export function addBlankAssetRow(drafts: AssetDrafts, index: number): AssetDrafts {
+  return { ...drafts, [index]: (drafts[index] ?? 0) + 1 };
+}
+
+/** Close one draft row for an example. When the last row closes, the key is
+ *  removed entirely. */
+export function dropBlankAssetRow(drafts: AssetDrafts, index: number): AssetDrafts {
+  const count = (drafts[index] ?? 0) - 1;
+  if (count > 0) return { ...drafts, [index]: count };
+  const next = { ...drafts };
+  delete next[index];
+  return next;
+}
+
+/** Commit a draft asset row into `examples`. Delegates to `addAsset`, which
+ *  trims the value and drops blanks, so a committed draft never writes an
+ *  empty asset string into the typed metadata. */
+export function commitDraftAsset(
+  examples: PromptExample[],
+  index: number,
+  value: string
+): PromptExample[] {
+  return addAsset(examples, index, value);
+}
+
 /** Replace an example's inline `input` with a file reference (`inputFile`).
  *  This is the explicit "replace inline with file" action the UI performs only
  *  after the user confirms; the inline text is intentionally cleared. */

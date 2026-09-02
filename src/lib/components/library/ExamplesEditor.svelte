@@ -13,17 +13,26 @@
     replaceInputWithFile,
     replaceOutputWithFile,
     clearFileRef,
+    addBlankAssetRow,
+    dropBlankAssetRow,
+    commitDraftAsset,
+    type AssetDrafts,
   } from '$lib/examples/editor-helpers';
+  import AssetDraftRow from './AssetDraftRow.svelte';
 
   interface Props {
     examples: PromptExample[];
     /** Project the edited prompt lives in — the only identity used by the
      *  resolver and the picker (never the active project). */
     projectPath: string;
+    /** Bumped by the library after a filesystem refresh. Only the derived
+     *  asset-state preview re-resolves; the editor metadata is never touched
+     *  (Issue #26 §14 live refresh). */
+    refreshVersion?: number;
     onChange: (examples: PromptExample[]) => void;
   }
 
-  let { examples, projectPath, onChange }: Props = $props();
+  let { examples, projectPath, refreshVersion = 0, onChange }: Props = $props();
 
   // ── Asset state preview (Issue #26 §9) ──────────────────────────────────
   // Every reference (inputFile / outputFile / assets) is classified through the
@@ -52,6 +61,10 @@
   $effect(() => {
     const proj = projectPath;
     const key = refsKey;
+    // Reading refreshVersion keeps the asset-state chips in sync with a
+    // filesystem refresh (e.g. a Missing file created in Finder flips to
+    // Ready) without touching the editor metadata.
+    refreshVersion;
     if (!proj || !refs.length) {
       resolution = {};
       return;
@@ -136,6 +149,35 @@
       pickerError = result.error;
     }
     return null;
+  }
+
+  // ── Editor-only draft asset rows (Issue #26 §6) ─────────────────────────
+  // "Add blank" opens an editable draft row that is only committed to
+  // `examples` once it has non-blank content (a blank commit is dropped), so
+  // the typed metadata never contains an empty asset string. Drafts are pure UI
+  // state — never serialized, never written to `examplesRaw`'s replacement.
+  let drafts = $state<AssetDrafts>({});
+
+  // Prune drafts whose example index no longer exists (e.g. the example was
+  // removed), so a stale count can never attach to a later example.
+  $effect(() => {
+    const count = examples.length;
+    let changed = false;
+    const next: AssetDrafts = {};
+    for (const [key, value] of Object.entries(drafts)) {
+      if (Number(key) < count) next[Number(key)] = value;
+      else changed = true;
+    }
+    if (changed) drafts = next;
+  });
+
+  function addBlankAsset(index: number): void {
+    drafts = addBlankAssetRow(drafts, index);
+  }
+
+  function commitDraft(index: number, value: string): void {
+    if (value.trim()) onChange(commitDraftAsset(examples, index, value));
+    drafts = dropBlankAssetRow(drafts, index);
   }
 </script>
 
@@ -280,9 +322,14 @@
               <button type="button" class="link-btn" onclick={() => onChange(removeAsset(examples, index, assetIndex))}>Remove</button>
             </div>
           {/each}
+          {#if (drafts[index] ?? 0) > 0}
+            {#each Array(drafts[index]) as _, draftIndex (draftIndex)}
+              <AssetDraftRow onCommit={(value) => commitDraft(index, value)} />
+            {/each}
+          {/if}
           <div class="example-assets-edit__actions">
             <button type="button" class="link-btn" onclick={() => chooseAsset(index)}>Choose file…</button>
-            <button type="button" class="link-btn" onclick={() => onChange(addAsset(examples, index, ''))}>Add blank</button>
+            <button type="button" class="link-btn" onclick={() => addBlankAsset(index)}>Add blank</button>
           </div>
         </div>
       </div>

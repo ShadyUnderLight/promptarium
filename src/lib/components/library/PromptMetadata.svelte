@@ -19,10 +19,13 @@
     summaries?: PromptSummary[];
     /** Project the edited prompt lives in (for the variant parent cycle guard). */
     projectPath?: string;
+    /** Bumped after a filesystem refresh; forwarded to the Examples editor so
+     *  its asset-state chips re-resolve without touching editor metadata. */
+    refreshVersion?: number;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, body, editing, promptNames = [], currentName = '', summaries = [], projectPath = '', onChange }: Props = $props();
+  let { metadata, body, editing, promptNames = [], currentName = '', summaries = [], projectPath = '', refreshVersion = 0, onChange }: Props = $props();
 
   // Variable names come live from the body parser. The editor never creates or
   // renames variables in frontmatter; a body edit immediately surfaces a new
@@ -290,7 +293,7 @@
         <p class="detail-muted">No other prompt in this project is available as a variant parent.</p>
       {/if}
     </div>
-    <ExamplesEditor examples={metadata.examples ?? []} projectPath={projectPath} onChange={updateExamples} />
+    <ExamplesEditor examples={metadata.examples ?? []} projectPath={projectPath} refreshVersion={refreshVersion} onChange={updateExamples} />
   </div>
 {:else}
   <dl class="metadata-inspector">

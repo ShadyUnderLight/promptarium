@@ -940,6 +940,37 @@ pub fn asset_reference_from_selected_path(
     if !selected.is_absolute() {
         return Err(format!("selected path is not absolute: {absolute_path}"));
     }
+    // Compute the relative path from the LEXICAL selection before any
+    // canonicalization. Resolving the symlink first would silently rewrite
+    // `assets/link.png -> assets/real.png` into `assets/real.png` and hide the
+    // symlink from every check below — the exact gap a Project-internal symlink
+    // would exploit. Strip against both the canonical root and the registered
+    // (possibly symlinked) project path so a project whose own root is a
+    // symlink still works.
+    let relative = selected
+        .strip_prefix(&root)
+        .ok()
+        .or_else(|| selected.strip_prefix(project).ok())
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .ok_or_else(|| {
+            format!(
+                "selected file is outside the current Project: {}",
+                selected.display()
+            )
+        })?;
+    if has_markdown_leaf(&relative) {
+        return Err(format!(
+            "asset reference may not point at a Markdown prompt: {relative}"
+        ));
+    }
+    // Validate the lexical relative path through the standard reference
+    // machinery BEFORE canonicalizing: `safe_relative_path` walks every
+    // component and rejects symlinks, escape and dot segments exactly like a
+    // hand-written reference (Issue #25). A Project-internal symlink is
+    // rejected here instead of being rewritten to its target.
+    safe_relative_path(project, &relative, None)?;
+    // Only now resolve the target: it must still be inside the Project and be
+    // an existing regular file.
     let canonical = selected
         .canonicalize()
         .map_err(|error| format!("selected path cannot be read: {absolute_path}: {error}"))?;
@@ -957,25 +988,6 @@ pub fn asset_reference_from_selected_path(
             selected.display()
         ));
     }
-    let relative = canonical
-        .strip_prefix(&root)
-        .map_err(|_| {
-            format!(
-                "selected file is outside the current Project: {}",
-                selected.display()
-            )
-        })?
-        .to_string_lossy()
-        .replace('\\', "/");
-    if has_markdown_leaf(&relative) {
-        return Err(format!(
-            "asset reference may not point at a Markdown prompt: {relative}"
-        ));
-    }
-    // Re-validate through the standard reference machinery so the returned
-    // reference obeys every existing path rule (no escape, no symlink, no
-    // dot segments) exactly like a hand-written one.
-    safe_relative_path(project, &relative, None)?;
     Ok(relative)
 }
 
@@ -3432,8 +3444,8 @@ mod tests {
 
     #[test]
     fn selected_symlink_resolving_outside_project_is_rejected() {
-        let dir = tmp_dir("picker-symlink");
-        let outside = tmp_dir("picker-symlink-target");
+        let dir = tmp_dir("picker-symlink-outside");
+        let outside = tmp_dir("picker-symlink-outside-target");
         write(&outside, "secret.png", "x");
         fs::create_dir_all(dir.join("assets")).unwrap();
         #[cfg(unix)]
@@ -3443,9 +3455,57 @@ mod tests {
             symlink(&outside.join("secret.png"), &link).unwrap();
             let error =
                 asset_reference_from_selected_path(&dir, &link.to_string_lossy()).unwrap_err();
-            assert!(error.contains("outside the current Project"), "{error}");
+            // The symlink component is rejected before any canonicalization, so
+            // the selected path is refused outright — the escape is never
+            // resolved and never silently accepted.
+            assert!(error.contains("symlink"), "{error}");
         }
         fs::remove_dir_all(dir).unwrap();
         fs::remove_dir_all(outside).unwrap();
+    }
+
+    #[test]
+    fn selected_symlink_resolving_inside_project_is_rejected() {
+        let dir = tmp_dir("picker-symlink-inside");
+        write(&dir, "assets/real.png", "x");
+        fs::create_dir_all(dir.join("assets")).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            // A Project-internal symlink must be refused just like a hand-written
+            // reference (Issue #25): selecting assets/link.png may never be
+            // silently rewritten into assets/real.png by canonicalization.
+            let link = dir.join("assets/link.png");
+            symlink(&dir.join("assets/real.png"), &link).unwrap();
+            let error =
+                asset_reference_from_selected_path(&dir, &link.to_string_lossy()).unwrap_err();
+            assert!(error.contains("symlink"), "{error}");
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn selected_file_under_symlinked_project_root_is_accepted() {
+        let dir = tmp_dir("picker-root-link");
+        write(&dir, "assets/x.png", "x");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            // A project whose own registered root is a symlink must keep working:
+            // the selection is stripped against both the canonical root and the
+            // registered (possibly symlinked) path, and no asset-level symlink is
+            // involved, so the reference is accepted.
+            let link_dir = std::env::temp_dir().join(format!(
+                "promptarium-library-test-picker-root-link-alias-{}",
+                uuid::Uuid::new_v4()
+            ));
+            symlink(&dir, &link_dir).unwrap();
+            let selected = link_dir.join("assets/x.png");
+            let reference =
+                asset_reference_from_selected_path(&link_dir, &selected.to_string_lossy()).unwrap();
+            assert_eq!(reference, "assets/x.png");
+            fs::remove_dir_all(&link_dir).unwrap();
+        }
+        fs::remove_dir_all(dir).unwrap();
     }
 }

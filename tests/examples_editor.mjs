@@ -24,6 +24,9 @@ const {
   replaceOutputWithFile,
   clearFileRef,
   hasExampleContent,
+  addBlankAssetRow,
+  dropBlankAssetRow,
+  commitDraftAsset,
 } = await import(join(root, 'src/lib/examples/editor-helpers.ts'));
 
 let failures = 0;
@@ -141,6 +144,33 @@ console.log('hasExampleContent — name counts as content');
   assert(hasExampleContent({ name: 'A' }), 'name counts');
   assert(hasExampleContent({ assets: ['x'] }), 'assets count');
   assert(hasExampleContent({ notes: 'note' }), 'notes count');
+}
+
+console.log('Add blank draft rows — editable row appears, empty string never persists');
+
+{
+  // Regression (Issue #26 §6): "Add blank" previously called addAsset(..., '')
+  // which trims and ignores blanks — the button did nothing. The editor now
+  // opens an editor-only draft row instead.
+  eq(addBlankAssetRow({}, 0), { 0: 1 }, 'Add blank opens one draft row (the row appears)');
+  const two = addBlankAssetRow(addBlankAssetRow({}, 0), 0);
+  eq(two[0], 2, 'a second Add blank opens another row');
+  eq(addBlankAssetRow({}, 1), { 1: 1 }, 'rows are keyed per example index');
+
+  // A non-blank commit appends a real asset entry.
+  const typed = [{ name: 'A' }];
+  eq(commitDraftAsset(typed, 0, 'assets/new-output.png')[0].assets, ['assets/new-output.png'],
+    'typed draft commits a real asset row');
+  eq(typed[0].assets, undefined, 'source untouched');
+
+  // A blank commit writes nothing into the typed metadata.
+  sameReference(commitDraftAsset(typed, 0, '   '), typed,
+    'blank draft commit is a safe no-op (no empty string in examples)');
+  sameReference(addAsset(typed, 0, ''), typed, 'addAsset itself still drops blanks');
+
+  // Closing a draft row decrements; closing the last row removes the key.
+  eq(dropBlankAssetRow(two, 0), { 0: 1 }, 'closing one row leaves the other open');
+  eq(dropBlankAssetRow(dropBlankAssetRow({ 0: 1 }, 0), 0), {}, 'closing the last row clears the key');
 }
 
 if (failures > 0) {
