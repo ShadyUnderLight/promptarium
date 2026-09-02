@@ -20,8 +20,9 @@ metadata + user-owned relative asset paths.**
   scanner keeps treating every visible `.md` as a prompt; asset references are
   validated to never point at a `.md`, which makes the scanner collision
   structurally impossible without any scanner change.
-- **Hand-written or invalid example data is preserved byte-for-byte** across any
-  unrelated metadata edit — never silently dropped (§6).
+- **Hand-written or invalid example data is preserved semantically (no data
+  loss)** across any unrelated metadata edit — never dropped, normalized or
+  silently repaired (§6).
 - Existing core contracts (identity = relative `.md` path; delete only removes
   the selected `.md`; no in-project app-owned sidecar) are **preserved**. The
   only contract change is additive: `examples` joins the reserved optional
@@ -368,19 +369,25 @@ Validation rules (deterministic, fail-closed):
 ### Preservation of hand-written and invalid data (hard contract)
 
 The typed `PromptExample` projection is for display and editing only. It is
-**never** the authoritative on-disk representation. The parser captures the raw
-YAML value of the `examples` key as it appears in the file; the serializer
-re-emits that raw value verbatim whenever the operation does **not** explicitly
-edit examples. Only an explicit examples edit (Issue C) writes a freshly
-generated typed structure, which is valid by construction.
+**never** the authoritative on-disk representation: a supported metadata edit
+that does not touch examples must not drop, normalize or "repair" any example
+value the user wrote, however malformed it is.
 
-Consequences, stated as invariants the implementation must not weaken:
+**Semantic preservation contract** (aligned with contract invariant #9):
 
-- A non-list `examples`, a non-mapping list item, a wrong-typed field, or a
-  mutually-exclusive pair (both `input` and `input_file`) is **warned but
-  preserved byte-for-byte** across any unrelated metadata edit (e.g. editing a
-  tag). It is never dropped, never truncated to the parsed projection, never
-  silently repaired.
+- Invalid or hand-written examples data must be **semantically preserved**
+  across unrelated metadata edits. No example, no field, and no list item may
+  be dropped, normalized or silently repaired because it failed to parse into
+  the typed projection.
+- Lexical formatting (key order, quoting, indentation, block style, comments)
+  is **not** part of the preservation contract. Two YAML spellings with the
+  same semantics are interchangeable after a save; the requirement is that the
+  *values* the user wrote survive, not their exact bytes.
+- The implementation must therefore carry the un-parseable parts of the
+  `examples` value (the raw mapping/sequence/scalar as a `serde_yaml::Value`)
+  alongside the typed projection and re-emit them on an unrelated metadata
+  save. It must **not** simply truncate to `Vec<PromptExample>` — that is the
+  `related` / `variables` failure mode this contract forbids.
 - This guarantee is intentionally **stronger than** the current `related` /
   `variables` behavior. Those fields today parse invalid shapes into
   empty/dropped values and can lose user YAML on a subsequent dirty serialize;
@@ -389,24 +396,33 @@ Consequences, stated as invariants the implementation must not weaken:
 
 ## 7. Asset references: identity and validation
 
-An **asset reference** is a project-relative path. It is validated with the
-existing fail-closed path machinery:
+An **asset reference** is a project-relative path. Validity and resolution are
+two separate layers.
 
-- Must pass the existing prompt-relative path rules (`validate_name` in
+**Reference syntax validity** (checked by the parser; deterministic and
+fail-closed, reusing the existing prompt path machinery):
+
+- Passes the existing prompt-relative path rules (`validate_name` in
   `store.rs`): not absolute, no `\` / `:` / NUL, no empty segments, no `.` /
   `..` segments.
-- Must resolve inside the project root (no path escape).
-- Must not traverse a symlink and must not end at a symlink (reusing the
+- Resolves inside the project root (no path escape).
+- Does not traverse a symlink and does not end at a symlink (reusing the
   existing symlink checks in `safe_relative_path`).
-- Must **not have a `.md` extension** (case-insensitive). A `.md` file is a
+- Does **not have a `.md` extension** (case-insensitive). A `.md` file is a
   prompt by identity; it cannot also be an asset. This is the principled,
   non-hardcoded resolution of the scanner collision.
 - Unicode paths are allowed (the codebase already round-trips Unicode prompt
   names).
-- Must exist as a regular file. A syntactically valid reference whose file is
-  missing is a **broken** reference (like a broken `related` entry): it is
+
+A syntactically valid reference has a **resolution state**, evaluated when the
+Detail view (or the asset seam) reads the filesystem:
+
+- the path is an existing regular file → **resolved**;
+- the path does not exist → **broken** (like a broken `related` entry):
   preserved and surfaced as a non-blocking "missing file" warning, never
-  silently dropped and never auto-repaired.
+  silently dropped and never auto-repaired;
+- the path exists but is not a regular file (directory, socket, …) →
+  **invalid / unsupported target**: same non-blocking warning treatment.
 
 Cross-project references are **not allowed** in v1: an asset reference always
 resolves inside the current Project root, keeping All Projects identity
@@ -492,13 +508,13 @@ The current watcher (`watcher.rs`) triggers a debounced refresh for Markdown
 files and directory changes; non-`.md` file events are otherwise filtered out.
 v1 boundary (requires one small watcher change — see §18):
 
-- **Allow non-`.md` Create / Remove to trigger a refresh.** The current
+- **Extend Create handling so non-`.md` file creation refreshes.** The current
   implementation filters a normal `Create(File, foo.png)` because
-  `path_triggers_refresh` only accepts directories and `.md` files, and the
-  parent-directory event must not be relied on across notify backends. The
-  follow-up change makes `Create` / `Remove` of any file (regardless of
-  extension) refresh, so a newly added asset appears and a deleted one clears
-  automatically.
+  `path_triggers_refresh` only accepts directories and `.md` files. The
+  follow-up change makes a created non-`.md` file refresh, so a newly added
+  asset appears automatically. Remove / Rename already refresh regardless of
+  extension (the `event_relevant` remove/rename special-case), so a deleted
+  asset already clears; that behavior is kept.
 - **Continue ignoring content `Modify` of non-`.md` files.** Editing an asset
   (e.g. saving an image edit) must not trigger a library refresh; a large asset
   directory must not cause event storms.
@@ -541,10 +557,11 @@ v1 boundary (requires one small watcher change — see §18):
   is parsed into the typed field; the lexical layout is not part of the
   preservation contract.
 - Invalid `examples` shapes warn but never hide the prompt, never get silently
-  repaired, and are preserved byte-for-byte across a supported metadata save
-  (§6). This preservation guarantee is explicit and intentionally **stronger
-  than** the current `related` / `variables` handling, which warns on invalid
-  shapes but does not currently retain the raw values (§18).
+  repaired, and their values are semantically preserved across a supported
+  metadata save (§6). This preservation guarantee is explicit and
+  intentionally **stronger than** the current `related` / `variables` handling,
+  which warns on invalid shapes but does not currently retain the raw values
+  (§18).
 - Because the model is additive and file-based, no database migration and no
   rewrite of existing libraries are required.
 
@@ -620,12 +637,14 @@ points to `prompt-specific-capabilities.md`).
 The spike deliberately produces **no production code**. Recommended split:
 
 1. **Issue A — Rust `examples` field**: parse / validate / serialize `examples`
-   in `store.rs`. This must implement the §6 preservation contract: capture the
-   raw `examples` YAML value and re-emit it verbatim unless examples are
-   explicitly edited; never drop or project-truncate invalid content. Do **not**
-   copy the `related` / `variables` handling, which currently warns but drops
-   invalid shapes. Add Rust tests including "invalid shape → edit unrelated
-   metadata → invalid examples still present byte-for-byte".
+   in `store.rs`. This must implement the §6 preservation contract: keep the
+   un-parseable parts of the `examples` value (as a raw `serde_yaml::Value`)
+   alongside the typed projection and re-emit them semantically on an unrelated
+   metadata save; never drop or project-truncate invalid content; lexical
+   formatting is not preserved. Do **not** copy the `related` / `variables`
+   handling, which currently warns but drops invalid shapes. Add Rust tests
+   including "invalid shape → edit unrelated metadata → all original example
+   values/items remain semantically intact".
 2. **Issue B — Detail display (read-only)**: TypeScript mirror in `types.ts`
    (camelCase DTO), the Examples section in the Preview inspector, missing-asset
    warning, and a new Rust seam `reveal_asset_in_finder(project, relative_path)`
@@ -636,8 +655,9 @@ The spike deliberately produces **no production code**. Recommended split:
    examples. Every edit writes the whole `examples` array as one unit; an
    explicit edit is the only operation that replaces the raw value with a
    freshly generated typed structure.
-4. **Small watcher change (Issue B or separate)**: allow non-`.md` Create/Remove
-   to refresh while continuing to ignore content Modify (§11).
+4. **Small watcher change (Issue B or separate)**: extend Create handling so
+   non-`.md` file creation refreshes; existing Remove/Rename already refresh
+   regardless of extension, and non-`.md` content Modify stays ignored (§11).
 5. **Deferred, only if proven valuable**: indexing inline example text in
    search; a `BROKEN_EXAMPLE_ASSET` Health finding; including assets in
    Compare; a generic asset Git-history backend with its own Rust seam; a
@@ -660,7 +680,7 @@ follow-up issues must lock:
 | 6 | Path escape rejection | `../outside` rejected, fail-closed. |
 | 7 | Symlink boundary | Symlinked asset ref rejected. |
 | 8 | `.md` asset rejection | Asset ref with `.md` extension → warning, never a prompt. |
-| 9 | Invalid examples shape preservation | Non-list / non-mapping item / wrong-typed field / both `input`+`input_file` → warned, and still present byte-for-byte after an unrelated metadata edit. |
+| 9 | Invalid examples shape preservation | Non-list / non-mapping item / wrong-typed field / both `input`+`input_file` → warned, and all original values/items remain semantically intact after an unrelated metadata save. |
 | 10 | Prompt rename | Example refs stay valid. |
 | 11 | Prompt move | Example refs stay valid. |
 | 12 | Prompt delete | Assets not deleted; orphaned files remain. |
@@ -687,6 +707,6 @@ Merge gates (unchanged by this spike, must keep passing):
 - [x] "No in-project sidecar" contract unchanged, and why (§17).
 - [x] Watcher boundary for non-`.md` assets defined (§11).
 - [x] Whether examples enter search / health / compare / history — explicit (§13).
-- [x] Invalid examples preservation contract (byte-for-byte) defined and stronger than `related` / `variables` (§6).
+- [x] Invalid examples preservation contract (semantic, no data loss) defined and stronger than `related` / `variables` (§6).
 - [x] v1 example identity = none; array position = ordering only (§6).
 - [x] No production feature code introduced by this spike.
