@@ -170,6 +170,10 @@
         <input type="date" value={metadata.created ?? ''} oninput={(event) => setField('created', event.currentTarget.value || undefined)} />
       </label>
     </div>
+    <label class="field field--wide">
+      <span>Usage Notes <small>not part of Copy Prompt</small></span>
+      <textarea class="notes-editor" value={metadata.notes ?? ''} oninput={(event) => setField('notes', event.currentTarget.value || undefined)} placeholder="Scenarios, model stability, gotchas, how to fill variables…"></textarea>
+    </label>
     <div class="variables-editor">
       <span class="variables-editor__heading">Variables</span>
       {#each variableNames as name (name)}
@@ -280,4 +284,10 @@
     <div><dt>Models</dt><dd>{metadata.models.join(', ') || 'Any model'}</dd></div>
     <div><dt>Created</dt><dd>{metadata.created ?? 'Unknown'}</dd></div>
   </dl>
+  {#if metadata.notes}
+    <div class="usage-notes">
+      <div class="usage-notes__heading">Usage Notes</div>
+      <div class="usage-notes__body">{metadata.notes}</div>
+    </div>
+  {/if}
 {/if}

@@ -180,7 +180,7 @@ function renderVariables(value: Record<string, VariableDoc> | undefined): string
 
 function renderExtra(value: Record<string, unknown>): string {
   const keys = Object.keys(value)
-    .filter((key) => key !== 'variantOf')
+    .filter((key) => key !== 'variantOf' && key !== 'notes')
     .sort();
   if (!keys.length) return '(none)';
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
@@ -196,8 +196,9 @@ function renderVariantOf(metadata: PromptMetadata): string {
 }
 
 /** Deterministic list of metadata field differences between two prompts. The
- *  `variantOf` field is compared on its own row and excluded from `extra`, so
- *  a change is never reported twice. Order is fixed for stable output. */
+ *  `variantOf` and `notes` fields are compared on their own rows and excluded
+ *  from `extra`, so a change is never reported twice. Order is fixed for
+ *  stable output. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
   const pairs: Array<[string, string, string]> = [
     ['description', a.description, b.description],
@@ -208,6 +209,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['related', renderList(a.related), renderList(b.related)],
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
+    ['notes', a.notes ?? '(none)', b.notes ?? '(none)'],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];

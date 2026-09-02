@@ -36,6 +36,10 @@ export interface PromptMetadata {
   /** Explicit links to other prompts in this project, as project-relative
    *  prompt paths without `.md`. Backlinks are derived, never stored. */
   related: string[];
+  /** Usage notes that are not part of the prompt body (Issue #15). Copy Prompt
+   *  never includes them. Multiline values serialize as readable YAML block
+   *  scalars; clearing the field removes `notes` from the frontmatter. */
+  notes?: string;
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }

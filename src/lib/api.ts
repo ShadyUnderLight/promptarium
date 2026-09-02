@@ -324,6 +324,7 @@ const devMetadata: Record<string, PromptMetadata> = {
     models: ['ChatGPT', 'Claude'],
     created: '2026-08-20',
     related: ['review/pr-checklist', 'refactor/refactor-safely'],
+    notes: 'Works best on normal-sized pull requests.\n\nFor architecture reviews, set the focus to: architecture, boundaries and dependency direction.',
     extra: {},
   },
   '/dev/mock/engineering::review/pr-checklist': {
@@ -520,6 +521,7 @@ function hasMetadata(metadata: PromptMetadata): boolean {
       metadata.created ||
       (metadata.variables && Object.keys(metadata.variables).length) ||
       metadata.related.length ||
+      Boolean(metadata.notes) ||
       Object.keys(metadata.extra).length
   );
 }
