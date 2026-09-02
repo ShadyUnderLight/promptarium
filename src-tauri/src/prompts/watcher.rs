@@ -241,14 +241,15 @@ pub fn event_relevant(event: &Event, targets: &WatchTargets) -> bool {
     })
 }
 
-/// A Create event refreshes when it is a file create, or an ambiguous
-/// `CreateKind::Any` whose current path is not an existing directory.
-/// Directories already refresh via `path_triggers_refresh`; content Modify
-/// never does.
+/// A Create event refreshes when it is a file create, or an ambiguous /
+/// backend-specific create (`CreateKind::Any` / `CreateKind::Other`) whose
+/// current path is not an existing directory. Directories already refresh via
+/// `path_triggers_refresh`; content Modify never does.
 fn create_file_triggers_refresh(path: &Path, kind: &EventKind) -> bool {
     match kind {
         EventKind::Create(CreateKind::File) => true,
-        EventKind::Create(CreateKind::Any) => !path.is_dir(),
+        EventKind::Create(CreateKind::Folder) => false,
+        EventKind::Create(CreateKind::Any | CreateKind::Other) => !path.is_dir(),
         _ => false,
     }
 }
@@ -646,6 +647,24 @@ mod tests {
         // not mask the visible non-`.md` asset file in the later path.
         assert!(event_relevant(
             &event(EventKind::Create(CreateKind::Any), vec![ignored, asset]),
+            &watch
+        ));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn create_kind_other_refreshes_a_visible_non_markdown_file() {
+        let root = std::env::temp_dir().join(format!(
+            "promptarium-watcher-create-other-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let watch = targets(&root);
+        let asset = root.join("assets/reference.png");
+        // `CreateKind::Other` is a backend-specific create that cannot be
+        // classified as File/Folder; treat it like `Any` (per-path stat).
+        assert!(event_relevant(
+            &event(EventKind::Create(CreateKind::Other), vec![asset]),
             &watch
         ));
         std::fs::remove_dir_all(root).ok();
