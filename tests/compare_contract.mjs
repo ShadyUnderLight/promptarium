@@ -155,6 +155,19 @@ console.log('diffMetadata — notes');
   eq(notes.right, 'added', 'added notes render on the right');
 }
 
+{
+  const diffs = diffMetadata(metadata({ notes: '' }), metadata());
+  assert(!diffs.find((d) => d.field === 'notes'), 'empty notes and missing notes are the same state — no notes diff');
+}
+
+{
+  const diffs = diffMetadata(metadata({ notes: '   ' }), metadata());
+  const notes = diffs.find((d) => d.field === 'notes');
+  assert(notes, 'whitespace-only notes are NOT normalized to (none)');
+  eq(notes.left, '   ', 'whitespace-only notes render as-is');
+  eq(notes.right, '(none)', 'missing notes renders as (none)');
+}
+
 console.log('diffMetadata — wrong-type variantOf renders honestly');
 {
   const diffs = diffMetadata(metadata({ extra: { variantOf: 123 } }), metadata({ extra: { variantOf: 'parent' } }));

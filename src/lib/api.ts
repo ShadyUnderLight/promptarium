@@ -13,6 +13,7 @@ import type {
   PromptSummary,
 } from './prompts/types';
 import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
+import { cloneMetadata } from './prompts/duplicate';
 
 export function isTauri(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -487,29 +488,6 @@ const devMetadata: Record<string, PromptMetadata> = {
 const devFolders: Record<string, Set<string>> = {};
 const devMtimes: Record<string, number> = {};
 let devClock = Date.now();
-
-function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
-  const value = metadata ?? {
-    description: '',
-    tags: [],
-    status: 'active' as const,
-    favorite: false,
-    models: [],
-    related: [],
-    extra: {},
-  };
-  const variables = value.variables
-    ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
-    : undefined;
-  return {
-    ...value,
-    tags: [...value.tags],
-    models: [...value.models],
-    related: [...value.related],
-    extra: { ...value.extra },
-    ...(variables ? { variables } : {}),
-  };
-}
 
 function hasMetadata(metadata: PromptMetadata): boolean {
   return Boolean(

@@ -1808,6 +1808,7 @@ body {
   text-decoration: line-through;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .compare-meta-row__arrow {
@@ -1819,6 +1820,7 @@ body {
   color: #15803d;
   min-width: 0;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .raw-file {

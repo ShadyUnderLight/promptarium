@@ -195,6 +195,14 @@ function renderVariantOf(metadata: PromptMetadata): string {
   return `${typeof raw}: ${JSON.stringify(raw)}`;
 }
 
+/** Normalize "no notes" and "empty notes" to a single value: the storage
+ *  contract treats both as "no Usage Notes" (empty notes are removed from the
+ *  frontmatter on the next metadata save). Only the exact empty string is
+ *  normalized — whitespace-only values are preserved as real content. */
+function renderNotes(value: string | undefined): string {
+  return value === undefined || value === '' ? '(none)' : value;
+}
+
 /** Deterministic list of metadata field differences between two prompts. The
  *  `variantOf` and `notes` fields are compared on their own rows and excluded
  *  from `extra`, so a change is never reported twice. Order is fixed for
@@ -209,7 +217,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['related', renderList(a.related), renderList(b.related)],
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
-    ['notes', a.notes ?? '(none)', b.notes ?? '(none)'],
+    ['notes', renderNotes(a.notes), renderNotes(b.notes)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];

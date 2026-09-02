@@ -44,7 +44,8 @@ import {
   isStaleHistoryResponse,
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
-import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType, withVariantOf } from './prompts/types';
+import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType } from './prompts/types';
+import { cloneMetadata, duplicateMetadata, variantMetadata } from './prompts/duplicate';
 import { findVariantCycleMembers } from './variants/variants';
 import {
   buildSearchIndexFromPlan,
@@ -194,20 +195,6 @@ function healthyProjectsForSearch(): Project[] {
 async function refreshCurrentScope(options: RefreshLibraryOptions = {}): Promise<void> {
   if (isAllProjects()) await refreshAllProjects(options);
   else await refreshLibrary(options);
-}
-
-function cloneMetadata(metadata: PromptMetadata): PromptMetadata {
-  const variables = metadata.variables
-    ? Object.fromEntries(Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }]))
-    : undefined;
-  return {
-    ...metadata,
-    tags: [...metadata.tags],
-    models: [...metadata.models],
-    related: [...metadata.related],
-    extra: { ...metadata.extra },
-    ...(variables ? { variables } : {}),
-  };
 }
 
 function summaryOf(document: PromptDocument): PromptSummary {
@@ -1025,7 +1012,7 @@ export async function createPrompt(
 }
 
 export async function duplicatePrompt(source: PromptDocument, name: string): Promise<PromptDocument> {
-  return createPrompt(source.projectPath, name, source.body, cloneMetadata(source.metadata));
+  return createPrompt(source.projectPath, name, source.body, duplicateMetadata(source.metadata));
 }
 
 /** Duplicate the prompt as an explicit variant of itself (Issue #14): create a
@@ -1034,7 +1021,7 @@ export async function duplicatePrompt(source: PromptDocument, name: string): Pro
  *  `variantOf` stays in `extra` so it round-trips through the existing
  *  serializer exactly like any other unknown field. */
 export async function duplicateAsVariant(source: PromptDocument, name: string): Promise<PromptDocument> {
-  return createPrompt(source.projectPath, name, source.body, withVariantOf(cloneMetadata(source.metadata), source.name));
+  return createPrompt(source.projectPath, name, source.body, variantMetadata(source.metadata, source.name));
 }
 
 export async function renamePrompt(source: PromptDocument, newName: string): Promise<PromptDocument> {
