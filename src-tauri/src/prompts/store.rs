@@ -635,11 +635,21 @@ fn parse_content(raw: &str) -> ParsedPrompt {
 
 fn modified_at(path: &Path) -> u64 {
     fs::metadata(path)
-        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|metadata| modified_at_from_metadata(&metadata))
+        .unwrap_or(0)
+}
+
+/// Modified timestamp (ms since epoch) from an already-obtained metadata
+/// snapshot, without re-stating the path. Callers that already hold a
+/// `symlink_metadata` result pass it here so state / size / modifiedAt all come
+/// from one filesystem snapshot — never a second, symlink-following stat.
+fn modified_at_from_metadata(metadata: &fs::Metadata) -> Option<u64> {
+    metadata
+        .modified()
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64)
-        .unwrap_or(0)
 }
 
 fn file_size(path: &Path) -> u64 {
@@ -867,7 +877,7 @@ fn resolve_asset(project: &Path, reference: &str) -> ResolvedPromptAsset {
             state: AssetResolutionState::Resolved,
             kind: Some(kind),
             size_bytes: Some(metadata.len()),
-            modified_at: Some(modified_at(&path)),
+            modified_at: modified_at_from_metadata(&metadata),
             error: None,
         },
         Ok(_) => invalid(format!("asset target is not a regular file: {reference}")),

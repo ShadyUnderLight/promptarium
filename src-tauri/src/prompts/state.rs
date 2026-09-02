@@ -72,23 +72,46 @@ fn registered_project(raw: &str) -> Result<PathBuf, String> {
     let root = root()?;
     let requested = PathBuf::from(raw);
     let state = appstate::list_projects(&root)?;
-    if let Some(project) = state
-        .projects
-        .iter()
-        .find(|project| project.path == requested)
-    {
-        return Ok(project.path.clone());
+    confirmed_registered(&state.projects, &requested)
+}
+
+/// Match `requested` against the registered roster and fail closed when the
+/// on-disk path no longer resolves back to its registered location (e.g. the
+/// folder was renamed and replaced by a symlink pointing elsewhere). Project
+/// identity is the canonical folder path recorded at registration; moving a
+/// Project goes through the explicit Locate / replace flow, so any path whose
+/// canonical target differs from the registered path is rejected rather than
+/// silently following the redirect outside the original Project.
+fn confirmed_registered(projects: &[Project], requested: &Path) -> Result<PathBuf, String> {
+    if let Some(project) = projects.iter().find(|project| project.path == requested) {
+        return confirmed_registered_path(&project.path, requested);
     }
     if let Ok(canonical) = requested.canonicalize() {
-        if let Some(project) = state
-            .projects
-            .iter()
-            .find(|project| project.path == canonical)
-        {
-            return Ok(project.path.clone());
+        if let Some(project) = projects.iter().find(|project| project.path == canonical) {
+            return confirmed_registered_path(&project.path, requested);
         }
     }
-    Err(format!("project is not registered: {raw}"))
+    Err(format!(
+        "project is not registered: {}",
+        requested.display()
+    ))
+}
+
+/// The registered path must still canonicalize back to itself. A missing path
+/// keeps its registered identity (so the store reports the loud missing-folder
+/// error); a path that exists but canonicalizes elsewhere has been replaced by
+/// a symlink / moved behind our back and is rejected fail-closed.
+fn confirmed_registered_path(registered: &Path, requested: &Path) -> Result<PathBuf, String> {
+    let Ok(canonical) = requested.canonicalize() else {
+        return Ok(registered.to_path_buf());
+    };
+    if canonical != registered {
+        return Err(format!(
+            "registered project path now resolves through a symlink or moved path: {}",
+            requested.display()
+        ));
+    }
+    Ok(registered.to_path_buf())
 }
 
 async fn blocking<T, F>(job: F) -> Result<T, String>
@@ -374,4 +397,82 @@ pub async fn git_file_diff(
 ) -> Result<GitFileDiff, String> {
     let project = registered_project(&project)?;
     blocking(move || git::file_diff(&project, &name, &commit)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn tmp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "promptarium-state-test-{name}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn project(path: &Path) -> Project {
+        Project {
+            name: "p".into(),
+            path: path.to_path_buf(),
+            color: None,
+        }
+    }
+
+    #[test]
+    fn registered_project_path_replaced_by_symlink_fails_closed() {
+        let base = tmp_dir("trust-symlink");
+        let original = base.join("project");
+        let redirect = base.join("outside");
+        fs::create_dir_all(&original).unwrap();
+        fs::create_dir_all(&redirect).unwrap();
+        let canonical = original.canonicalize().unwrap();
+        let roster = vec![project(&canonical)];
+
+        // Control: the canonical registered path still resolves to itself.
+        assert_eq!(
+            confirmed_registered(&roster, &canonical).unwrap(),
+            canonical
+        );
+
+        // Replace the folder with a symlink pointing outside the registered
+        // location: resolution must fail closed, never follow the redirect.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::symlink;
+            fs::remove_dir_all(&original).unwrap();
+            symlink(&redirect, &canonical).unwrap();
+            let error = confirmed_registered(&roster, &canonical).unwrap_err();
+            assert!(error.contains("symlink"), "{error}");
+        }
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn registered_project_missing_on_disk_keeps_its_identity() {
+        let base = tmp_dir("trust-missing");
+        let original = base.join("project");
+        fs::create_dir_all(&original).unwrap();
+        let canonical = original.canonicalize().unwrap();
+        let roster = vec![project(&canonical)];
+        fs::remove_dir_all(&original).unwrap();
+        assert_eq!(
+            confirmed_registered(&roster, &canonical).unwrap(),
+            canonical,
+            "a registered-but-deleted path keeps its identity so the store can report the missing folder"
+        );
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn unregistered_path_is_rejected() {
+        let base = tmp_dir("trust-unregistered");
+        let not_registered = base.join("not-a-project");
+        fs::create_dir_all(&not_registered).unwrap();
+        let error = confirmed_registered(&[], &not_registered).unwrap_err();
+        assert!(error.contains("not registered"), "{error}");
+        fs::remove_dir_all(base).unwrap();
+    }
 }
