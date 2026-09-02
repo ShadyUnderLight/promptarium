@@ -1,8 +1,10 @@
 <script lang="ts">
-  import type { PromptMetadata as Metadata, PromptStatus, VariableDoc } from '$lib/prompts/types';
+  import type { PromptMetadata as Metadata, PromptStatus, PromptSummary, VariableDoc } from '$lib/prompts/types';
+  import { getVariantOf, getVariantOfRaw, withVariantOf } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
   import { setVariableDoc } from '$lib/variables/contract';
   import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
+  import { wouldCreateVariantCycle } from '$lib/variants/variants';
 
   interface Props {
     metadata: Metadata;
@@ -12,10 +14,14 @@
     promptNames?: string[];
     /** Name of the prompt being edited (never offered as a related target). */
     currentName?: string;
+    /** Summaries of the current project (for the variant parent cycle guard). */
+    summaries?: PromptSummary[];
+    /** Project the edited prompt lives in (for the variant parent cycle guard). */
+    projectPath?: string;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, body, editing, promptNames = [], currentName = '', onChange }: Props = $props();
+  let { metadata, body, editing, promptNames = [], currentName = '', summaries = [], projectPath = '', onChange }: Props = $props();
 
   // Variable names come live from the body parser. The editor never creates or
   // renames variables in frontmatter; a body edit immediately surfaces a new
@@ -94,6 +100,41 @@
   // every duplicate at once). See removeRelatedEntry().
   function removeRelated(index: number): void {
     setField('related', removeRelatedEntry(metadata.related, index));
+  }
+
+  // Variant parent (Issue #14): a single optional `variantOf` value. The picker
+  // offers only prompts in the current project, never the prompt being edited,
+  // never its current parent, and never a candidate that would create a cycle
+  // (a candidate that is the prompt itself or one of its descendants). The
+  // set action re-guards so a stale/forged selection cannot slip through.
+  const currentVariantRaw = $derived(getVariantOfRaw(metadata));
+  const currentVariant = $derived(getVariantOf(metadata));
+  const variantDisplay = $derived(
+    currentVariant ??
+      (currentVariantRaw !== undefined ? `${typeof currentVariantRaw}: ${JSON.stringify(currentVariantRaw)}` : '')
+  );
+  const addableVariant = $derived(
+    promptNames.filter(
+      (name) =>
+        name !== currentName &&
+        name !== currentVariant &&
+        !wouldCreateVariantCycle(summaries, { projectPath, name: currentName }, name)
+    )
+  );
+  let variantPick = $state('');
+
+  function setVariant(): void {
+    if (!variantPick) return;
+    if (wouldCreateVariantCycle(summaries, { projectPath, name: currentName }, variantPick)) {
+      variantPick = '';
+      return;
+    }
+    onChange(withVariantOf(metadata, variantPick));
+    variantPick = '';
+  }
+
+  function clearVariant(): void {
+    onChange(withVariantOf(metadata, undefined));
   }
 </script>
 
@@ -203,6 +244,31 @@
         </div>
       {:else}
         <p class="detail-muted">No other prompt in this project is available to link.</p>
+      {/if}
+    </div>
+    <div class="related-editor">
+      <span class="variables-editor__heading">Variant of</span>
+      {#if currentVariantRaw !== undefined}
+        <div class="related-edit-list">
+          <div class="variable-doc-edit">
+            <div class="variable-doc-edit__name">
+              <span class="variable-token">{variantDisplay}</span>
+              <button type="button" class="variable-doc-edit__remove" onclick={clearVariant}>Remove</button>
+            </div>
+          </div>
+        </div>
+      {/if}
+      {#if addableVariant.length}
+        <div class="related-picker">
+          <select bind:value={variantPick} onchange={setVariant} aria-label="Set variant parent">
+            <option value="" disabled>{currentVariant ? 'Change variant parent…' : 'Set variant parent…'}</option>
+            {#each addableVariant as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </div>
+      {:else if currentVariantRaw === undefined}
+        <p class="detail-muted">No other prompt in this project is available as a variant parent.</p>
       {/if}
     </div>
   </div>

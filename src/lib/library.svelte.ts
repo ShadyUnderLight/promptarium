@@ -44,7 +44,8 @@ import {
   isStaleHistoryResponse,
 } from './prompts/history';
 import { parseVariables } from './variables/variables';
-import { defaultPromptMetadata } from './prompts/types';
+import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType, withVariantOf } from './prompts/types';
+import { findVariantCycleMembers } from './variants/variants';
 import {
   buildSearchIndexFromPlan,
   buildUntilRevisionStable,
@@ -264,7 +265,8 @@ function syncVariableCounts(projectPath: string, index: Map<string, SearchEntry>
 function projectHealthInput(
   projectPath: string,
   entry: SearchEntry,
-  projectNames: ReadonlySet<string>
+  projectNames: ReadonlySet<string>,
+  variantCycleNames: ReadonlySet<string>
 ): PromptHealthInput {
   return {
     projectPath,
@@ -277,23 +279,29 @@ function projectHealthInput(
     variableNames: entry.variableNames,
     variables: entry.summary.metadata.variables,
     related: entry.summary.metadata.related,
+    variantOf: getVariantOf(entry.summary.metadata),
+    variantOfTypeInvalid: hasInvalidVariantOfType(entry.summary.metadata),
+    projectVariantCycleNames: variantCycleNames,
     projectPromptNames: projectNames,
   };
 }
 
 /** Recompute health for every prompt of one project from its search index. The
  *  index is keyed by prompt name within the project, so relation targets resolve
- *  against the same set the Related UI uses. */
+ *  against the same set the Related UI uses. Variant cycle membership is derived
+ *  once for the whole project and shared across every prompt's derivation. */
 function rebuildProjectHealth(projectPath: string, index: Map<string, SearchEntry>): void {
   const prefix = projectPath + '\u0000';
   for (const key of healthIndex.keys()) {
     if (key.startsWith(prefix)) healthIndex.delete(key);
   }
   const names = new Set(index.keys());
+  const summaries = [...index.values()].map((entry) => entry.summary);
+  const variantCycleNames = new Set(findVariantCycleMembers(summaries, projectPath));
   for (const entry of index.values()) {
     healthIndex.set(
       promptKey(projectPath, entry.summary.name),
-      derivePromptHealth(projectHealthInput(projectPath, entry, names))
+      derivePromptHealth(projectHealthInput(projectPath, entry, names, variantCycleNames))
     );
   }
 }
@@ -305,10 +313,11 @@ function updateSearchEntry(document: PromptDocument): void {
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
   variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
-  healthIndex.set(
-    promptKey(document.projectPath, document.name),
-    derivePromptHealth(projectHealthInput(document.projectPath, entry, new Set(index.keys())))
-  );
+  // Health depends on project-wide variantOf state: a cycle is a cross-prompt
+  // derived relation, so after any save the whole project must be re-derived —
+  // updating only this entry would leave the other cycle members (and prompts
+  // that just broke out of a cycle) with stale VARIANT_CYCLE / health output.
+  rebuildProjectHealth(document.projectPath, index);
   library.searchIndexVersion++;
 }
 
@@ -1017,6 +1026,15 @@ export async function createPrompt(
 
 export async function duplicatePrompt(source: PromptDocument, name: string): Promise<PromptDocument> {
   return createPrompt(source.projectPath, name, source.body, cloneMetadata(source.metadata));
+}
+
+/** Duplicate the prompt as an explicit variant of itself (Issue #14): create a
+ *  real new file with the same body and supported metadata, plus a
+ *  `variantOf: <source relative path>` field. The source file is never touched;
+ *  `variantOf` stays in `extra` so it round-trips through the existing
+ *  serializer exactly like any other unknown field. */
+export async function duplicateAsVariant(source: PromptDocument, name: string): Promise<PromptDocument> {
+  return createPrompt(source.projectPath, name, source.body, withVariantOf(cloneMetadata(source.metadata), source.name));
 }
 
 export async function renamePrompt(source: PromptDocument, newName: string): Promise<PromptDocument> {
