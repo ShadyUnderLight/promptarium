@@ -40,6 +40,27 @@ export interface PromptExample {
   extra?: Record<string, unknown>;
 }
 
+/** Resolution state of one asset reference (Issue #25). `resolved` = existing
+ *  regular non-`.md` file inside the Project; `missing` = syntactically valid
+ *  but absent (a broken reference, not invalid syntax); `invalid` = an unsafe /
+ *  unsupported path (absolute, escape, symlink, `.md`, non-regular target). */
+export type AssetResolutionState = 'resolved' | 'missing' | 'invalid';
+
+/** Display-only kind hint derived from the reference extension. Not a security
+ *  boundary: any safe non-`.md` regular file can be referenced. */
+export type AssetKind = 'image' | 'pdf' | 'text' | 'json' | 'binary';
+
+/** One classified asset reference (Issue #25), mirroring the Rust DTO. Rust is
+ *  the only authority on path safety — the frontend never resolves paths. */
+export interface ResolvedPromptAsset {
+  reference: string;
+  state: AssetResolutionState;
+  kind?: AssetKind;
+  sizeBytes?: number;
+  modifiedAt?: number;
+  error?: string;
+}
+
 /** A YAML scalar number, mirroring the Rust `RawNumber` DTO (Issue #24) so an
  *  IPC JSON round trip is lossless: 64-bit integers are decimal strings (a JS
  *  number silently coerces values past 2^53−1) and floats are IEEE-754 bit

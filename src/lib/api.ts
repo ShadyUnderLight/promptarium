@@ -11,6 +11,7 @@ import type {
   PromptDocument,
   PromptMetadata,
   PromptSummary,
+  ResolvedPromptAsset,
 } from './prompts/types';
 import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
 import { cloneMetadata } from './prompts/duplicate';
@@ -206,6 +207,29 @@ export async function searchPrompts(project: string, query: string): Promise<Pro
 export async function revealInFinder(project: string, name?: string): Promise<void> {
   if (!isTauri()) return;
   await call<null>('reveal_in_finder', { project, name });
+}
+
+/** Classify every asset reference in a batch (Issue #25). Rust is the only
+ *  authority on path safety; the frontend never resolves paths itself. */
+export async function resolvePromptAssets(
+  project: string,
+  references: string[]
+): Promise<ResolvedPromptAsset[]> {
+  if (!isTauri()) {
+    // Browser dev has no real filesystem, so every reference is conservatively
+    // classified as `missing`; Rust provides the real classification (including
+    // `kind`) in the desktop app. No path rules are replicated here.
+    return references.map((reference) => ({ reference, state: 'missing' as const }));
+  }
+  return call<ResolvedPromptAsset[]>('resolve_prompt_assets', { project, references });
+}
+
+/** Reveal an asset in Finder (Issue #25). A distinct seam from the Prompt-only
+ *  `revealInFinder`: the backend re-validates the reference before revealing,
+ *  and missing / invalid targets fail closed. */
+export async function revealAssetInFinder(project: string, relativePath: string): Promise<void> {
+  if (!isTauri()) return;
+  await call<null>('reveal_asset_in_finder', { project, relativePath });
 }
 
 export async function gitRepositoryInfo(project: string): Promise<GitRepositoryInfo> {
