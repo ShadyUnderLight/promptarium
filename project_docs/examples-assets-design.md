@@ -20,6 +20,8 @@ metadata + user-owned relative asset paths.**
   scanner keeps treating every visible `.md` as a prompt; asset references are
   validated to never point at a `.md`, which makes the scanner collision
   structurally impossible without any scanner change.
+- **Hand-written or invalid example data is preserved byte-for-byte** across any
+  unrelated metadata edit — never silently dropped (§6).
 - Existing core contracts (identity = relative `.md` path; delete only removes
   the selected `.md`; no in-project app-owned sidecar) are **preserved**. The
   only contract change is additive: `examples` joins the reserved optional
@@ -306,21 +308,32 @@ them is special to the app.
 
 ## 6. Frontmatter schema
 
-`examples` is an optional, additive list field in the prompt frontmatter. Its
-TypeScript shape (mirroring the issue's `PromptExample`):
+`examples` is an optional, additive list field in the prompt frontmatter. YAML
+frontmatter keys are snake_case; the frontend / IPC DTO is camelCase. The two
+layers are mapped 1:1:
+
+```yaml
+# on-disk YAML frontmatter keys (snake_case)
+examples:
+  - name: Large PR
+    input_file: examples/review-pr-large-output.txt
+    assets:
+      - examples/review-pr-diff.json
+```
 
 ```ts
+// TypeScript / Rust IPC DTO shape (camelCase), mirroring the issue's PromptExample
 interface PromptExample {
   /** Display label only — never an identity key. May be empty, duplicate or change. */
   name?: string;
-  /** Inline text input. Mutually exclusive with input_file. */
+  /** Inline text input. Mutually exclusive with inputFile. */
   input?: string;
-  /** Asset file holding a large input. Mutually exclusive with input. */
-  input_file?: string;
-  /** Inline text output. Mutually exclusive with output_file. */
+  /** Asset file holding a large input (frontmatter key: input_file). Mutually exclusive with input. */
+  inputFile?: string;
+  /** Inline text output. Mutually exclusive with outputFile. */
   output?: string;
-  /** Asset file holding a large output. Mutually exclusive with output. */
-  output_file?: string;
+  /** Asset file holding a large output (frontmatter key: output_file). Mutually exclusive with output. */
+  outputFile?: string;
   /** Free-text notes for this example (like the prompt-level `notes`). */
   notes?: string;
   /** Extra asset files: images, PDFs, JSON/code fixtures, generic binaries. */
@@ -330,10 +343,16 @@ interface PromptExample {
 }
 ```
 
+**Example identity: an example has no persistent identity in v1.** Array
+position defines ordering only; `name` is a display label. All edits (insert,
+remove, reorder, edit a field) write the whole `examples` array as one unit. No
+ID is introduced unless a future need (deep-link, cross-prompt reference,
+stable diagnostics) proves it necessary.
+
 Validation rules (deterministic, fail-closed):
 
 - `examples` must be a list of mappings; any other shape is a frontmatter
-  warning (the field is preserved, never dropped, never silently repaired).
+  warning.
 - An example must carry at least one of `input` / `input_file` / `output` /
   `output_file` / `assets`; an otherwise empty example is a warning but stays
   visible.
@@ -345,6 +364,28 @@ Validation rules (deterministic, fail-closed):
   (§7).
 - Unknown nested keys inside an example are preserved in `extra`, exactly like
   `variables.<name>.<field>` today.
+
+### Preservation of hand-written and invalid data (hard contract)
+
+The typed `PromptExample` projection is for display and editing only. It is
+**never** the authoritative on-disk representation. The parser captures the raw
+YAML value of the `examples` key as it appears in the file; the serializer
+re-emits that raw value verbatim whenever the operation does **not** explicitly
+edit examples. Only an explicit examples edit (Issue C) writes a freshly
+generated typed structure, which is valid by construction.
+
+Consequences, stated as invariants the implementation must not weaken:
+
+- A non-list `examples`, a non-mapping list item, a wrong-typed field, or a
+  mutually-exclusive pair (both `input` and `input_file`) is **warned but
+  preserved byte-for-byte** across any unrelated metadata edit (e.g. editing a
+  tag). It is never dropped, never truncated to the parsed projection, never
+  silently repaired.
+- This guarantee is intentionally **stronger than** the current `related` /
+  `variables` behavior. Those fields today parse invalid shapes into
+  empty/dropped values and can lose user YAML on a subsequent dirty serialize;
+  the `examples` implementation must not reuse that pattern (see §18).
+- Invalid examples never hide the prompt and never block other edits.
 
 ## 7. Asset references: identity and validation
 
@@ -425,32 +466,45 @@ the file**. Asset **files are not copied**. The duplicated prompt's asset
 references are copied verbatim and keep pointing at the existing files, which
 remain valid (they still exist). A Duplicate as Variant behaves the same:
 the variant is a complete, independent `.md` (per the `variantOf` contract) and
-shares the referenced assets as read-only files. No automatic asset copy in v1.
+shares references to the same user-owned asset files; the files themselves are
+not copied and are not marked read-only on the filesystem. No automatic asset
+copy in v1.
 
 ## 10. Git semantics
 
 - Prompt file history (existing read-only Git History) includes inline example
   text, because it lives in the `.md` frontmatter. A diff of the prompt shows
   example text changes.
-- Asset files are separate files; their history is the project's own Git history
-  for those files, shown as separate diffs. Prompt history does not embed asset
-  content, only the reference.
+- **Asset Git history is out of v1 scope.** The current Git seam is
+  prompt-only (`prompt_git_context` resolves a prompt `.md` path); it cannot
+  query an arbitrary asset file. Promptarium v1 shows prompt `.md` history only;
+  asset file history remains available through the user's normal Git tooling
+  (`git log -- path/to/asset`). A generic asset Git-history backend is deferred
+  (§18) and would need a new Rust seam before it can be shown in-app.
 - The app never initializes Git and never auto-commits (existing rule).
+- Git dirty state: the existing dirty/conflict handling applies to the prompt
+  `.md` (the only file the app writes). The app never writes asset files, so it
+  never marks them dirty and never participates in their Git state.
 
 ## 11. Watcher / refresh semantics
 
-The current watcher (`watcher.rs`) triggers a debounced refresh only for
-Markdown files and directory changes. v1 boundary:
+The current watcher (`watcher.rs`) triggers a debounced refresh for Markdown
+files and directory changes; non-`.md` file events are otherwise filtered out.
+v1 boundary (requires one small watcher change — see §18):
 
-- Creating or deleting an asset **file** changes its parent directory, which
-  produces a directory event → a refresh happens, and a newly added/removed
-  asset shows up.
-- **Editing** an existing asset file (content change) does **not** trigger a
-  library refresh. This is the current behavior and is kept for v1: examples
-  are secondary content, and a large asset directory must not cause event
-  storms.
-- The Detail view re-checks asset existence on open and on explicit Refresh, so
-  a stale missing-file badge clears when the file reappears.
+- **Allow non-`.md` Create / Remove to trigger a refresh.** The current
+  implementation filters a normal `Create(File, foo.png)` because
+  `path_triggers_refresh` only accepts directories and `.md` files, and the
+  parent-directory event must not be relied on across notify backends. The
+  follow-up change makes `Create` / `Remove` of any file (regardless of
+  extension) refresh, so a newly added asset appears and a deleted one clears
+  automatically.
+- **Continue ignoring content `Modify` of non-`.md` files.** Editing an asset
+  (e.g. saving an image edit) must not trigger a library refresh; a large asset
+  directory must not cause event storms.
+- The Detail view also re-checks asset existence on open and on explicit
+  Refresh, so a stale missing-file badge clears when the file reappears.
+  Explicit Refresh remains the correctness path in every case.
 
 ## 12. All Projects semantics
 
@@ -475,7 +529,8 @@ Markdown files and directory changes. v1 boundary:
   follow-up implementation (a small, deterministic addition to `diffMetadata`).
   Compare still never writes anything back.
 - **History**: inline example text is part of prompt history (see §10); asset
-  files have their own history.
+  file history is not shown in-app in v1 — it stays available through normal
+  Git tooling.
 
 ## 14. Compatibility and migration
 
@@ -486,8 +541,10 @@ Markdown files and directory changes. v1 boundary:
   is parsed into the typed field; the lexical layout is not part of the
   preservation contract.
 - Invalid `examples` shapes warn but never hide the prompt, never get silently
-  repaired, and are preserved across a supported metadata save — the same
-  fail-visible policy as `related` and `variables`.
+  repaired, and are preserved byte-for-byte across a supported metadata save
+  (§6). This preservation guarantee is explicit and intentionally **stronger
+  than** the current `related` / `variables` handling, which warns on invalid
+  shapes but does not currently retain the raw values (§18).
 - Because the model is additive and file-based, no database migration and no
   rewrite of existing libraries are required.
 
@@ -525,8 +582,11 @@ Examples (3)
 - A missing/broken asset shows an inline, non-blocking warning with the relative
   path; it never blocks the prompt.
 - Large inline output is truncated with an expand control.
-- Asset names are clickable to Reveal in Finder (existing native seam), not
-  opened in an in-app viewer in v1.
+- Asset names are clickable to Reveal in Finder via a **new Rust asset seam**
+  (`reveal_asset_in_finder(project, relative_path)`), not the existing
+  prompt-only `reveal_in_finder` (which appends `.md`). The new seam validates
+  the path per §7 (project-root, escape, symlink, non-`.md`) and reveals the
+  real file. The frontend never constructs absolute paths (§18, Issue B).
 
 ## 16. Rejected alternatives and reasons
 
@@ -535,7 +595,7 @@ Examples (3)
 | A as the complete model | Cannot express binary; large outputs bloat frontmatter. Kept only as the text layer of C. |
 | B — companion directory | Violates "delete only selected .md", "no app-owned sidecar", and needs a scanner rule change. Three high-risk contract changes for no benefit over C. |
 | D — directory-as-prompt | Breaks "identity = relative .md path"; forces large scanner/CRUD/Git/compat changes. |
-| UUID example identity | Unnecessary; array order is a stable identity within a prompt, consistent with the no-UUID principle. |
+| UUID example identity | v1 examples have no persistent identity: array position defines ordering only and edits rewrite the whole array. No deep-link / cross-prompt reference / stable-diagnostics need exists yet; introduce an ID only when one of those needs is proven. Consistent with the no-UUID principle. |
 | `.md`-suffixed assets | Would collide with the scanner; rejected by the non-`.md` asset rule instead of a special-case. |
 | App state in `~/.promptarium` for examples | Violates "the real file is the single source of truth"; all example data lives in the `.md` + asset files. |
 | Database / object storage / cloud upload | Explicit non-goals; contradicts local-first. |
@@ -560,16 +620,29 @@ points to `prompt-specific-capabilities.md`).
 The spike deliberately produces **no production code**. Recommended split:
 
 1. **Issue A — Rust `examples` field**: parse / validate / serialize `examples`
-   in `store.rs` (mirroring the `related` / `variables` / `notes` patterns),
-   add the frontmatter-warning channel for invalid shapes, and add Rust tests.
-2. **Issue B — Detail display (read-only)**: TypeScript mirror in `types.ts`,
-   the Examples section in the Preview inspector, missing-asset warning, and
-   Reveal in Finder for asset names.
+   in `store.rs`. This must implement the §6 preservation contract: capture the
+   raw `examples` YAML value and re-emit it verbatim unless examples are
+   explicitly edited; never drop or project-truncate invalid content. Do **not**
+   copy the `related` / `variables` handling, which currently warns but drops
+   invalid shapes. Add Rust tests including "invalid shape → edit unrelated
+   metadata → invalid examples still present byte-for-byte".
+2. **Issue B — Detail display (read-only)**: TypeScript mirror in `types.ts`
+   (camelCase DTO), the Examples section in the Preview inspector, missing-asset
+   warning, and a new Rust seam `reveal_asset_in_finder(project, relative_path)`
+   (validated per §7) so asset names can be revealed. `reveal_in_finder` stays
+   prompt-only.
 3. **Issue C — Examples editor (later)**: edit examples in Edit mode, add assets
-   via the native file dialog with path validation, and remove/reorder examples.
-4. **Deferred, only if proven valuable**: indexing inline example text in
+   via the native file dialog with path validation, and insert/remove/reorder
+   examples. Every edit writes the whole `examples` array as one unit; an
+   explicit edit is the only operation that replaces the raw value with a
+   freshly generated typed structure.
+4. **Small watcher change (Issue B or separate)**: allow non-`.md` Create/Remove
+   to refresh while continuing to ignore content Modify (§11).
+5. **Deferred, only if proven valuable**: indexing inline example text in
    search; a `BROKEN_EXAMPLE_ASSET` Health finding; including assets in
-   Compare; watcher refinement for asset content edits.
+   Compare; a generic asset Git-history backend with its own Rust seam; a
+   hardening pass to give `related` / `variables` the same raw-preservation
+   guarantee `examples` now has.
 
 ## 19. Regression / verification matrix
 
@@ -587,14 +660,17 @@ follow-up issues must lock:
 | 6 | Path escape rejection | `../outside` rejected, fail-closed. |
 | 7 | Symlink boundary | Symlinked asset ref rejected. |
 | 8 | `.md` asset rejection | Asset ref with `.md` extension → warning, never a prompt. |
-| 9 | Prompt rename | Example refs stay valid. |
-| 10 | Prompt move | Example refs stay valid. |
-| 11 | Prompt delete | Assets not deleted; orphaned files remain. |
-| 12 | Duplicate | Inline examples copied; assets not copied; refs valid. |
-| 13 | Duplicate as Variant | Same as duplicate; variant is an independent `.md`. |
-| 14 | All Projects same-name prompts | Identity stays project-scoped. |
-| 15 | External asset edit | No library refresh storm; Detail refreshes on open/Refresh. |
-| 16 | Scanner collision | No `.md` file can be both a prompt and an asset. |
+| 9 | Invalid examples shape preservation | Non-list / non-mapping item / wrong-typed field / both `input`+`input_file` → warned, and still present byte-for-byte after an unrelated metadata edit. |
+| 10 | Prompt rename | Example refs stay valid. |
+| 11 | Prompt move | Example refs stay valid. |
+| 12 | Prompt delete | Assets not deleted; orphaned files remain. |
+| 13 | Duplicate | Inline examples copied; assets not copied; refs valid. |
+| 14 | Duplicate as Variant | Same as duplicate; variant is an independent `.md`. |
+| 15 | All Projects same-name prompts | Identity stays project-scoped. |
+| 16 | External asset create/delete | Non-`.md` Create/Remove triggers refresh; new asset appears, removed asset clears. |
+| 17 | External asset content edit | No library refresh; Detail re-checks on open / explicit Refresh. |
+| 18 | Git dirty/history | Prompt `.md` dirty/conflict handling unchanged; examples text part of prompt history; asset history not shown in-app, available via Git tooling. |
+| 19 | Scanner collision | No `.md` file can be both a prompt and an asset. |
 
 Merge gates (unchanged by this spike, must keep passing):
 `pnpm check`, `pnpm test:smoke`, `pnpm build`, `cargo test --lib`.
@@ -611,4 +687,6 @@ Merge gates (unchanged by this spike, must keep passing):
 - [x] "No in-project sidecar" contract unchanged, and why (§17).
 - [x] Watcher boundary for non-`.md` assets defined (§11).
 - [x] Whether examples enter search / health / compare / history — explicit (§13).
+- [x] Invalid examples preservation contract (byte-for-byte) defined and stronger than `related` / `variables` (§6).
+- [x] v1 example identity = none; array position = ordering only (§6).
 - [x] No production feature code introduced by this spike.
