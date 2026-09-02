@@ -4,8 +4,11 @@ import { withVariantOf } from './types';
 /** Deep-copy the supported metadata fields for a new prompt file. The generic
  *  spread copies `notes` (Issue #15) along with every other supported field;
  *  Duplicate / Duplicate as Variant both route through this, so a future
- *  explicit-field-list refactor cannot silently drop a field. An `undefined`
- *  source yields a fresh default metadata object (used by the dev fixture). */
+ *  explicit-field-list refactor cannot silently drop a field. `examples`
+ *  (Issue #24) is deep-copied so the new prompt never shares a mutable
+ *  array/object with the source; the raw `examplesRaw` value is cloned too so a
+ *  malformed source example is duplicated verbatim. An `undefined` source
+ *  yields a fresh default metadata object (used by the dev fixture). */
 export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
   const value = metadata ?? {
     description: '',
@@ -19,6 +22,13 @@ export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetad
   const variables = value.variables
     ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
     : undefined;
+  const examples = value.examples
+    ? value.examples.map((example) => ({
+        ...example,
+        assets: example.assets ? [...example.assets] : undefined,
+        extra: example.extra ? { ...example.extra } : undefined,
+      }))
+    : undefined;
   return {
     ...value,
     tags: [...value.tags],
@@ -26,6 +36,10 @@ export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetad
     related: [...value.related],
     extra: { ...value.extra },
     ...(variables ? { variables } : {}),
+    ...(examples ? { examples } : {}),
+    ...(value.examplesRaw !== undefined
+      ? { examplesRaw: JSON.parse(JSON.stringify(value.examplesRaw)) }
+      : {}),
   };
 }
 

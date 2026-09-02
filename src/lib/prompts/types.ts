@@ -23,6 +23,23 @@ export interface VariableDoc {
   extra?: Record<string, unknown>;
 }
 
+/** One prompt example (Issue #24), mirroring the Rust `PromptExample` DTO.
+ *  camelCase in IPC, snake_case in YAML. A typed projection is read-only for
+ *  now (no Examples editor in this issue); invalid/hand-written examples are
+ *  preserved semantically through `examplesRaw` on an unrelated metadata save,
+ *  never through truncation of this typed Vec. */
+export interface PromptExample {
+  name?: string;
+  input?: string;
+  inputFile?: string;
+  output?: string;
+  outputFile?: string;
+  notes?: string;
+  assets?: string[];
+  /** Unknown nested YAML keys inside one example, carried through a save. */
+  extra?: Record<string, unknown>;
+}
+
 export interface PromptMetadata {
   description: string;
   tags: string[];
@@ -40,6 +57,14 @@ export interface PromptMetadata {
    *  never includes them. Multiline values serialize as readable YAML block
    *  scalars; clearing the field removes `notes` from the frontmatter. */
   notes?: string;
+  /** Prompt examples (Issue #24). Typed projection; the authoritative value for
+   *  an unrelated metadata save is `examplesRaw`, so invalid/hand-written
+   *  examples are never truncated to this typed Vec. */
+  examples?: PromptExample[];
+  /** Raw semantic value of the `examples` frontmatter field as read from disk,
+   *  carried from Rust. The preservation base for an unrelated metadata save;
+   *  pass it back unchanged unless explicitly editing examples. */
+  examplesRaw?: unknown;
   /** Unknown YAML keys are carried through a supported-field save. */
   extra: Record<string, unknown>;
 }

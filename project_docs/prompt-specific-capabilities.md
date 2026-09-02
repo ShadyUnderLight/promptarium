@@ -73,6 +73,14 @@ variantOf: coding/github/review-pr
 notes: |
   Works best for normal-sized pull requests.
   Ask for exact file/line references when possible.
+
+examples:
+  - name: Small PR
+    input: |
+      Repository: ShadyUnderLight/promptarium
+      PR: 9
+    output: Looks good; add a test for the null case.
+    notes: Minimal happy-path example.
 ---
 
 Review {repository} pull request #{pr_number}.
@@ -93,6 +101,12 @@ Review {repository} pull request #{pr_number}.
   Markdown Prompt.
 - `notes`: usage notes that are not part of the Prompt body; Copy Prompt does
   not copy them.
+- `examples`: a list of prompt examples — the inline text layer of the Examples
+  & Assets model (see `examples-assets-design.md`). Each example is a mapping
+  with optional `name`, `input` / `input_file`, `output` / `output_file`,
+  `notes` and `assets` (project-relative asset paths). Invalid or hand-written
+  examples are preserved semantically across any unrelated metadata edit; only
+  an explicit Examples edit replaces the whole `examples` value.
 
 `schemaVersion` is deliberately not introduced yet. All fields are optional;
 files without any of them are always valid.

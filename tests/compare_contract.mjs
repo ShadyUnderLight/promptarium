@@ -177,6 +177,46 @@ console.log('diffMetadata — wrong-type variantOf renders honestly');
   eq(variant.right, 'parent', 'right renders the string value');
 }
 
+console.log('diffMetadata — examples (Issue #24)');
+
+{
+  const left = metadata({
+    examples: [{ name: 'Small PR', input: 'Repo: foo/bar', output: 'Looks good' }],
+  });
+  const right = metadata({
+    examples: [{ name: 'Small PR', input: 'Repo: foo/bar', output: 'Add a test' }],
+  });
+  const diffs = diffMetadata(left, right);
+  const examples = diffs.find((d) => d.field === 'examples');
+  assert(examples, 'an examples semantic change is reported on its own row');
+  assert(!diffs.find((d) => d.field === 'extra'), 'examples is excluded from the extra row to avoid double reporting');
+  eq(examples.left, JSON.stringify(left.examples[0]), 'left side renders the selected prompt examples');
+  eq(examples.right, JSON.stringify(right.examples[0]), 'right side renders the compared prompt examples');
+}
+
+{
+  const diffs = diffMetadata(metadata(), metadata({ examples: [{ input: 'x', output: 'y' }] }));
+  const examples = diffs.find((d) => d.field === 'examples');
+  assert(examples, 'an examples add is reported');
+  eq(examples.left, '(none)', 'missing examples renders as (none)');
+}
+
+{
+  const same = { examples: [{ input: 'x', output: 'y', assets: ['a.png'] }] };
+  const diffs = diffMetadata(metadata(same), metadata(same));
+  assert(!diffs.find((d) => d.field === 'examples'), 'equal examples produce no examples diff');
+}
+
+{
+  const a = [{ input: 'a', output: '1' }, { input: 'b', output: '2' }];
+  const b = [{ input: 'b', output: '2' }, { input: 'a', output: '1' }];
+  const diffs = diffMetadata(metadata({ examples: a }), metadata({ examples: b }));
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'reordered examples produce an examples diff (array order is meaningful)'
+  );
+}
+
 console.log('diffMetadata — deterministic ordering');
 {
   const left = metadata();

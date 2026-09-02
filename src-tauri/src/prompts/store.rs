@@ -39,6 +39,33 @@ pub struct VariableDoc {
     pub extra: BTreeMap<String, JsonValue>,
 }
 
+/// A single prompt example (Issue #24). Only text fields plus asset *reference*
+/// paths are supported in this layer; large text / binary assets are addressed
+/// by future issues. Unknown nested YAML keys are preserved in `extra` exactly
+/// like `VariableDoc`. The parser never drops a field or item it cannot
+/// interpret: invalid values surface as frontmatter warnings and stay intact in
+/// the raw `examples` value that an unrelated metadata save re-emits (§P0).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PromptExample {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub output_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub assets: Vec<String>,
+    #[serde(default)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptMetadata {
@@ -63,6 +90,21 @@ pub struct PromptMetadata {
     /// block scalars; an empty value is omitted from the frontmatter on save.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
+    /// Prompt examples (Issue #24). The typed Vec is a read-only projection for
+    /// IPC/frontend use; it is *not* the authoritative value for a save. The
+    /// authoritative representation is `examples_raw` — the semantic YAML value
+    /// as read from disk — so invalid or hand-written examples are never
+    /// truncated to this typed Vec on an unrelated metadata save. Only an
+    /// explicit editor-produced typed value (create / duplicate, where no raw
+    /// exists) is serialized from `examples`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub examples: Option<Vec<PromptExample>>,
+    /// Raw semantic value of the `examples` frontmatter field as read from disk.
+    /// Preservation base for an unrelated metadata save (Issue #24 P0 contract);
+    /// it travels through IPC so the frontend round-trips it without loss.
+    /// `None` when the field is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub examples_raw: Option<JsonValue>,
     #[serde(default)]
     pub extra: BTreeMap<String, JsonValue>,
 }
@@ -301,6 +343,123 @@ fn parse_metadata(yaml: &str) -> Result<(PromptMetadata, Option<String>), String
                 }
                 None => errors.push("variables must be a mapping".to_string()),
             },
+            "examples" => {
+                // The raw semantic value is always retained first: it is the
+                // preservation base for an unrelated metadata save (Issue #24
+                // P0), so no parse outcome below can ever drop the original
+                // YAML. Lexical formatting is not preserved — only semantics.
+                match json_from_yaml(value) {
+                    Ok(raw) => metadata.examples_raw = Some(raw),
+                    Err(error) => errors.push(error),
+                }
+                match value {
+                    YamlValue::Sequence(items) => {
+                        let mut parsed = Vec::with_capacity(items.len());
+                        for (index, item) in items.iter().enumerate() {
+                            let Some(mapping) = item.as_mapping() else {
+                                errors.push(format!("examples[{index}] must be a mapping"));
+                                continue;
+                            };
+                            let mut example = PromptExample::default();
+                            let mut has_content = false;
+                            for (key, field) in mapping {
+                                let Some(key) = key.as_str() else {
+                                    // Never drop a nested unknown key silently:
+                                    // mirror the top-level "keys must be strings"
+                                    // behaviour so the user sees a warning instead
+                                    // of data loss on the next save.
+                                    errors.push(format!("examples[{index}] keys must be strings"));
+                                    continue;
+                                };
+                                match key {
+                                    "name" => match field.as_str() {
+                                        Some(text) => example.name = Some(text.to_string()),
+                                        None => errors.push(format!(
+                                            "examples[{index}].name must be a string"
+                                        )),
+                                    },
+                                    "input" => match field.as_str() {
+                                        Some(text) => {
+                                            example.input = Some(text.to_string());
+                                            has_content = true;
+                                        }
+                                        None => errors.push(format!(
+                                            "examples[{index}].input must be a string"
+                                        )),
+                                    },
+                                    "input_file" => match field.as_str() {
+                                        Some(text) => {
+                                            example.input_file = Some(text.to_string());
+                                            has_content = true;
+                                        }
+                                        None => errors.push(format!(
+                                            "examples[{index}].input_file must be a string"
+                                        )),
+                                    },
+                                    "output" => match field.as_str() {
+                                        Some(text) => {
+                                            example.output = Some(text.to_string());
+                                            has_content = true;
+                                        }
+                                        None => errors.push(format!(
+                                            "examples[{index}].output must be a string"
+                                        )),
+                                    },
+                                    "output_file" => match field.as_str() {
+                                        Some(text) => {
+                                            example.output_file = Some(text.to_string());
+                                            has_content = true;
+                                        }
+                                        None => errors.push(format!(
+                                            "examples[{index}].output_file must be a string"
+                                        )),
+                                    },
+                                    "notes" => match field.as_str() {
+                                        Some(text) => example.notes = Some(text.to_string()),
+                                        None => errors.push(format!(
+                                            "examples[{index}].notes must be a string"
+                                        )),
+                                    },
+                                    "assets" => {
+                                        example.assets = string_list(
+                                            field,
+                                            &format!("examples[{index}].assets"),
+                                            &mut errors,
+                                        );
+                                        if !example.assets.is_empty() {
+                                            has_content = true;
+                                        }
+                                    }
+                                    unknown => match json_from_yaml(field) {
+                                        Ok(value) => {
+                                            example.extra.insert(unknown.to_string(), value);
+                                        }
+                                        Err(error) => errors.push(error),
+                                    },
+                                }
+                            }
+                            if example.input.is_some() && example.input_file.is_some() {
+                                errors.push(format!(
+                                    "examples[{index}] has both input and input_file; both are preserved"
+                                ));
+                            }
+                            if example.output.is_some() && example.output_file.is_some() {
+                                errors.push(format!(
+                                    "examples[{index}] has both output and output_file; both are preserved"
+                                ));
+                            }
+                            if !has_content {
+                                errors.push(format!(
+                                    "examples[{index}] has no content; an example needs input, input_file, output, output_file or assets"
+                                ));
+                            }
+                            parsed.push(example);
+                        }
+                        metadata.examples = Some(parsed);
+                    }
+                    _ => errors.push("examples must be a list of mappings".to_string()),
+                }
+            }
             unknown => match json_from_yaml(value) {
                 Ok(value) => {
                     metadata.extra.insert(unknown.to_string(), value);
@@ -608,6 +767,11 @@ fn metadata_has_values(metadata: &PromptMetadata) -> bool {
         || !metadata.variables.is_empty()
         || !metadata.related.is_empty()
         || metadata.notes.as_deref().is_some_and(|notes| !notes.is_empty())
+        || metadata.examples_raw.is_some()
+        || metadata
+            .examples
+            .as_ref()
+            .is_some_and(|examples| !examples.is_empty())
         || !metadata.extra.is_empty()
 }
 
@@ -617,6 +781,48 @@ fn yaml_string(value: &str) -> YamlValue {
 
 fn yaml_from_json(value: &JsonValue) -> Result<YamlValue, String> {
     serde_yaml::to_value(value).map_err(|e| e.to_string())
+}
+
+/// Serialize one typed `PromptExample` to YAML. This is only used when there is
+/// no raw value to preserve (create / duplicate): it emits snake_case keys,
+/// omits absent fields, and writes multiline strings as readable block scalars
+/// through the serializer, mirroring the `notes` behaviour.
+fn example_to_yaml(example: &PromptExample) -> Result<YamlValue, String> {
+    let mut mapping = Mapping::new();
+    if let Some(name) = &example.name {
+        mapping.insert(yaml_string("name"), yaml_string(name));
+    }
+    if let Some(input) = &example.input {
+        mapping.insert(yaml_string("input"), yaml_string(input));
+    }
+    if let Some(input_file) = &example.input_file {
+        mapping.insert(yaml_string("input_file"), yaml_string(input_file));
+    }
+    if let Some(output) = &example.output {
+        mapping.insert(yaml_string("output"), yaml_string(output));
+    }
+    if let Some(output_file) = &example.output_file {
+        mapping.insert(yaml_string("output_file"), yaml_string(output_file));
+    }
+    if let Some(notes) = &example.notes {
+        mapping.insert(yaml_string("notes"), yaml_string(notes));
+    }
+    if !example.assets.is_empty() {
+        mapping.insert(
+            yaml_string("assets"),
+            YamlValue::Sequence(
+                example
+                    .assets
+                    .iter()
+                    .map(|asset| yaml_string(asset))
+                    .collect(),
+            ),
+        );
+    }
+    for (key, value) in &example.extra {
+        mapping.insert(yaml_string(key), yaml_from_json(value)?);
+    }
+    Ok(YamlValue::Mapping(mapping))
 }
 
 fn serialize_frontmatter(
@@ -691,6 +897,21 @@ fn serialize_frontmatter(
         // values are emitted as readable YAML block scalars by the serializer.
         if !notes.is_empty() {
             mapping.insert(yaml_string("notes"), yaml_string(notes));
+        }
+    }
+    // Examples (Issue #24): an unrelated metadata save re-emits the raw semantic
+    // value (the preservation base for invalid/hand-written examples); only when
+    // no raw exists (create / duplicate producing a typed value) is the typed
+    // projection serialized. An empty typed list is omitted, matching `notes`.
+    if let Some(raw) = &metadata.examples_raw {
+        mapping.insert(yaml_string("examples"), yaml_from_json(raw)?);
+    } else if let Some(examples) = &metadata.examples {
+        if !examples.is_empty() {
+            let sequence = examples
+                .iter()
+                .map(example_to_yaml)
+                .collect::<Result<Vec<_>, _>>()?;
+            mapping.insert(yaml_string("examples"), YamlValue::Sequence(sequence));
         }
     }
     for (key, value) in &metadata.extra {
@@ -1981,6 +2202,433 @@ mod tests {
             "p",
             "body",
             &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap_err();
+        assert!(error.contains("PROMPT_CONFLICT"));
+        assert_eq!(
+            fs::read_to_string(dir.join("p.md")).unwrap(),
+            "external edit"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    // ── prompt examples (Issue #24) ─────────────────────────────────────────
+
+    #[test]
+    fn examples_missing_defaults_to_none_without_migration() {
+        let dir = tmp_dir("examples-missing");
+        write(&dir, "plain.md", "body\n");
+        let document = read_prompt(&dir, "plain").unwrap();
+        assert_eq!(document.summary.metadata.examples, None);
+        assert_eq!(document.summary.metadata.examples_raw, None);
+        // A body-only save of a plain Markdown file must not add an `examples` field.
+        save_prompt(
+            &dir,
+            "plain",
+            "body\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(dir.join("plain.md")).unwrap(), "body\n");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_parse_text_only_round_trips_order_and_snake_case_keys() {
+        let dir = tmp_dir("examples-parse");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: Small PR\n    input: |-\n      Repository: foo/bar\n      PR: 9\n    output: Looks good; add a test for the null case.\n    notes: Minimal happy-path example.\n  - name: Large PR\n    input: inline input text\n    output: inline output text\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        assert!(document.summary.frontmatter_error.is_none());
+        let examples = document.summary.metadata.examples.as_deref().unwrap();
+        assert_eq!(examples.len(), 2, "order and count preserved");
+        assert_eq!(examples[0].name.as_deref(), Some("Small PR"));
+        assert_eq!(
+            examples[0].input.as_deref(),
+            Some("Repository: foo/bar\nPR: 9")
+        );
+        assert_eq!(
+            examples[0].output.as_deref(),
+            Some("Looks good; add a test for the null case.")
+        );
+        assert_eq!(
+            examples[0].notes.as_deref(),
+            Some("Minimal happy-path example.")
+        );
+        assert_eq!(examples[1].name.as_deref(), Some("Large PR"));
+        assert_eq!(examples[1].input.as_deref(), Some("inline input text"));
+        // The raw semantic value is always retained for an unrelated save.
+        assert!(document.summary.metadata.examples_raw.is_some());
+        assert!(!document.summary.metadata.extra.contains_key("examples"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_snake_case_keys_map_to_dto_camel_case() {
+        let dir = tmp_dir("examples-camel");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - input_file: examples/review-pr-input.txt\n    output_file: examples/review-pr-output.txt\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let example = &document.summary.metadata.examples.as_deref().unwrap()[0];
+        assert_eq!(
+            example.input_file.as_deref(),
+            Some("examples/review-pr-input.txt")
+        );
+        assert_eq!(
+            example.output_file.as_deref(),
+            Some("examples/review-pr-output.txt")
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_multiline_save_writes_a_readable_block_scalar() {
+        let dir = tmp_dir("examples-multiline-save");
+        write(&dir, "p.md", "body\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.examples = Some(vec![PromptExample {
+            name: Some("Multi".into()),
+            input: Some("Line one.\nLine two.".into()),
+            output: Some("Output line.\n✅ done.".into()),
+            notes: None,
+            ..PromptExample::default()
+        }]);
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("input: |"),
+            "multiline input must serialize as a readable block scalar, got:\n{saved}"
+        );
+        assert!(
+            !saved.contains("\\n"),
+            "multiline input must not serialize as an escaped string, got:\n{saved}"
+        );
+        // parse -> explicit save -> parse must preserve the value semantically.
+        let reread = read_prompt(&dir, "p").unwrap();
+        assert_eq!(
+            reread.summary.metadata.examples, metadata.examples,
+            "round trip must preserve examples semantically"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_keep_unknown_nested_fields_and_top_level_unknown_fields() {
+        let dir = tmp_dir("examples-unknown");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: A\n    input: in\n    custom_field: preserve-me\n    weird:\n      foo: bar\ntop: keep\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let example = &document.summary.metadata.examples.as_deref().unwrap()[0];
+        assert_eq!(
+            example.extra["custom_field"],
+            JsonValue::String("preserve-me".into())
+        );
+        assert_eq!(
+            example.extra["weird"]["foo"],
+            JsonValue::String("bar".into())
+        );
+        assert_eq!(
+            document.summary.metadata.extra["top"],
+            JsonValue::String("keep".into())
+        );
+        // Unrelated metadata save must keep nested unknown example fields.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("custom_field: preserve-me"),
+            "nested unknown example field must survive, got:\n{saved}"
+        );
+        assert!(
+            saved.contains("top: keep"),
+            "top-level unknown must survive, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_assets_string_list_parses() {
+        let dir = tmp_dir("examples-assets");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: Ref\n    input: in\n    assets:\n      - assets/reference.png\n      - assets/other.png\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let example = &document.summary.metadata.examples.as_deref().unwrap()[0];
+        assert_eq!(example.assets, ["assets/reference.png", "assets/other.png"]);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_empty_example_warns_but_is_preserved() {
+        let dir = tmp_dir("examples-empty");
+        write(&dir, "p.md", "---\nexamples:\n  - name: Empty\n---\nbody\n");
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("has no content"),
+            "an example with only a name must be loud, got: {error}"
+        );
+        assert_eq!(
+            document.summary.metadata.examples.as_deref().unwrap().len(),
+            1
+        );
+        assert!(document.summary.metadata.examples_raw.is_some());
+        assert_eq!(document.body, "body\n");
+        // An unrelated save keeps the empty example intact semantically.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = Some("added".into());
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("name: Empty"),
+            "empty example must survive, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_mutually_exclusive_pairs_warn_but_both_are_preserved() {
+        let dir = tmp_dir("examples-exclusive");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: Both\n    input: inline input\n    input_file: examples/in.txt\n    output: inline output\n    output_file: examples/out.txt\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("both input and input_file"),
+            "input + input_file must be loud, got: {error}"
+        );
+        assert!(
+            error.contains("both output and output_file"),
+            "output + output_file must be loud, got: {error}"
+        );
+        let example = &document.summary.metadata.examples.as_deref().unwrap()[0];
+        assert_eq!(example.input.as_deref(), Some("inline input"));
+        assert_eq!(example.input_file.as_deref(), Some("examples/in.txt"));
+        assert_eq!(example.output.as_deref(), Some("inline output"));
+        assert_eq!(example.output_file.as_deref(), Some("examples/out.txt"));
+        // Unrelated save must never silently repair or drop either side.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(saved.contains("input_file: examples/in.txt"), "{saved}");
+        assert!(saved.contains("input: inline input"), "{saved}");
+        assert!(saved.contains("output_file: examples/out.txt"), "{saved}");
+        assert!(saved.contains("output: inline output"), "{saved}");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_wrong_type_field_warns_without_dropping_the_raw_value() {
+        let dir = tmp_dir("examples-wrong-type");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: Broken\n    input: 123\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("examples[0].input must be a string"),
+            "wrong-typed field must be loud, got: {error}"
+        );
+        assert_eq!(
+            document.summary.metadata.examples.as_deref().unwrap()[0].input,
+            None,
+            "typed projection has no value for the wrong-typed field"
+        );
+        assert!(document.summary.metadata.examples_raw.is_some());
+        // The raw value keeps the wrong-typed scalar; an unrelated save preserves it.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.tags = vec!["review".into()];
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("input: 123"),
+            "wrong-typed example value must survive, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_wrong_top_level_shape_survives_an_unrelated_save() {
+        let dir = tmp_dir("examples-wrong-shape");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  strange-shape:\n    whatever: true\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let error = document.summary.frontmatter_error.as_deref().unwrap_or("");
+        assert!(
+            error.contains("examples must be a list of mappings"),
+            "non-list examples must be loud, got: {error}"
+        );
+        // A non-list shape cannot be projected into typed examples; the typed
+        // view reports nothing while the raw value stays authoritative.
+        assert_eq!(document.summary.metadata.examples, None);
+        assert!(document.summary.metadata.examples_raw.is_some());
+        assert_eq!(document.body, "body\n");
+        // description-only save must preserve the malformed examples semantically.
+        let mut metadata = document.summary.metadata.clone();
+        metadata.description = "edited".into();
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("strange-shape") && saved.contains("whatever: true"),
+            "malformed examples must survive a supported metadata save, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_malformed_item_survives_an_unrelated_notes_save() {
+        let dir = tmp_dir("examples-malformed-item");
+        write(
+            &dir,
+            "p.md",
+            "---\nexamples:\n  - name: Broken\n    input: 123\n    weird_nested:\n      foo: bar\n---\nbody\n",
+        );
+        let document = read_prompt(&dir, "p").unwrap();
+        let mut metadata = document.summary.metadata.clone();
+        metadata.notes = Some("added notes".into());
+        save_prompt(
+            &dir,
+            "p",
+            "body\n",
+            &metadata,
+            document.frontmatter_prefix.as_deref(),
+            true,
+            Some(&document.raw),
+        )
+        .unwrap();
+        let saved = fs::read_to_string(dir.join("p.md")).unwrap();
+        assert!(
+            saved.contains("input: 123") && saved.contains("weird_nested"),
+            "malformed item fields must not be dropped on an unrelated save, got:\n{saved}"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_body_only_save_does_not_reformat_the_frontmatter() {
+        let dir = tmp_dir("examples-body-save");
+        let raw = "---\nexamples:\n  - name: A\n    input: in\n---\nbody {a}\n";
+        write(&dir, "p.md", raw);
+        let document = read_prompt(&dir, "p").unwrap();
+        save_prompt(
+            &dir,
+            "p",
+            "changed {a}\n",
+            &document.summary.metadata,
+            document.frontmatter_prefix.as_deref(),
+            false,
+            Some(&document.raw),
+        )
+        .unwrap();
+        // Non-dirty body save keeps the exact original frontmatter prefix bytes.
+        assert_eq!(
+            fs::read_to_string(dir.join("p.md")).unwrap(),
+            "---\nexamples:\n  - name: A\n    input: in\n---\nchanged {a}\n"
+        );
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn examples_save_still_refuses_to_overwrite_an_external_change() {
+        let dir = tmp_dir("examples-conflict");
+        let mut metadata = PromptMetadata::default();
+        metadata.examples = Some(vec![PromptExample {
+            name: Some("A".into()),
+            input: Some("in".into()),
+            ..PromptExample::default()
+        }]);
+        create_prompt(&dir, "p", "body", &metadata).unwrap();
+        let document = read_prompt(&dir, "p").unwrap();
+        fs::write(dir.join("p.md"), "external edit").unwrap();
+        let mut changed = document.summary.metadata.clone();
+        changed.notes = Some("local note".into());
+        let error = save_prompt(
+            &dir,
+            "p",
+            "body",
+            &changed,
             document.frontmatter_prefix.as_deref(),
             true,
             Some(&document.raw),

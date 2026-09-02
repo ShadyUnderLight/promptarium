@@ -15,7 +15,7 @@
  */
 import type { VariableDoc } from './types';
 import { getVariantOfRaw } from './types';
-import type { PromptMetadata } from './types';
+import type { PromptExample, PromptMetadata } from './types';
 
 /** Number of unchanged lines of context around a change in the rendered patch. */
 const CONTEXT_LINES = 3;
@@ -180,10 +180,18 @@ function renderVariables(value: Record<string, VariableDoc> | undefined): string
 
 function renderExtra(value: Record<string, unknown>): string {
   const keys = Object.keys(value)
-    .filter((key) => key !== 'variantOf' && key !== 'notes')
+    .filter((key) => key !== 'variantOf' && key !== 'notes' && key !== 'examples')
     .sort();
   if (!keys.length) return '(none)';
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
+}
+
+/** Deterministic one-line rendering of the examples projection for the Compare
+ *  sheet. `examples` is a typed field (Issue #24) and is compared on its own
+ *  row — it must never be reported through the generic `extra` diff as well. */
+function renderExamples(value: PromptExample[] | undefined): string {
+  if (!value || !value.length) return '(none)';
+  return value.map((example) => JSON.stringify(example)).join('\n');
 }
 
 function renderVariantOf(metadata: PromptMetadata): string {
@@ -204,9 +212,9 @@ function renderNotes(value: string | undefined): string {
 }
 
 /** Deterministic list of metadata field differences between two prompts. The
- *  `variantOf` and `notes` fields are compared on their own rows and excluded
- *  from `extra`, so a change is never reported twice. Order is fixed for
- *  stable output. */
+ *  `variantOf`, `notes` and `examples` fields are compared on their own rows
+ *  and excluded from `extra`, so a change is never reported twice. Order is
+ *  fixed for stable output. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
   const pairs: Array<[string, string, string]> = [
     ['description', a.description, b.description],
@@ -218,6 +226,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
     ['variables', renderVariables(a.variables), renderVariables(b.variables)],
     ['variantOf', renderVariantOf(a), renderVariantOf(b)],
     ['notes', renderNotes(a.notes), renderNotes(b.notes)],
+    ['examples', renderExamples(a.examples), renderExamples(b.examples)],
     ['extra', renderExtra(a.extra), renderExtra(b.extra)],
   ];
   const diffs: MetadataFieldDiff[] = [];
