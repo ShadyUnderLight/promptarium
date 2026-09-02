@@ -7,10 +7,9 @@ import { withVariantOf } from './types';
  *  explicit-field-list refactor cannot silently drop a field. `examples`
  *  (Issue #24) is deep-copied with `structuredClone` so the new prompt never
  *  shares a mutable array/object — including `examples[].extra` nested
- *  structures — with the source; the raw `examplesRawYaml` string is passed
- *  through verbatim so a malformed source example is duplicated as-is. An
- *  `undefined` source yields a fresh default metadata object (used by the dev
- *  fixture). */
+ *  structures — with the source; the raw `examplesRaw` AST is cloned too so a
+ *  malformed source example is duplicated as-is. An `undefined` source yields a
+ *  fresh default metadata object (used by the dev fixture). */
 export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
   const value = metadata ?? {
     description: '',
@@ -35,8 +34,8 @@ export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetad
     extra: { ...value.extra },
     ...(variables ? { variables } : {}),
     ...(examples ? { examples } : {}),
-    ...(value.examplesRawYaml !== undefined
-      ? { examplesRawYaml: value.examplesRawYaml }
+    ...(value.examplesRaw !== undefined
+      ? { examplesRaw: structuredClone(value.examplesRaw) }
       : {}),
   };
 }

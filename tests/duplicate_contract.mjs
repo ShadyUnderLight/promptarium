@@ -100,7 +100,10 @@ console.log('cloneMetadata — examples deep copy (Issue #24)');
         extra: { custom: 1, nested: { list: ['x', 'y'] } },
       },
     ],
-    examplesRawYaml: '- name: raw',
+    examplesRaw: {
+      kind: 'sequence',
+      items: [{ kind: 'string', value: 'raw' }],
+    },
   });
   const copy = cloneMetadata(source);
   eq(copy.examples, source.examples, 'cloneMetadata preserves examples');
@@ -120,13 +123,14 @@ console.log('cloneMetadata — examples deep copy (Issue #24)');
   copy.examples[0].extra.nested.list.push('z');
   eq(source.examples[0].input, 'Repo: foo/bar', 'mutating the copy does not touch the source example');
   eq(source.examples[0].extra.nested.list, ['x', 'y'], 'mutating a nested copy array does not touch the source');
-  eq(copy.examplesRawYaml, source.examplesRawYaml, 'cloneMetadata preserves the raw examples YAML');
+  eq(copy.examplesRaw, source.examplesRaw, 'cloneMetadata preserves the raw examples AST');
+  assert(copy.examplesRaw !== source.examplesRaw, 'cloneMetadata deep-copies examplesRaw');
 }
 
 {
   const fresh = cloneMetadata(metadata());
   eq(fresh.examples, undefined, 'cloning metadata without examples yields no examples');
-  eq(fresh.examplesRawYaml, undefined, 'cloning metadata without examplesRawYaml yields none');
+  eq(fresh.examplesRaw, undefined, 'cloning metadata without examplesRaw yields none');
 }
 
 if (failures) {

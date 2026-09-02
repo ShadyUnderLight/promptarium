@@ -56,6 +56,25 @@ function metadata(overrides = {}) {
   };
 }
 
+/** Build a `RawYaml` sequence of example mappings from a plain JS shape,
+ *  mirroring how the Rust side projects one. Numbers become number nodes (so a
+ *  wrong-typed `input: 123` stays distinct from `input: 456` in the raw AST);
+ *  everything else is a string node. */
+function examplesRaw(examples) {
+  return {
+    kind: 'sequence',
+    items: examples.map((example) => ({
+      kind: 'mapping',
+      pairs: Object.entries(example).map(([key, value]) => [
+        { kind: 'string', value: key },
+        typeof value === 'number'
+          ? { kind: 'number', value: { kind: 'i64', value } }
+          : { kind: 'string', value: String(value) },
+      ]),
+    })),
+  };
+}
+
 console.log('diffTexts — identical bodies');
 eq(diffTexts('same', 'same'), '', 'identical bodies produce an empty patch');
 eq(diffTexts('', ''), '', 'two empty bodies produce an empty patch');
@@ -219,10 +238,10 @@ console.log('diffMetadata — examples (Issue #24)');
 
 {
   // P2: malformed examples with identical typed projections still diff through
-  // the authoritative raw YAML carrier — the typed projection cannot see the
-  // wrong-typed `input`, so Compare must look at `examplesRawYaml`.
-  const left = metadata({ examplesRawYaml: '- name: Broken\n  input: 123' });
-  const right = metadata({ examplesRawYaml: '- name: Broken\n  input: 456' });
+  // the authoritative raw AST — the typed projection cannot see the wrong-typed
+  // `input`, so Compare must look at `examplesRaw`.
+  const left = metadata({ examplesRaw: examplesRaw([{ name: 'Broken', input: 123 }]) });
+  const right = metadata({ examplesRaw: examplesRaw([{ name: 'Broken', input: 456 }]) });
   const diffs = diffMetadata(left, right);
   assert(
     diffs.find((d) => d.field === 'examples'),
@@ -235,8 +254,8 @@ console.log('diffMetadata — examples (Issue #24)');
   // prompts with identical typed projections but different raw values still
   // report an examples change.
   const base = { examples: [{ name: 'Broken' }] };
-  const left = metadata({ ...base, examplesRawYaml: '- name: Broken\n  input: 123' });
-  const right = metadata({ ...base, examplesRawYaml: '- name: Broken\n  input: 456' });
+  const left = metadata({ ...base, examplesRaw: examplesRaw([{ name: 'Broken', input: 123 }]) });
+  const right = metadata({ ...base, examplesRaw: examplesRaw([{ name: 'Broken', input: 456 }]) });
   const diffs = diffMetadata(left, right);
   assert(
     diffs.find((d) => d.field === 'examples'),
@@ -245,12 +264,36 @@ console.log('diffMetadata — examples (Issue #24)');
 }
 
 {
-  // Identical raw canonical YAML produces no examples diff.
-  const raw = '- name: Broken\n  input: 123';
-  const diffs = diffMetadata(metadata({ examplesRawYaml: raw }), metadata({ examplesRawYaml: raw }));
+  // Identical raw AST produces no examples diff.
+  const raw = examplesRaw([{ name: 'Broken', input: 123 }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: raw }), metadata({ examplesRaw: raw }));
   assert(
     !diffs.find((d) => d.field === 'examples'),
     'identical raw examples produce no examples diff'
+  );
+}
+
+{
+  // P2: mapping key order is not semantically meaningful in YAML, so two raw
+  // examples that differ only in key order must NOT produce an examples diff.
+  const left = examplesRaw([{ input: 'x', output: 'y' }]);
+  const right = examplesRaw([{ output: 'y', input: 'x' }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: left }), metadata({ examplesRaw: right }));
+  assert(
+    !diffs.find((d) => d.field === 'examples'),
+    'mapping key order must not produce a spurious examples diff'
+  );
+}
+
+{
+  // Example array position is meaningful: reordering raw examples must still
+  // produce an examples diff even with normalized (key-sorted) rendering.
+  const left = examplesRaw([{ input: 'a' }, { input: 'b' }]);
+  const right = examplesRaw([{ input: 'b' }, { input: 'a' }]);
+  const diffs = diffMetadata(metadata({ examplesRaw: left }), metadata({ examplesRaw: right }));
+  assert(
+    diffs.find((d) => d.field === 'examples'),
+    'reordered raw examples must produce an examples diff (array order is meaningful)'
   );
 }
 

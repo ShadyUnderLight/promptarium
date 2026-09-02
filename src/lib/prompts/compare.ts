@@ -15,6 +15,7 @@
  */
 import type { VariableDoc } from './types';
 import { getVariantOfRaw } from './types';
+import type { RawYaml } from './types';
 import type { PromptMetadata } from './types';
 
 /** Number of unchanged lines of context around a change in the rendered patch. */
@@ -186,16 +187,46 @@ function renderExtra(value: Record<string, unknown>): string {
   return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
 }
 
-/** Deterministic rendering of examples for the Compare sheet. The
- *  authoritative representation is the raw canonical YAML text when present —
- *  it carries invalid/hand-written examples that the typed projection cannot —
- *  so two malformed examples that project identically still diff. Falls back to
- *  the typed projection only when no raw exists (fresh create/duplicate).
- *  Compared on its own row; never reported through the generic `extra` diff as
- *  well. */
+/** Deterministic, order-insensitive normalization of a `RawYaml` node for the
+ *  Compare sheet: mapping keys are sorted so key order never produces a spurious
+ *  diff, while sequence order is preserved because example array position is
+ *  meaningful. Covers every `RawYaml` kind exhaustively. */
+function normalizeRawYaml(node: RawYaml): string {
+  switch (node.kind) {
+    case 'null':
+      return 'null';
+    case 'bool':
+      return String(node.value);
+    case 'number':
+      return node.value.kind + ':' + String(node.value.value);
+    case 'string':
+      return JSON.stringify(node.value);
+    case 'sequence':
+      return '[' + node.items.map(normalizeRawYaml).join(',') + ']';
+    case 'mapping':
+      return (
+        '{' +
+        node.pairs
+          .map(([key, value]) => normalizeRawYaml(key) + ':' + normalizeRawYaml(value))
+          .sort()
+          .join(',') +
+        '}'
+      );
+    case 'tagged':
+      return '!' + node.tag + '(' + normalizeRawYaml(node.value) + ')';
+  }
+}
+
+/** Deterministic rendering of examples for the Compare sheet. The authoritative
+ *  representation is the raw semantic AST when present — it carries
+ *  invalid/hand-written examples that the typed projection cannot, so two
+ *  malformed examples that project identically still diff, while mapping key
+ *  order does not produce a spurious diff. Falls back to the typed projection
+ *  only when no raw exists (fresh create/duplicate). Compared on its own row;
+ *  never reported through the generic `extra` diff as well. */
 function renderExamples(metadata: PromptMetadata): string {
-  if (metadata.examplesRawYaml !== undefined) {
-    return metadata.examplesRawYaml;
+  if (metadata.examplesRaw !== undefined) {
+    return normalizeRawYaml(metadata.examplesRaw);
   }
   const value = metadata.examples;
   if (!value || !value.length) return '(none)';
