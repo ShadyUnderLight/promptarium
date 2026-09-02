@@ -46,6 +46,7 @@ pub fn run() {
             prompts::state::reveal_in_finder,
             prompts::state::resolve_prompt_assets,
             prompts::state::reveal_asset_in_finder,
+            prompts::state::asset_reference_from_selected_path,
             prompts::state::git_repository_info,
             prompts::state::git_file_history,
             prompts::state::git_file_diff,

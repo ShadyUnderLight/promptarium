@@ -1,10 +1,11 @@
 <script lang="ts">
-  import type { PromptMetadata as Metadata, PromptStatus, PromptSummary, VariableDoc } from '$lib/prompts/types';
+  import type { PromptMetadata as Metadata, PromptStatus, PromptSummary, VariableDoc, PromptExample } from '$lib/prompts/types';
   import { getVariantOf, getVariantOfRaw, withVariantOf } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
   import { setVariableDoc } from '$lib/variables/contract';
   import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
   import { wouldCreateVariantCycle } from '$lib/variants/variants';
+  import ExamplesEditor from './ExamplesEditor.svelte';
 
   interface Props {
     metadata: Metadata;
@@ -37,6 +38,9 @@
           Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }])
         )
       : undefined;
+    const examples = metadata.examples
+      ? metadata.examples.map((example) => structuredClone(example))
+      : undefined;
     return {
       ...metadata,
       tags: [...metadata.tags],
@@ -44,7 +48,18 @@
       related: [...metadata.related],
       extra: { ...metadata.extra },
       ...(variables ? { variables } : {}),
+      ...(examples ? { examples } : {}),
     };
+  }
+
+  /** Explicit Examples edits make the typed projection authoritative: clearing
+   *  `examplesRaw` lets the serializer re-emit from the fresh typed structure
+   *  instead of the stale hand-written AST (Issue #26 §6 / #24 preservation). */
+  function updateExamples(examples: PromptExample[]): void {
+    const next = clone();
+    next.examples = examples;
+    delete next.examplesRaw;
+    onChange(next);
   }
 
   function setField<K extends keyof Metadata>(field: K, value: Metadata[K]): void {
@@ -275,6 +290,7 @@
         <p class="detail-muted">No other prompt in this project is available as a variant parent.</p>
       {/if}
     </div>
+    <ExamplesEditor examples={metadata.examples ?? []} projectPath={projectPath} onChange={updateExamples} />
   </div>
 {:else}
   <dl class="metadata-inspector">

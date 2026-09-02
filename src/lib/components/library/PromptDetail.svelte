@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
+  import { cloneMetadata } from '$lib/prompts/duplicate';
   import {
     formatModifiedAt,
     library,
@@ -17,6 +18,7 @@
   import RelatedList from './RelatedList.svelte';
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
+  import ExamplesSection from './ExamplesSection.svelte';
 
   interface Props {
     document: PromptDocument | null;
@@ -128,20 +130,6 @@
   $effect(() => {
     onDirtyChange(dirty);
   });
-
-  function cloneMetadata(value: PromptMetadata): PromptMetadata {
-    const variables = value.variables
-      ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
-      : undefined;
-    return {
-      ...value,
-      tags: [...value.tags],
-      models: [...value.models],
-      related: [...value.related],
-      extra: { ...value.extra },
-      ...(variables ? { variables } : {}),
-    };
-  }
 
   function updateMetadata(value: PromptMetadata): void {
     metadata = value;
@@ -371,6 +359,9 @@
       {#if mode !== 'history'}
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
+        {#if mode === 'preview'}
+          <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
+        {/if}
         <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}

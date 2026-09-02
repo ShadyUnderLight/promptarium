@@ -1695,6 +1695,301 @@ body {
   font-size: 0.72rem;
 }
 
+/* Examples section (Issue #26): read-only preview in the Detail footer and the
+   CRUD editor in the Metadata inspector. File references carry a non-color
+   state chip (Ready / Missing / Invalid); only Ready references Reveal. */
+.examples-section,
+.examples-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.examples-section__heading,
+.examples-editor__heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.examples-section__heading {
+  color: var(--text-faint);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.examples-editor__hint {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+}
+
+.examples-editor__error {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--accent-result-err);
+  border-radius: 0.4rem;
+  color: var(--accent-result-err);
+  font-size: 0.72rem;
+}
+
+.examples-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.example-card,
+.example-edit-card {
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  background: var(--bg-card);
+}
+
+.example-card__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.78rem;
+  text-align: left;
+}
+
+.example-card__chevron {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+}
+
+.example-card__name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.example-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0 0.5rem 0.55rem;
+}
+
+.example-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.example-field__label {
+  color: var(--text-faint);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.example-text {
+  margin: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 12rem;
+  overflow: auto;
+}
+
+.example-notes {
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg-subtle);
+  font-size: 0.74rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.example-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.example-file-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg-subtle);
+  font-size: 0.72rem;
+}
+
+.example-file-row__ref {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.example-file-row__kind {
+  color: var(--text-muted);
+  font-size: 0.66rem;
+}
+
+.example-file-row__state,
+.example-chip {
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.example-file-row__state--ready,
+.example-chip--ready { color: #159570; }
+.example-file-row__state--missing,
+.example-chip--missing { color: #c98222; }
+.example-file-row__state--invalid,
+.example-chip--invalid { color: var(--accent-result-err); }
+
+.example-file-row__reveal {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-snippet);
+  font-size: 0.68rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Examples editor (CRUD, Issue #26 §6-§9) */
+.example-edit-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.5rem;
+}
+
+.example-edit-card__header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.example-edit-card__name {
+  flex: 1 1 10rem;
+  min-width: 0;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.example-edit-card__fallback {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-style: italic;
+}
+
+.example-edit-card__move {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.example-edit-card__move:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.example-edit-card__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.example-file-edit,
+.example-inline-edit,
+.example-assets-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.example-file-edit__row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.example-file-edit__row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+  padding: 0.28rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.example-inline-edit textarea {
+  width: 100%;
+  min-height: 3.5rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.3rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.example-assets-edit__actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-snippet);
+  font-size: 0.68rem;
+  text-decoration: underline;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
 .detail-footer {
   max-width: 54rem;
 }
