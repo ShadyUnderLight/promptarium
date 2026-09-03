@@ -1,15 +1,18 @@
 /**
- * Pure-function tests for incremental search index planning.
+ * Pure-function tests for the direct-rebuild search index.
+ *
+ * Every refresh rebuilds each entry from this round's body read — there is no
+ * mtime/size identity reuse — so an unchanged summary still picks up a
+ * changed body, and a single failed body read degrades to a summary-only entry
+ * without clearing the rest of the index.
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const {
-  fingerprintsMatch,
-  planIndexRefresh,
-  summaryFingerprint,
-} = await import(join(root, 'src/lib/library/search-index.ts'));
+const { buildSearchIndex, searchEntryFromDocument } = await import(
+  join(root, 'src/lib/library/search-index.ts')
+);
 
 let failures = 0;
 
@@ -35,7 +38,7 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(name, modifiedAt = 1000, sizeBytes = 100, description = '') {
+function summary(name, modifiedAt = 1000, description = '') {
   return {
     projectPath: '/project-a',
     relativePath: name + '.md',
@@ -44,118 +47,100 @@ function summary(name, modifiedAt = 1000, sizeBytes = 100, description = '') {
     extension: '.md',
     metadata: { ...defaultMetadata, description },
     modifiedAt,
-    sizeBytes,
     hasFrontmatter: false,
   };
 }
 
-function entry(name, modifiedAt, sizeBytes, bodyLower = 'alpha body', variableCount = 1) {
-  const s = summary(name, modifiedAt, sizeBytes);
+function document(name, modifiedAt, body) {
   return {
-    summary: s,
-    fingerprint: { modifiedAt, sizeBytes },
-    bodyLower,
-    variableCount,
+    ...summary(name, modifiedAt),
+    body,
+    raw: body,
   };
 }
 
-function planNames(plan) {
-  return {
-    reused: [...plan.reused.keys()].sort(),
-    toRead: plan.toRead.map((item) => item.name).sort(),
-    removed: [...plan.removed].sort(),
-  };
+console.log('searchEntryFromDocument derives search fields from the body');
+{
+  const entry = searchEntryFromDocument(document('a', 1000, 'body with {var1} and {var2}'));
+  eq(entry.bodyLower, 'body with {var1} and {var2}', 'body lowered for search');
+  eq(entry.variableCount, 2, 'variable count from one body pass');
+  eq(entry.variableNames, ['var1', 'var2'], 'variable names in first-appearance order');
+  eq(entry.bodyEmpty, false, 'non-empty body');
 }
 
-console.log('fingerprints');
-eq(
-  fingerprintsMatch({ modifiedAt: 1, sizeBytes: 2 }, { modifiedAt: 1, sizeBytes: 2 }),
-  true,
-  'matching fingerprints'
-);
-eq(
-  fingerprintsMatch({ modifiedAt: 1, sizeBytes: 2 }, { modifiedAt: 1, sizeBytes: 3 }),
-  false,
-  'size mismatch'
-);
-eq(
-  fingerprintsMatch({ modifiedAt: 1, sizeBytes: 2 }, { modifiedAt: 2, sizeBytes: 2 }),
-  false,
-  'mtime mismatch'
-);
-
-console.log('first build reads everything');
+console.log('empty body is flagged by the parser pass');
 {
-  const plan = planIndexRefresh(undefined, [summary('a'), summary('b')]);
-  eq(planNames(plan), { reused: [], toRead: ['a', 'b'], removed: [] }, 'no old index');
+  const entry = searchEntryFromDocument(document('a', 1000, '   '));
+  eq(entry.bodyEmpty, true, 'whitespace-only body');
+  eq(entry.variableCount, 0, 'no variables');
 }
 
-console.log('unchanged summaries reuse entries');
+console.log('first build reads every body');
 {
-  const old = new Map([
-    ['a', entry('a', 1000, 100)],
-    ['b', entry('b', 2000, 200)],
-  ]);
-  const plan = planIndexRefresh(old, [summary('a', 1000, 100), summary('b', 2000, 200)]);
-  eq(planNames(plan), { reused: ['a', 'b'], toRead: [], removed: [] }, 'all reused');
-  eq(plan.reused.get('a')?.bodyLower, 'alpha body', 'body cache preserved');
+  const { index, stats } = await buildSearchIndex([summary('a'), summary('b')], {
+    readBody: async (prompt) => searchEntryFromDocument(document(prompt.name, 1000, 'body of ' + prompt.name)),
+  });
+  eq(stats.planned, 2, 'planned both prompts');
+  eq(stats.bodyReads, 2, 'read both bodies');
+  eq(stats.failedReads, 0, 'no failed reads');
+  eq([...index.keys()].sort(), ['a', 'b'], 'both entries indexed');
+  eq(index.get('a')?.bodyLower, 'body of a', 'body searchable');
 }
 
-console.log('single file change only rereads that file');
+console.log('single-file body read failure keeps a summary-only entry');
 {
-  const old = new Map([
-    ['a', entry('a', 1000, 100)],
-    ['b', entry('b', 2000, 200)],
-  ]);
-  const plan = planIndexRefresh(old, [summary('a', 1000, 100), summary('b', 2000, 201)]);
-  eq(planNames(plan), { reused: ['a'], toRead: ['b'], removed: [] }, 'one changed');
+  const { index, stats } = await buildSearchIndex([summary('a'), summary('b')], {
+    readBody: async (prompt) => {
+      if (prompt.name === 'a') throw new Error('read failed');
+      return searchEntryFromDocument(document(prompt.name, 1000, 'body of ' + prompt.name));
+    },
+  });
+  eq(stats.failedReads, 1, 'one failed read counted');
+  eq(stats.bodyReads, 2, 'both bodies attempted');
+  eq(index.get('a')?.bodyLower, '', 'failed prompt keeps summary-only entry');
+  eq(index.get('b')?.bodyLower, 'body of b', 'healthy prompt unaffected');
 }
 
-console.log('new file only reads new file');
+console.log('summary unchanged but body changed this round is picked up (no mtime/size reuse)');
 {
-  const old = new Map([['a', entry('a', 1000, 100)]]);
-  const plan = planIndexRefresh(old, [summary('a', 1000, 100), summary('new-file', 3000, 300)]);
-  eq(planNames(plan), { reused: ['a'], toRead: ['new-file'], removed: [] }, 'new prompt');
+  const summaries = [summary('a', 1000, 'same description')];
+  const first = await buildSearchIndex(summaries, {
+    readBody: async () => searchEntryFromDocument(document('a', 1000, 'old body')),
+  });
+  eq(first.index.get('a')?.bodyLower, 'old body', 'first round reads old body');
+
+  const second = await buildSearchIndex(summaries, {
+    readBody: async () => searchEntryFromDocument(document('a', 1000, 'new body')),
+  });
+  eq(second.index.get('a')?.bodyLower, 'new body', 'identical summary still picks up the new body');
 }
 
-console.log('deleted file removes entry');
+console.log('entry summary reflects the read document (authoritative disk state)');
 {
-  const old = new Map([
-    ['a', entry('a', 1000, 100)],
-    ['gone', entry('gone', 2000, 200)],
-  ]);
-  const plan = planIndexRefresh(old, [summary('a', 1000, 100)]);
-  eq(planNames(plan), { reused: ['a'], toRead: [], removed: ['gone'] }, 'removed prompt');
-}
-
-console.log('rename is remove old plus read new');
-{
-  const old = new Map([['old-name', entry('old-name', 1000, 100)]]);
-  const plan = planIndexRefresh(old, [summary('new-name', 1000, 100)]);
-  eq(planNames(plan), { reused: [], toRead: ['new-name'], removed: ['old-name'] }, 'rename identity');
-}
-
-console.log('reused entry updates summary metadata');
-{
-  const old = new Map([['a', entry('a', 1000, 100, 'alpha body', 2)]]);
-  const plan = planIndexRefresh(old, [summary('a', 1000, 100, 'updated description')]);
-  eq(plan.reused.get('a')?.summary.metadata.description, 'updated description', 'summary refreshed');
-  eq(plan.reused.get('a')?.bodyLower, 'alpha body', 'body cache kept');
-  eq(plan.reused.get('a')?.variableCount, 2, 'variable count kept');
+  const diskDescription = 'description from the read document';
+  const { index } = await buildSearchIndex([summary('a', 1000)], {
+    readBody: async () =>
+      searchEntryFromDocument({
+        ...document('a', 1000, 'body'),
+        metadata: { ...defaultMetadata, description: diskDescription },
+      }),
+  });
+  eq(index.get('a')?.summary.metadata.description, diskDescription, 'summary comes from this round body read');
 }
 
 console.log('project isolation via separate maps');
 {
-  const projectA = new Map([['shared', entry('shared', 1000, 100)]]);
-  const projectB = new Map([['shared', entry('shared', 5000, 500, 'other body', 3)]]);
-  const planA = planIndexRefresh(projectA, [summary('shared', 1000, 100)]);
-  const planB = planIndexRefresh(projectB, [summary('shared', 5000, 500)]);
-  eq(planA.reused.get('shared')?.bodyLower, 'alpha body', 'project A cache');
-  eq(planB.reused.get('shared')?.bodyLower, 'other body', 'project B cache');
+  const build = async (body) => {
+    const { index } = await buildSearchIndex([summary('shared', 1000)], {
+      readBody: async () => searchEntryFromDocument({ ...document('shared', 1000, body) }),
+    });
+    return index;
+  };
+  const projectA = await build('alpha body');
+  const projectB = await build('other body');
+  eq(projectA.get('shared')?.bodyLower, 'alpha body', 'project A body');
+  eq(projectB.get('shared')?.bodyLower, 'other body', 'project B body');
 }
-
-console.log('summary fingerprint helper');
-eq(summaryFingerprint(summary('x', 42, 99)), { modifiedAt: 42, sizeBytes: 99 }, 'fingerprint from summary');
 
 if (failures > 0) {
   console.error('\n' + failures + ' search index test(s) failed');

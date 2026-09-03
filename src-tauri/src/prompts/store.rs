@@ -243,7 +243,6 @@ pub struct PromptSummary {
     pub extension: String,
     pub metadata: PromptMetadata,
     pub modified_at: u64,
-    pub size_bytes: u64,
     pub has_frontmatter: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frontmatter_error: Option<String>,
@@ -642,7 +641,7 @@ fn modified_at(path: &Path) -> u64 {
 
 /// Modified timestamp (ms since epoch) from an already-obtained metadata
 /// snapshot, without re-stating the path. Callers that already hold a
-/// `symlink_metadata` result pass it here so state / size / modifiedAt all come
+/// `symlink_metadata` result pass it here so state and modifiedAt both come
 /// from one filesystem snapshot — never a second, symlink-following stat.
 fn modified_at_from_metadata(metadata: &fs::Metadata) -> Option<u64> {
     metadata
@@ -650,12 +649,6 @@ fn modified_at_from_metadata(metadata: &fs::Metadata) -> Option<u64> {
         .ok()
         .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_millis() as u64)
-}
-
-fn file_size(path: &Path) -> u64 {
-    fs::metadata(path)
-        .map(|metadata| metadata.len())
-        .unwrap_or(0)
 }
 
 fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, ParsedPrompt)> {
@@ -685,7 +678,6 @@ fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, Par
         extension: ".md".to_string(),
         metadata: parsed.metadata.clone(),
         modified_at: modified_at(path),
-        size_bytes: file_size(path),
         has_frontmatter: parsed.has_frontmatter,
         frontmatter_error: parsed.frontmatter_error.clone(),
     };
@@ -1616,7 +1608,6 @@ mod tests {
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].name, "coding/review");
         assert_eq!(prompts[0].folder, "coding");
-        assert!(prompts[0].size_bytes > 0);
         assert!(!prompts[0].has_frontmatter);
         let document = read_prompt(&dir, "coding/review").unwrap();
         assert_eq!(

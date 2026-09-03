@@ -48,12 +48,9 @@ import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType } from './
 import { cloneMetadata, duplicateMetadata, variantMetadata } from './prompts/duplicate';
 import { findVariantCycleMembers } from './variants/variants';
 import {
-  buildSearchIndexFromPlan,
+  buildSearchIndex,
   buildUntilRevisionStable,
-  fingerprintsMatch,
-  planIndexRefresh,
   searchEntryFromDocument,
-  summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
 import {
@@ -61,7 +58,7 @@ import {
   type PromptHealthIssue,
   type PromptHealthInput,
 } from './health/health';
-import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
+import { summaryFromDocument } from './library/selected-document';
 import { matchesLibraryFilters } from './library/visible-filter';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
@@ -155,7 +152,6 @@ const variableCounts = new Map<string, number>();
 const healthIndex = new Map<string, PromptHealthIssue[]>();
 const fsRefreshScheduler = new FsRefreshScheduler(300);
 
-let selectedOpenedFingerprint: ReturnType<typeof summaryFingerprint> | null = null;
 let editorDirtyProvider: (() => boolean) | null = null;
 let fsUnlisten: (() => void) | null = null;
 let fsErrorUnlisten: (() => void) | null = null;
@@ -205,7 +201,6 @@ function setSelectedDocument(document: PromptDocument): void {
   library.selectedProjectPath = document.projectPath;
   library.selectedName = document.name;
   library.selected = document;
-  selectedOpenedFingerprint = openedFingerprintForDocument(document);
   library.externalChangeState = null;
 }
 
@@ -213,7 +208,6 @@ function clearSelectedDocument(): void {
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
 }
 
@@ -319,34 +313,19 @@ async function refreshSearchIndex(
       serial !== loadSerial ||
       (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath),
     build: async () => {
-      const oldIndex = searchIndexes.get(projectPath);
-      const plan = planIndexRefresh(oldIndex, summaries);
-      const built = await buildSearchIndexFromPlan(plan, {
-        projectPath,
+      const built = await buildSearchIndex(summaries, {
         readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
-        selectedEntry: (prompt) => {
-          const selected = library.selected;
-          if (
-            selected &&
-            selected.projectPath === projectPath &&
-            selected.name === prompt.name &&
-            fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
-          ) {
-            return searchEntryFromDocument(selected);
-          }
-          return null;
-        },
       });
-      return { plan, ...built };
+      return built;
     },
-    commit: ({ index, stats, plan }) => {
+    commit: ({ index, stats }) => {
       searchIndexes.set(projectPath, index);
       syncVariableCounts(projectPath, index);
       rebuildProjectHealth(projectPath, index);
       library.searchIndexVersion++;
       if (import.meta.env.DEV) {
         console.debug(
-          `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
+          `[index] project=${projectPath} planned=${stats.planned} read=${stats.bodyReads} failed=${stats.failedReads}`
         );
       }
     },
@@ -508,7 +487,6 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     library.selected = null;
     library.selectedProjectPath = null;
     library.selectedName = null;
-    selectedOpenedFingerprint = null;
     library.externalChangeState = null;
     return;
   }
@@ -541,7 +519,6 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
       selectedName: library.selectedName,
       summaries,
       editorDirty,
-      openedFingerprint: selectedOpenedFingerprint,
       reloadSelected,
     });
 
@@ -582,7 +559,6 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
         library.selected = null;
         library.selectedProjectPath = null;
         library.selectedName = null;
-        selectedOpenedFingerprint = null;
       } else {
         library.externalChangeState = 'file_missing';
       }
@@ -654,7 +630,6 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
           selectedProjectPath: library.selectedProjectPath,
           selectedName: library.selectedName,
           editorDirty,
-          openedFingerprint: selectedOpenedFingerprint,
           reloadSelected,
         });
         library.allProjectsHealthyPaths = plan.healthyProjectPaths;
@@ -725,7 +700,6 @@ export async function setActiveProject(path: string): Promise<void> {
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';
@@ -763,7 +737,6 @@ export async function replaceProjectPath(oldPath: string, newPath: string): Prom
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';

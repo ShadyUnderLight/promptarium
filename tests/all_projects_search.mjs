@@ -49,7 +49,6 @@ function summary(projectPath, name, description = '', tags = [], status = 'activ
     extension: '.md',
     metadata: { ...defaultMetadata, description, tags: [...tags], status },
     modifiedAt: 1000,
-    sizeBytes: 100,
     hasFrontmatter: false,
   };
 }
@@ -57,7 +56,6 @@ function summary(projectPath, name, description = '', tags = [], status = 'activ
 function entry(projectPath, name, bodyLower, description = '', tags = []) {
   return {
     summary: summary(projectPath, name, description, tags),
-    fingerprint: { modifiedAt: 1000, sizeBytes: 100 },
     bodyLower,
     variableCount: 0,
   };
@@ -303,7 +301,6 @@ console.log('planAllProjectsGlobalCommit binds visible prompts to the committed 
     selectedProjectPath: null,
     selectedName: null,
     editorDirty: false,
-    openedFingerprint: null,
     reloadSelected: true,
   });
 
@@ -316,7 +313,6 @@ console.log('planAllProjectsGlobalCommit binds visible prompts to the committed 
 
 console.log('planAllProjectsGlobalCommit plans selected refresh from the same snapshot');
 {
-  const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
   const committedSummary = summary('/project-a', 'foo', 'stable@5', [], 'active');
   const projects = [{ name: 'Work', path: '/project-a' }];
 
@@ -328,12 +324,11 @@ console.log('planAllProjectsGlobalCommit plans selected refresh from the same sn
     selectedProjectPath: '/project-a',
     selectedName: 'foo',
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(committedSummary),
     reloadSelected: false,
   });
 
-  eq(plan.decision.externalChange, null, 'selected decision uses the same snapshot as prompts');
-  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved when snapshot matches fingerprint');
+  eq(plan.decision.externalChange, null, 'dirty editor with a present file stays quiet (no mtime/size predication)');
+  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved on refresh');
 }
 
 if (failures) {

@@ -1,15 +1,18 @@
 /**
- * Orchestration tests for incremental search index refresh (stale swap + read stats).
+ * Orchestration tests for the direct-rebuild search index (stale swap + read stats).
+ *
+ * The index is rebuilt from this round's bodies and committed only when the
+ * revision is stable, so a save landing during a rebuild never lets a stale
+ * candidate overwrite the live index.
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
-  buildSearchIndexFromPlan,
+  buildSearchIndex,
   buildUntilRevisionStable,
   isStaleSearchIndexSwap,
-  planIndexRefresh,
   searchEntryFromDocument,
 } = await import(join(root, 'src/lib/library/search-index.ts'));
 
@@ -37,7 +40,7 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(name, modifiedAt = 1000, sizeBytes = 100) {
+function summary(name, modifiedAt = 1000) {
   return {
     projectPath: '/project-a',
     relativePath: name + '.md',
@@ -46,159 +49,155 @@ function summary(name, modifiedAt = 1000, sizeBytes = 100) {
     extension: '.md',
     metadata: defaultMetadata,
     modifiedAt,
-    sizeBytes,
     hasFrontmatter: false,
   };
 }
 
-function document(name, modifiedAt, sizeBytes, body) {
+function document(name, modifiedAt, body) {
   return {
-    ...summary(name, modifiedAt, sizeBytes),
+    ...summary(name, modifiedAt),
     body,
     raw: body,
   };
-}
-
-function entry(name, modifiedAt, sizeBytes, bodyLower, variableCount) {
-  return searchEntryFromDocument(document(name, modifiedAt, sizeBytes, bodyLower));
 }
 
 console.log('stale swap detection');
 eq(isStaleSearchIndexSwap(0, 0), false, 'unchanged revision');
 eq(isStaleSearchIndexSwap(0, 1), true, 'mutation during rebuild');
 
-console.log('build stats count body reads separately from selected reuse');
+console.log('build stats count body reads');
 {
-  const plan = planIndexRefresh(undefined, [summary('a'), summary('b')]);
-  const selected = searchEntryFromDocument(document('a', 1000, 100, 'selected body'));
-  const { stats } = await buildSearchIndexFromPlan(plan, {
-    projectPath: '/project-a',
-    selectedEntry: (prompt) => (prompt.name === 'a' ? selected : null),
-    readBody: async (prompt) => searchEntryFromDocument(document(prompt.name, 1000, 100, 'read body')),
+  const { stats } = await buildSearchIndex([summary('a'), summary('b')], {
+    readBody: async (prompt) => searchEntryFromDocument(document(prompt.name, 1000, 'read body')),
   });
   eq(stats.planned, 2, 'planned both prompts');
-  eq(stats.selectedReuses, 1, 'one selected reuse');
-  eq(stats.bodyReads, 1, 'one native body read');
+  eq(stats.bodyReads, 2, 'read both bodies');
+  eq(stats.failedReads, 0, 'no failed reads');
 }
 
-console.log('deferred rebuild does not clobber a saved entry when revision changes');
+console.log('copy-on-rebuild: the complete map is produced before swap');
 {
-  const projectPath = '/project-a';
-  const oldIndex = new Map([['a', entry('a', 1000, 100, 'old body')]]);
-  const scanSummaries = [summary('a', 1000, 100)];
-  const revisionAtStart = 0;
+  const { index } = await buildSearchIndex([summary('a'), summary('b')], {
+    readBody: async (prompt) => searchEntryFromDocument(document(prompt.name, 1000, 'read body')),
+  });
+  eq([...index.keys()].sort(), ['a', 'b'], 'full map built in one pass');
+  assert(index instanceof Map, 'result is a fresh Map, never a partial view');
+}
 
-  const plan = planIndexRefresh(oldIndex, scanSummaries);
-  const { index: staleCandidate } = await buildSearchIndexFromPlan(plan, {
-    projectPath,
-    readBody: async () => {
-      throw new Error('unchanged prompt should reuse cached body without reading');
+console.log('single-file body read failure keeps summary-only entry');
+{
+  const { index, stats } = await buildSearchIndex([summary('a'), summary('b')], {
+    readBody: async (prompt) => {
+      if (prompt.name === 'a') throw new Error('read failed');
+      return searchEntryFromDocument(document(prompt.name, 1000, 'read body'));
     },
   });
-  eq(staleCandidate.get('a')?.bodyLower, 'old body'.toLowerCase(), 'candidate reuses stale cached body');
-
-  const saved = document('a', 2000, 150, 'saved body {x} {y}');
-  const liveIndex = new Map([['a', searchEntryFromDocument(saved)]]);
-  const revision = 1;
-
-  assert(isStaleSearchIndexSwap(revisionAtStart, revision), 'save bumped revision during rebuild');
-  assert(!isStaleSearchIndexSwap(revisionAtStart, revisionAtStart), 'swap proceeds when revision unchanged');
-
-  const replan = planIndexRefresh(liveIndex, scanSummaries);
-  eq(replan.toRead.map((item) => item.name), ['a'], 'replan rereads prompt whose live fingerprint diverged');
-  const { index: freshIndex } = await buildSearchIndexFromPlan(replan, {
-    projectPath,
-    readBody: async () => searchEntryFromDocument(saved),
-  });
-  eq(freshIndex.get('a')?.bodyLower, 'saved body {x} {y}'.toLowerCase(), 'fresh index keeps saved body');
-  eq(freshIndex.get('a')?.variableCount, 2, 'fresh index keeps saved variable count');
+  eq(stats.failedReads, 1, 'one failed read');
+  eq(stats.bodyReads, 2, 'both bodies attempted');
+  eq(index.get('a')?.bodyLower, '', 'failed prompt keeps summary-only entry');
+  eq(index.get('b')?.bodyLower, 'read body', 'healthy prompt still indexed');
 }
 
-console.log('replan after save preserves unrelated reused entries');
+console.log('save during rebuild invalidates stale candidate via revision barrier');
 {
-  const savedA = document('a', 3000, 120, 'newer saved body {a}');
-  const liveIndex = new Map([
-    ['a', searchEntryFromDocument(savedA)],
-    ['b', entry('b', 2000, 200, 'stable body')],
-  ]);
-  const staleScan = [summary('a', 1000, 100), summary('b', 2000, 200)];
-  const replan = planIndexRefresh(liveIndex, staleScan);
-  eq(replan.toRead.map((item) => item.name), ['a'], 'only changed prompt is reread');
-  eq([...replan.reused.keys()], ['b'], 'stable prompt stays reused');
+  let revision = 0;
+  let readCount = 0;
+  let committedIndex = null;
+
+  const result = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => {
+      readCount++;
+      const { index } = await buildSearchIndex([summary('a')], {
+        readBody: async () => {
+          if (readCount === 1) {
+            // A save lands while the first build is reading: bump the revision
+            // so the candidate built from the pre-save body is discarded.
+            revision = 1;
+            return searchEntryFromDocument(document('a', 1000, 'old body'));
+          }
+          return searchEntryFromDocument(document('a', 2000, 'saved body {x} {y}'));
+        },
+      });
+      return index;
+    },
+    commit: (index) => {
+      committedIndex = index;
+    },
+  });
+
+  eq(readCount, 2, 'stale first candidate triggers awaited rebuild');
+  eq(result?.retried, true, 'retry flag set when revision moved during build');
+  eq(committedIndex.get('a')?.bodyLower, 'saved body {x} {y}'.toLowerCase(), 'committed index keeps saved body');
+  eq(committedIndex.get('a')?.variableCount, 2, 'committed index keeps saved variable count');
 }
 
 console.log('suspended body read cannot clobber a saved entry');
 {
-  const projectPath = '/project-a';
-  const plan = planIndexRefresh(undefined, [summary('a', 1000, 100)]);
+  let revision = 0;
+  let buildCount = 0;
   let releaseRead;
   const readGate = new Promise((resolve) => {
     releaseRead = resolve;
   });
+  let committedIndex = null;
 
-  const buildPromise = buildSearchIndexFromPlan(plan, {
-    projectPath,
-    readBody: async () => {
-      await readGate;
-      return searchEntryFromDocument(document('a', 1000, 100, 'slow disk body'));
+  const buildPromise = buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => {
+      buildCount++;
+      const { index } = await buildSearchIndex([summary('a')], {
+        readBody: async () => {
+          if (buildCount === 1) {
+            await readGate;
+            return searchEntryFromDocument(document('a', 1000, 'slow disk body'));
+          }
+          return searchEntryFromDocument(document('a', 2000, 'saved during read {x}'));
+        },
+      });
+      return index;
+    },
+    commit: (index) => {
+      committedIndex = index;
     },
   });
 
-  const saved = document('a', 2000, 150, 'saved during read {x}');
-  const liveIndex = new Map([['a', searchEntryFromDocument(saved)]]);
-  const revisionAtStart = 0;
-  const revisionAfterSave = 1;
-
-  assert(isStaleSearchIndexSwap(revisionAtStart, revisionAfterSave), 'save during suspended read');
-
+  // A save lands while the first body read is still suspended.
+  revision = 1;
   releaseRead();
-  const { index: staleCandidate, stats } = await buildPromise;
-  eq(stats.bodyReads, 1, 'one deferred body read');
-  eq(staleCandidate.get('a')?.bodyLower, 'slow disk body'.toLowerCase(), 'candidate built from slow read');
 
-  const replan = planIndexRefresh(liveIndex, [summary('a', 1000, 100)]);
-  const { index: freshIndex } = await buildSearchIndexFromPlan(replan, {
-    projectPath,
-    readBody: async () => searchEntryFromDocument(saved),
-  });
-  eq(freshIndex.get('a')?.bodyLower, 'saved during read {x}'.toLowerCase(), 'replan keeps saved body');
-  eq(freshIndex.get('a')?.variableCount, 1, 'replan keeps saved variable count');
+  const result = await buildPromise;
+  eq(buildCount, 2, 'stale suspended candidate triggers awaited rebuild');
+  eq(committedIndex.get('a')?.bodyLower, 'saved during read {x}'.toLowerCase(), 'committed index keeps saved body');
+  eq(committedIndex.get('a')?.variableCount, 1, 'committed index keeps saved variable count');
 }
 
 console.log('save before first live index bumps revision and blocks stale swap');
 {
-  const projectPath = '/project-a';
   let revision = 0;
-  const bumpRevision = () => {
-    revision += 1;
-  };
+  const summaries = [summary('a'), summary('b')];
   const revisionAtStart = revision;
 
-  const plan = planIndexRefresh(undefined, [summary('a', 1000, 100), summary('b', 2000, 200)]);
-  const { index: staleCandidate } = await buildSearchIndexFromPlan(plan, {
-    projectPath,
-    readBody: async (prompt) =>
-      searchEntryFromDocument(document(prompt.name, prompt.modifiedAt, prompt.sizeBytes, `${prompt.name} old body`)),
+  const stale = await buildSearchIndex(summaries, {
+    readBody: async (prompt) => searchEntryFromDocument(document(prompt.name, 1000, prompt.name + ' old body')),
   });
-  eq(staleCandidate.get('a')?.bodyLower, 'a old body'.toLowerCase(), 'candidate caches old body for A');
+  eq(stale.index.get('a')?.bodyLower, 'a old body', 'candidate built from pre-save body');
 
-  const saved = document('a', 3000, 120, 'saved before live index {x} {y}');
-  bumpRevision();
+  const saved = document('a', 3000, 'saved before live index {x} {y}');
+  revision = 1;
   eq(revision, 1, 'save mutation bumps revision even without a live index');
 
   assert(isStaleSearchIndexSwap(revisionAtStart, revision), 'first-build save invalidates candidate swap');
 
-  const replan = planIndexRefresh(undefined, [summary('a', 1000, 100), summary('b', 2000, 200)]);
-  const { index: freshIndex } = await buildSearchIndexFromPlan(replan, {
-    projectPath,
+  const fresh = await buildSearchIndex(summaries, {
     readBody: async (prompt) =>
       prompt.name === 'a'
         ? searchEntryFromDocument(saved)
-        : searchEntryFromDocument(document(prompt.name, prompt.modifiedAt, prompt.sizeBytes, `${prompt.name} fresh body`)),
+        : searchEntryFromDocument(document(prompt.name, 1000, prompt.name + ' fresh body')),
   });
-  eq(freshIndex.get('a')?.bodyLower, 'saved before live index {x} {y}'.toLowerCase(), 'replan reads saved body for A');
-  eq(freshIndex.get('a')?.variableCount, 2, 'replan reads saved variable count for A');
-  eq(freshIndex.get('b')?.bodyLower, 'b fresh body'.toLowerCase(), 'replan still builds remaining prompts');
+  eq(fresh.index.get('a')?.bodyLower, 'saved before live index {x} {y}'.toLowerCase(), 'rebuild reads saved body for A');
+  eq(fresh.index.get('a')?.variableCount, 2, 'rebuild reads saved variable count for A');
+  eq(fresh.index.get('b')?.bodyLower, 'b fresh body', 'rebuild still builds remaining prompts');
 }
 
 console.log('buildUntilRevisionStable awaits retry until revision stabilizes');

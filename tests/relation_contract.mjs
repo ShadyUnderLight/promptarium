@@ -49,7 +49,6 @@ function summary(projectPath, name, related = []) {
       extra: {},
     },
     modifiedAt: 0,
-    sizeBytes: 0,
     hasFrontmatter: true,
   };
 }

@@ -2,7 +2,7 @@
 
 Promptarium has completed the core local-first Prompt Library: a Project is a
 real folder, a Prompt is a real `.md` file identified by its relative path,
-Git History and incremental indexing exist, the Filesystem Watcher keeps the
+Git History and search indexing exist, the Filesystem Watcher keeps the
 library in sync, and All Projects search spans the whole vault.
 
 The next phase moves the product from "a Markdown library that manages prompts"

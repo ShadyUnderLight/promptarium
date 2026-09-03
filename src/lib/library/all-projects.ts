@@ -1,6 +1,5 @@
 import type { Project, PromptSummary } from '$lib/prompts/types';
 import { decideSelectedRefresh, type SelectedRefreshDecision } from './refresh-selected';
-import type { EntryFingerprint } from './search-index';
 import { promptKey } from './scope';
 
 const ALL_PROJECTS_CONCURRENCY = 4;
@@ -157,7 +156,6 @@ export interface AllProjectsGlobalCommitInput {
   selectedProjectPath: string | null;
   selectedName: string | null;
   editorDirty: boolean;
-  openedFingerprint: EntryFingerprint | null;
   reloadSelected: boolean;
 }
 
@@ -186,7 +184,6 @@ export function planAllProjectsGlobalCommit(input: AllProjectsGlobalCommitInput)
     selectedName: input.selectedName,
     summaries,
     editorDirty: input.editorDirty,
-    openedFingerprint: input.openedFingerprint,
     reloadSelected: input.reloadSelected,
   });
   const selectedReload =
