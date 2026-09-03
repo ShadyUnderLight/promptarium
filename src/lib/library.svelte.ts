@@ -73,6 +73,7 @@ import {
   mergeSearchResults,
   planAllProjectsGlobalCommit,
   refreshAllProjectsProjectScan,
+  refreshProjectScopeSnapshot,
   searchProjectIndex,
   type ProjectScanResult,
 } from './library/all-projects';
@@ -498,31 +499,37 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
   library.refreshing = projectRefreshFlags.refreshing;
   library.loading = true;
   try {
-    const [summaries, folders] = await Promise.all([apiScanProject(project), apiListFolders(project)]);
-    if (serial !== loadSerial) return;
-    library.allPrompts = summaries;
-    library.folderPaths = folders;
+    // Scan + index rebuild + the UI snapshot below share one stable-revision
+    // interval (refreshProjectScopeSnapshot rescans if a save lands during the
+    // rebuild). The await also makes refresh completion — and therefore the
+    // filesystem scheduler's single-flight — cover this round's body reads, so
+    // a second refresh cannot start another full rebuild while this one reads.
+    const snapshot = await refreshProjectScopeSnapshot({
+      projectPath: project,
+      scanProject: apiScanProject,
+      listFolders: apiListFolders,
+      refreshSearchIndex: (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
+      getRevision: searchIndexRevision,
+      shouldAbort: () => serial !== loadSerial || project !== library.activeProjectPath,
+    });
+    if (!snapshot) return;
+    library.allPrompts = snapshot.summaries;
+    library.folderPaths = snapshot.folders;
     library.error = null;
-    // Await the full index rebuild so refresh completion — and therefore the
-    // filesystem scheduler's single-flight — covers this round's body reads.
-    // Fire-and-forget would let a second refresh start another full rebuild
-    // while this one is still reading every body.
-    await refreshSearchIndex(project, summaries, serial);
-    if (serial !== loadSerial) return;
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
       const indexed = searchIndexed(project, query);
       library.prompts = indexed ?? (await apiSearchPrompts(project, query));
     } else {
-      library.prompts = summaries;
+      library.prompts = snapshot.summaries;
     }
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
 
     const decision = decideSelectedRefresh({
       selectedProjectPath: library.selectedProjectPath,
       selectedName: library.selectedName,
-      summaries,
+      summaries: snapshot.summaries,
       editorDirty,
       reloadSelected,
     });
@@ -542,7 +549,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
       decision.reloadSelected &&
       selectedName &&
       selectedProject === project &&
-      summaries.some((prompt) => prompt.name === selectedName)
+      snapshot.summaries.some((prompt) => prompt.name === selectedName)
     ) {
       const selected = await apiReadPrompt(project, selectedName);
       if (

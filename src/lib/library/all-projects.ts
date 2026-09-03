@@ -267,6 +267,39 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
+export interface ProjectScopeSnapshot {
+  summaries: PromptSummary[];
+  folders: string[];
+}
+
+/** Project-scope analog of refreshAllProjectsProjectScan: the scan and the index
+ *  rebuild share one stable-revision interval, so the caller can commit the
+ *  visible list from the same snapshot the index was built from. If a save bumps
+ *  the revision during the rebuild, the pre-save scan is discarded and everything
+ *  is rescanned — a stale summary must never be committed to the UI list. */
+export async function refreshProjectScopeSnapshot(options: {
+  projectPath: string;
+  scanProject: (projectPath: string) => Promise<PromptSummary[]>;
+  listFolders: (projectPath: string) => Promise<string[]>;
+  refreshSearchIndex: (projectPath: string, summaries: PromptSummary[]) => Promise<unknown>;
+  getRevision: (projectPath: string) => number;
+  shouldAbort?: () => boolean;
+}): Promise<ProjectScopeSnapshot | null> {
+  while (true) {
+    if (options.shouldAbort?.()) return null;
+    const revisionAtStart = options.getRevision(options.projectPath);
+    const [summaries, folders] = await Promise.all([
+      options.scanProject(options.projectPath),
+      options.listFolders(options.projectPath),
+    ]);
+    if (options.shouldAbort?.()) return null;
+    await options.refreshSearchIndex(options.projectPath, summaries);
+    if (options.shouldAbort?.()) return null;
+    if (revisionAtStart !== options.getRevision(options.projectPath)) continue;
+    return { summaries, folders };
+  }
+}
+
 export function summariesContainIdentity(
   summaries: PromptSummary[],
   projectPath: string,
