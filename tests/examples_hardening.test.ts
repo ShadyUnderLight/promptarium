@@ -51,6 +51,13 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
   return { promise, resolve, reject };
 }
 
+/** Yield microtasks plus a macrotask so a settled-but-stale `.then` callback
+ *  has actually run before the next assertion. */
+async function flushAsync(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 const RESOLVED: ResolvedPromptAsset = { reference: 'assets/ref.png', state: 'resolved', kind: 'image' };
 const MISSING: ResolvedPromptAsset = { reference: 'assets/ref.png', state: 'missing' };
 
@@ -118,7 +125,7 @@ describe('P1 — Cmd+S input sync (Edit view, oninput not onchange)', () => {
 });
 
 describe('P2 — project-scoped resolver lifecycle (Edit view)', () => {
-  it('switching Projects never shows the previous Ready; a slow stale response cannot overwrite', async () => {
+  it('a stale slow response cannot overwrite the committed state after switching Projects', async () => {
     const projectA = '/p/a';
     const projectB = '/p/b';
     const dA = deferred<ResolvedPromptAsset[]>();
@@ -129,27 +136,28 @@ describe('P2 — project-scoped resolver lifecycle (Edit view)', () => {
       props: { examples: singleExample, projectPath: projectA, onChange: vi.fn() },
     });
 
-    // Project A resolves Ready and shows the chip.
-    dA.resolve([{ ...RESOLVED }]);
-    await waitFor(() => expect(screen.getByText('Ready')).toBeTruthy());
-
-    // Switch to B: the new request starts, B's response is still pending.
+    // A's request stays PENDING. Switch to B before A settles — only then can
+    // A's response arrive late (resolving it twice is a no-op).
     await rerender({ examples: singleExample, projectPath: projectB, onChange: vi.fn() });
     expect(resolveMock).toHaveBeenCalledTimes(2);
     expect(resolveMock.mock.calls[1]![0]).toBe(projectB);
-    // B must not show A's Ready while pending.
+    // While B is pending, no state chip is shown (A's never leaks in either).
     expect(screen.queryByText('Ready')).toBeNull();
+    expect(screen.queryByText('Missing')).toBeNull();
 
-    // A's response arrives late (it was cancelled by the switch): it must not
-    // write back into B's view.
-    dA.resolve([{ ...RESOLVED }]);
-    await waitFor(() => expect(resolveMock.mock.calls[1]![0]).toBe(projectB));
-    expect(screen.queryByText('Ready')).toBeNull();
-
-    // B then resolves Missing.
+    // B wins first: it commits Missing.
     dB.resolve([{ ...MISSING }]);
     await waitFor(() => expect(screen.getByText('Missing')).toBeTruthy());
-    expect(screen.queryByText('Ready')).toBeNull();
+
+    // NOW the stale A request returns. If the stale-write guard were removed,
+    // A's map would replace the whole `resolution`, B's key would no longer be
+    // found and B's committed Missing would vanish into a stateless chip.
+    dA.resolve([{ ...RESOLVED }]);
+    await flushAsync();
+    await waitFor(() => {
+      expect(screen.getByText('Missing')).toBeTruthy();
+      expect(screen.queryByText('Ready')).toBeNull();
+    });
   });
 
   it('a rejected resolver clears the previous Project state and raises no unhandled rejection', async () => {
@@ -178,7 +186,7 @@ describe('P2 — project-scoped resolver lifecycle (Edit view)', () => {
 });
 
 describe('P2 — project-scoped resolver lifecycle (Preview view)', () => {
-  it('switching Projects never shows the previous Ready; a slow stale response cannot overwrite', async () => {
+  it('a stale slow response cannot overwrite the committed state after switching Projects', async () => {
     const projectA = '/p/a';
     const projectB = '/p/b';
     const dA = deferred<ResolvedPromptAsset[]>();
@@ -189,21 +197,25 @@ describe('P2 — project-scoped resolver lifecycle (Preview view)', () => {
       props: { examples: singleExample, projectPath: projectA, refreshVersion: 0 },
     });
 
-    dA.resolve([{ ...RESOLVED }]);
-    await waitFor(() => expect(screen.getByText('Ready')).toBeTruthy());
-
+    // A's request stays PENDING. Switch to B before A settles.
     await rerender({ examples: singleExample, projectPath: projectB, refreshVersion: 0 });
     expect(resolveMock).toHaveBeenCalledTimes(2);
     expect(resolveMock.mock.calls[1]![0]).toBe(projectB);
     expect(screen.queryByText('Ready')).toBeNull();
+    expect(screen.queryByText('Missing')).toBeNull();
 
-    dA.resolve([{ ...RESOLVED }]);
-    await waitFor(() => expect(resolveMock.mock.calls[1]![0]).toBe(projectB));
-    expect(screen.queryByText('Ready')).toBeNull();
-
+    // B wins first: it commits Missing.
     dB.resolve([{ ...MISSING }]);
     await waitFor(() => expect(screen.getByText('Missing')).toBeTruthy());
-    expect(screen.queryByText('Ready')).toBeNull();
+
+    // NOW the stale A request returns. If the stale-write guard were removed,
+    // A's map would replace the whole `resolution` and B's Missing would vanish.
+    dA.resolve([{ ...RESOLVED }]);
+    await flushAsync();
+    await waitFor(() => {
+      expect(screen.getByText('Missing')).toBeTruthy();
+      expect(screen.queryByText('Ready')).toBeNull();
+    });
   });
 
   it('a rejected resolver clears the previous Project state and raises no unhandled rejection', async () => {
