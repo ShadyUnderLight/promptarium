@@ -22,6 +22,7 @@ const {
   removeAsset,
   updateAsset,
   stripBlankAssetEntries,
+  effectiveMetadataForSave,
   replaceInputWithFile,
   replaceOutputWithFile,
   clearFileRef,
@@ -165,15 +166,18 @@ console.log('Add blank draft rows — editable row appears, typed value enters d
   eq(updateAsset(typed, 0, 0, 'assets/new-output.png')[0].assets, ['assets/new-output.png'],
     'typed draft value flows into metadata before blur');
 
-  // A draft row is bound to its example by array position: removing a *previous*
-  // example must never re-target the draft onto a later example.
+  // A draft row is bound to its example by array position: removing or moving
+  // an *earlier* example must never re-target the draft onto a later example.
+  // The draft is a real blank asset entry (['']) so it travels with its example.
   const abc = [
     { name: 'A' },
-    { name: 'B', assets: ['assets/b.png'] },
+    { name: 'B', assets: [''] },
     { name: 'C' },
   ];
-  eq(removeExample(abc, 0)[0], { name: 'B', assets: ['assets/b.png'] },
-    'draft content moves with its example (never crosses by index)');
+  eq(removeExample(abc, 0)[0], { name: 'B', assets: [''] },
+    'blank draft follows its example across removal (never crosses by index)');
+  eq(moveExample(abc, 2, -1).find((e) => e.name === 'B'), { name: 'B', assets: [''] },
+    'blank draft follows its example across reorder');
 
   // Empty entries never reach the persisted file: stripBlankAssetEntries is the
   // single strip point called at save time, and returns the same reference when
@@ -188,6 +192,69 @@ console.log('Add blank draft rows — editable row appears, typed value enters d
     'examples without assets are untouched');
   eq(addAsset([{ name: 'A' }], 0, '  ')[0].assets, undefined,
     'addAsset (picker path) still drops blanks — blank draft rows only enter via addBlankAsset');
+}
+
+console.log('effectiveMetadataForSave — net-zero drafts never rewrite the raw AST');
+
+{
+  const original = {
+    description: 'd',
+    tags: [],
+    status: 'active',
+    favorite: false,
+    models: [],
+    related: [],
+    extra: {},
+    examples: [{ name: 'A', assets: ['assets/a.png'] }],
+    examplesRaw: { seq: [{ map: { name: 'A' } }] },
+  };
+
+  // Net-zero: "Add blank" appended '' to A's assets and updateExamples dropped
+  // examplesRaw; nothing was typed. The raw AST must be restored and the save
+  // must not be treated as a real metadata edit.
+  const blankOnly = { ...original, examples: [{ name: 'A', assets: ['assets/a.png', ''] }] };
+  delete blankOnly.examplesRaw;
+  const r1 = effectiveMetadataForSave(blankOnly, original);
+  assert(r1.effective.examplesRaw === original.examplesRaw, 'raw AST restored on a net-zero draft');
+  assert(r1.dirty === false, 'net-zero draft is not a real metadata edit');
+
+  // Add blank -> Remove: examples are fully back to the original but examplesRaw
+  // is still gone from the editor metadata. Same net-zero outcome.
+  const removed = { ...original, examples: original.examples };
+  delete removed.examplesRaw;
+  const r2 = effectiveMetadataForSave(removed, original);
+  assert(r2.dirty === false, 'Add blank -> Remove is not a real metadata edit');
+  assert(r2.effective.examplesRaw === original.examplesRaw, 'raw AST restored after Remove');
+
+  // A real typed edit keeps examplesRaw deleted and marks the metadata dirty.
+  const typed = { ...original, examples: [{ name: 'A', assets: ['assets/typed.png'] }] };
+  delete typed.examplesRaw;
+  const r3 = effectiveMetadataForSave(typed, original);
+  assert(r3.dirty === true, 'a real examples edit is dirty');
+  assert(r3.effective.examplesRaw === undefined, 'a real examples edit keeps examplesRaw deleted');
+
+  // An empty draft alongside a real other-field edit: the other field saves, and
+  // the unchanged examples keep using the original raw AST.
+  const otherEdit = {
+    ...original,
+    description: 'changed',
+    examples: [{ name: 'A', assets: ['assets/a.png', ''] }],
+  };
+  delete otherEdit.examplesRaw;
+  const r4 = effectiveMetadataForSave(otherEdit, original);
+  assert(r4.dirty === true, 'other-field edit is still dirty');
+  assert(r4.effective.examplesRaw === original.examplesRaw,
+    'unchanged examples keep the raw AST even when other fields save');
+
+  // Files without a raw AST (created / duplicated): a net-zero draft is still
+  // not a real edit, and there is nothing to restore.
+  const noRaw = { ...original, examples: [{ name: 'A', assets: ['assets/a.png'] }] };
+  delete noRaw.examplesRaw;
+  const noRawBlank = { ...noRaw, examples: [{ name: 'A', assets: ['assets/a.png', ''] }] };
+  delete noRawBlank.examplesRaw;
+  const r5 = effectiveMetadataForSave(noRawBlank, noRaw);
+  assert(r5.dirty === false, 'net-zero draft is not dirty when the file had no raw AST');
+  assert(r5.effective.examplesRaw === undefined, 'no raw AST to restore');
 }
 
 if (failures > 0) {

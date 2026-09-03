@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
   import { cloneMetadata } from '$lib/prompts/duplicate';
-  import { stripBlankAssetEntries } from '$lib/examples/editor-helpers';
+  import { effectiveMetadataForSave } from '$lib/examples/editor-helpers';
   import {
     formatModifiedAt,
     library,
@@ -80,9 +80,6 @@
   const dirty = $derived(
     Boolean(document && metadata && originalMetadata && (body !== originalBody || JSON.stringify(metadata) !== JSON.stringify(originalMetadata)))
   );
-  const metadataDirty = $derived(
-    Boolean(metadata && originalMetadata && JSON.stringify(metadata) !== JSON.stringify(originalMetadata))
-  );
   // Disk-derived structural issues (Issue #13). Health is derived state only:
   // it reflects the last saved/scan state, so it is shown in Preview rather
   // than while the editor holds unsaved changes.
@@ -145,21 +142,35 @@
   }
 
   export async function save(): Promise<void> {
-    if (!document || !metadata || !dirty || saving) return;
+    if (!document || !metadata || !originalMetadata || !dirty || saving) return;
     saving = true;
     saveError = '';
     try {
-      const toSave = cloneMetadata(metadata);
-      // "Add blank" draft rows live in memory as empty asset entries so their
-      // typed value participates in dirty/save; strip them here so `assets: ['']`
-      // never reaches the file (Issue #26 review P1).
-      if (toSave.examples) toSave.examples = stripBlankAssetEntries(toSave.examples);
+      // Effective metadata: strip empty "Add blank" draft entries and, when the
+      // examples list is semantically unchanged, restore the original raw AST so
+      // a net-zero draft interaction never rewrites a hand-written examples
+      // block (Issue #26 review P1). `dirty` is recomputed against the effective
+      // metadata, so the net-zero case is not a real metadata edit.
+      const { effective, dirty: effectiveMetadataDirty } = effectiveMetadataForSave(
+        metadata,
+        originalMetadata
+      );
+      if (body === originalBody && !effectiveMetadataDirty) {
+        // Nothing actually changed (e.g. Add blank → nothing → Cmd+S, or an
+        // empty draft row created then removed): restore the clean baseline
+        // locally without writing to disk.
+        metadata = effective;
+        originalMetadata = cloneMetadata(effective);
+        mode = 'preview';
+        onNotice('No changes to save.');
+        return;
+      }
       const saved = await onSave(
         document,
         body,
-        toSave,
+        effective,
         frontmatterPrefix,
-        metadataDirty,
+        effectiveMetadataDirty,
         originalRaw
       );
       body = saved.body;

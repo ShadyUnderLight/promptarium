@@ -8,7 +8,8 @@
  *
  * Array position is the only ordering; there is no persistent example ID.
  */
-import type { PromptExample } from '../prompts/types';
+import type { PromptExample, PromptMetadata } from '../prompts/types';
+import { cloneMetadata } from '../prompts/duplicate';
 
 /** A display label for an example: its name when non-blank, otherwise a
  *  deterministic `Example N` fallback. The fallback is display-only — it is
@@ -145,6 +146,41 @@ export function stripBlankAssetEntries(examples: PromptExample[]): PromptExample
     return { ...example, assets: kept };
   });
   return changed ? next : examples;
+}
+
+/** Build the metadata that should actually be persisted, plus whether that
+ *  constitutes a real change (Issue #26 review P1).
+ *
+ *  `updateExamples` deliberately drops `examplesRaw` the moment any Examples
+ *  edit happens, so even a net-zero "Add blank → nothing typed → Cmd+S" (or
+ *  "Add blank → Remove") would otherwise be treated as a real metadata edit and
+ *  re-serialize a hand-written examples block from its typed projection — losing
+ *  the non-standard / partially-invalid structures #24 preserves. This strips
+ *  the empty draft entries first, and when the examples list is semantically
+ *  unchanged restores the original raw AST, so the raw is re-emitted and the
+ *  frontmatter is only rewritten if some other field actually changed. The
+ *  returned `dirty` is computed against the effective metadata (same
+ *  JSON-string semantics the editor already uses), so a net-zero draft
+ *  interaction yields `dirty: false` and the caller can skip the backend write
+ *  entirely. */
+export function effectiveMetadataForSave(
+  metadata: PromptMetadata,
+  originalMetadata: PromptMetadata
+): { effective: PromptMetadata; dirty: boolean } {
+  const effective = cloneMetadata(metadata);
+  if (effective.examples) {
+    effective.examples = stripBlankAssetEntries(effective.examples);
+  }
+  const examplesUnchanged =
+    JSON.stringify(effective.examples ?? null) ===
+    JSON.stringify(originalMetadata.examples ?? null);
+  if (examplesUnchanged && originalMetadata.examplesRaw !== undefined) {
+    effective.examplesRaw = originalMetadata.examplesRaw;
+  }
+  return {
+    effective,
+    dirty: JSON.stringify(effective) !== JSON.stringify(originalMetadata),
+  };
 }
 
 /** Replace an example's inline `input` with a file reference (`inputFile`).
