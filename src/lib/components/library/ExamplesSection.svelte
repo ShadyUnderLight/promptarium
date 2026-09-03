@@ -27,8 +27,10 @@
     })
   );
 
-  /** Resolution state keyed by `${index}:${role}:${reference}`. Missing/invalid
-   *  references stay visible with their raw path; only Ready references Reveal. */
+  /** Resolution state keyed by `projectPath + index + role + reference` (Issue
+   *  #30 P2: project-scoped, so a stale entry from one Project can never be
+   *  read back as another's). Missing/invalid references stay visible with
+   *  their raw path; only Ready references Reveal. */
   let resolution = $state<Record<string, ResolvedPromptAsset>>({});
 
   const referencesKey = $derived(entries.map((e) => `${e.index}:${e.role}:${e.reference}`).join('\n'));
