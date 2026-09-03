@@ -174,12 +174,16 @@ and edits are never auto-committed.
 
 ## External edits and conflicts
 
-The app refreshes on window focus and on explicit Refresh. A selected document is
-re-read before save. If its on-disk fingerprint changed since it was loaded and
-the editor is dirty, saving is rejected with a conflict; the UI offers Reload
-or Keep editing. Explicit Refresh while dirty asks whether to Reload from disk
-or Keep editing, so it never replaces the editor buffer silently. A deleted or
-renamed external file is reflected after refresh.
+The app refreshes on window focus and on explicit Refresh. Each refresh rebuilds
+the search index from this round's body reads — no on-disk mtime/size identity
+is used to reuse or skip a body — so search, variable counts and Health always
+reflect the current content. A selected document is re-read before save; Rust
+compares the full current file text against the `expectedRaw` the editor loaded,
+and if it changed while editing, saving is rejected with a conflict; the UI
+offers Reload or Keep editing. Explicit Refresh while dirty asks whether to
+Reload from disk or Keep editing, so it never replaces the editor buffer
+silently. A deleted or renamed external file is reflected after refresh, with a
+file-missing notice while the editor holds unsaved edits.
 
 ## Removed old assumptions
 

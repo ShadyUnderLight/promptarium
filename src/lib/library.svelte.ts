@@ -48,12 +48,9 @@ import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType } from './
 import { cloneMetadata, duplicateMetadata, variantMetadata } from './prompts/duplicate';
 import { findVariantCycleMembers } from './variants/variants';
 import {
-  buildSearchIndexFromPlan,
+  buildSearchIndex,
   buildUntilRevisionStable,
-  fingerprintsMatch,
-  planIndexRefresh,
   searchEntryFromDocument,
-  summaryFingerprint,
   type SearchEntry,
 } from './library/search-index';
 import {
@@ -61,7 +58,7 @@ import {
   type PromptHealthIssue,
   type PromptHealthInput,
 } from './health/health';
-import { openedFingerprintForDocument, summaryFromDocument } from './library/selected-document';
+import { summaryFromDocument } from './library/selected-document';
 import { matchesLibraryFilters } from './library/visible-filter';
 import { FsRefreshScheduler } from './library/fs-refresh-scheduler';
 import {
@@ -76,6 +73,7 @@ import {
   mergeSearchResults,
   planAllProjectsGlobalCommit,
   refreshAllProjectsProjectScan,
+  refreshProjectScopeSnapshot,
   searchProjectIndex,
   type ProjectScanResult,
 } from './library/all-projects';
@@ -150,12 +148,11 @@ const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
 /** Disposable derived index: promptKey -> deterministic structural issues. Like
  *  variableCounts, it is never written back to Markdown and is rebuilt from the
- *  same incremental search-index pass (so Health never triggers a second body
+ *  same search-index rebuild pass (so Health never triggers a second body
  *  read). */
 const healthIndex = new Map<string, PromptHealthIssue[]>();
 const fsRefreshScheduler = new FsRefreshScheduler(300);
 
-let selectedOpenedFingerprint: ReturnType<typeof summaryFingerprint> | null = null;
 let editorDirtyProvider: (() => boolean) | null = null;
 let fsUnlisten: (() => void) | null = null;
 let fsErrorUnlisten: (() => void) | null = null;
@@ -205,7 +202,6 @@ function setSelectedDocument(document: PromptDocument): void {
   library.selectedProjectPath = document.projectPath;
   library.selectedName = document.name;
   library.selected = document;
-  selectedOpenedFingerprint = openedFingerprintForDocument(document);
   library.externalChangeState = null;
 }
 
@@ -213,7 +209,6 @@ function clearSelectedDocument(): void {
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
 }
 
@@ -319,34 +314,19 @@ async function refreshSearchIndex(
       serial !== loadSerial ||
       (library.libraryScope.kind === 'project' && projectPath !== library.activeProjectPath),
     build: async () => {
-      const oldIndex = searchIndexes.get(projectPath);
-      const plan = planIndexRefresh(oldIndex, summaries);
-      const built = await buildSearchIndexFromPlan(plan, {
-        projectPath,
+      const built = await buildSearchIndex(summaries, {
         readBody: async (prompt) => searchEntryFromDocument(await apiReadPrompt(projectPath, prompt.name)),
-        selectedEntry: (prompt) => {
-          const selected = library.selected;
-          if (
-            selected &&
-            selected.projectPath === projectPath &&
-            selected.name === prompt.name &&
-            fingerprintsMatch(summaryFingerprint(summaryOf(selected)), summaryFingerprint(prompt))
-          ) {
-            return searchEntryFromDocument(selected);
-          }
-          return null;
-        },
       });
-      return { plan, ...built };
+      return built;
     },
-    commit: ({ index, stats, plan }) => {
+    commit: ({ index, stats }) => {
       searchIndexes.set(projectPath, index);
       syncVariableCounts(projectPath, index);
       rebuildProjectHealth(projectPath, index);
       library.searchIndexVersion++;
       if (import.meta.env.DEV) {
         console.debug(
-          `[index] project=${projectPath} reused=${plan.reused.size} planned=${stats.planned} read=${stats.bodyReads} selectedReuse=${stats.selectedReuses} removed=${plan.removed.length}`
+          `[index] project=${projectPath} planned=${stats.planned} read=${stats.bodyReads} failed=${stats.failedReads}`
         );
       }
     },
@@ -508,7 +488,6 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     library.selected = null;
     library.selectedProjectPath = null;
     library.selectedName = null;
-    selectedOpenedFingerprint = null;
     library.externalChangeState = null;
     return;
   }
@@ -520,28 +499,39 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
   library.refreshing = projectRefreshFlags.refreshing;
   library.loading = true;
   try {
-    const [summaries, folders] = await Promise.all([apiScanProject(project), apiListFolders(project)]);
-    if (serial !== loadSerial) return;
-    library.allPrompts = summaries;
-    library.folderPaths = folders;
+    // Scan + index rebuild + the UI snapshot below share one stable-revision
+    // interval (refreshProjectScopeSnapshot rescans if a save lands during the
+    // rebuild). The await also makes refresh completion — and therefore the
+    // filesystem scheduler's single-flight — cover this round's body reads, so a
+    // filesystem-scheduled refresh cannot start another full rebuild while this
+    // one reads (manual/focus refresh may still run concurrently; see PR #33).
+    const snapshot = await refreshProjectScopeSnapshot({
+      projectPath: project,
+      scanProject: apiScanProject,
+      listFolders: apiListFolders,
+      refreshSearchIndex: (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
+      getRevision: searchIndexRevision,
+      shouldAbort: () => serial !== loadSerial || project !== library.activeProjectPath,
+    });
+    if (!snapshot) return;
+    library.allPrompts = snapshot.summaries;
+    library.folderPaths = snapshot.folders;
     library.error = null;
-    void refreshSearchIndex(project, summaries, serial);
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
       const indexed = searchIndexed(project, query);
       library.prompts = indexed ?? (await apiSearchPrompts(project, query));
     } else {
-      library.prompts = summaries;
+      library.prompts = snapshot.summaries;
     }
     if (serial !== loadSerial || querySerial !== searchSerial || query !== library.searchQuery) return;
 
     const decision = decideSelectedRefresh({
       selectedProjectPath: library.selectedProjectPath,
       selectedName: library.selectedName,
-      summaries,
+      summaries: snapshot.summaries,
       editorDirty,
-      openedFingerprint: selectedOpenedFingerprint,
       reloadSelected,
     });
 
@@ -560,7 +550,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
       decision.reloadSelected &&
       selectedName &&
       selectedProject === project &&
-      summaries.some((prompt) => prompt.name === selectedName)
+      snapshot.summaries.some((prompt) => prompt.name === selectedName)
     ) {
       const selected = await apiReadPrompt(project, selectedName);
       if (
@@ -582,7 +572,6 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
         library.selected = null;
         library.selectedProjectPath = null;
         library.selectedName = null;
-        selectedOpenedFingerprint = null;
       } else {
         library.externalChangeState = 'file_missing';
       }
@@ -654,7 +643,6 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
           selectedProjectPath: library.selectedProjectPath,
           selectedName: library.selectedName,
           editorDirty,
-          openedFingerprint: selectedOpenedFingerprint,
           reloadSelected,
         });
         library.allProjectsHealthyPaths = plan.healthyProjectPaths;
@@ -725,7 +713,6 @@ export async function setActiveProject(path: string): Promise<void> {
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';
@@ -763,7 +750,6 @@ export async function replaceProjectPath(oldPath: string, newPath: string): Prom
   library.selectedProjectPath = null;
   library.selectedName = null;
   library.selected = null;
-  selectedOpenedFingerprint = null;
   library.externalChangeState = null;
   library.folderFilter = '';
   library.tagFilter = '';

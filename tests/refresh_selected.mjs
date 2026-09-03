@@ -1,13 +1,16 @@
 /**
  * Pure-function tests for selected-document refresh decisions.
+ *
+ * Refresh never replaces a dirty editor buffer; only a deleted/renamed file
+ * surfaces as an external change while dirty. Disk-content conflicts are the
+ * save-time `expectedRaw` full-text compare's job, so no mtime/size
+ * predication exists here.
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { decideSelectedRefresh } = await import(join(root, 'src/lib/library/refresh-selected.ts'));
-const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
-const { openedFingerprintForDocument } = await import(join(root, 'src/lib/library/selected-document.ts'));
 
 let failures = 0;
 
@@ -33,7 +36,7 @@ const defaultMetadata = {
   extra: {},
 };
 
-function summary(projectPath, name, modifiedAt = 1000, sizeBytes = 100) {
+function summary(projectPath, name, modifiedAt = 1000) {
   return {
     projectPath,
     relativePath: name + '.md',
@@ -42,16 +45,7 @@ function summary(projectPath, name, modifiedAt = 1000, sizeBytes = 100) {
     extension: '.md',
     metadata: defaultMetadata,
     modifiedAt,
-    sizeBytes,
     hasFrontmatter: false,
-  };
-}
-
-function document(projectPath, name, modifiedAt, sizeBytes, body = '') {
-  return {
-    ...summary(projectPath, name, modifiedAt, sizeBytes),
-    body,
-    raw: body,
   };
 }
 
@@ -62,7 +56,6 @@ eq(
     selectedName: 'a',
     summaries: [summary('/project-a', 'a')],
     editorDirty: false,
-    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: true,
   }),
   {
@@ -74,33 +67,31 @@ eq(
   'clean reload'
 );
 
-console.log('dirty selected skips reload and flags disk change');
-eq(
-  decideSelectedRefresh({
-    selectedProjectPath: '/project-a',
-    selectedName: 'a',
-    summaries: [summary('/project-a', 'a', 2000, 100)],
-    editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('/project-a', 'a', 1000, 100)),
-    reloadSelected: false,
-  }),
-  {
-    reloadSelected: false,
-    clearSelection: false,
-    externalChange: 'disk_changed',
-    preserveEditor: true,
-  },
-  'dirty external change'
-);
-
-console.log('dirty selected with unchanged disk stays quiet');
+console.log('dirty selected reloads when requested');
 eq(
   decideSelectedRefresh({
     selectedProjectPath: '/project-a',
     selectedName: 'a',
     summaries: [summary('/project-a', 'a')],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
+    reloadSelected: true,
+  }),
+  {
+    reloadSelected: true,
+    clearSelection: false,
+    externalChange: null,
+    preserveEditor: false,
+  },
+  'dirty explicit reload'
+);
+
+console.log('dirty selected skips reload and keeps the editor buffer');
+eq(
+  decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
+    selectedName: 'a',
+    summaries: [summary('/project-a', 'a')],
+    editorDirty: true,
     reloadSelected: false,
   }),
   {
@@ -109,7 +100,25 @@ eq(
     externalChange: null,
     preserveEditor: true,
   },
-  'dirty unchanged disk'
+  'dirty buffer preserved without mtime/size predication'
+);
+
+console.log('clean selected without reload stays quiet');
+eq(
+  decideSelectedRefresh({
+    selectedProjectPath: '/project-a',
+    selectedName: 'a',
+    summaries: [summary('/project-a', 'a')],
+    editorDirty: false,
+    reloadSelected: false,
+  }),
+  {
+    reloadSelected: false,
+    clearSelection: false,
+    externalChange: null,
+    preserveEditor: false,
+  },
+  'clean no reload'
 );
 
 console.log('deleted selected clears when clean');
@@ -119,7 +128,6 @@ eq(
     selectedName: 'a',
     summaries: [],
     editorDirty: false,
-    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: false,
   }),
   {
@@ -138,7 +146,6 @@ eq(
     selectedName: 'a',
     summaries: [],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('/project-a', 'a')),
     reloadSelected: false,
   }),
   {
@@ -147,7 +154,7 @@ eq(
     externalChange: 'file_missing',
     preserveEditor: true,
   },
-  'deleted dirty'
+  'deleted dirty flags file_missing'
 );
 
 console.log('same-name prompts in different projects resolve by projectPath');
@@ -155,33 +162,27 @@ eq(
   decideSelectedRefresh({
     selectedProjectPath: '/project-b',
     selectedName: 'review/common',
-    summaries: [
-      summary('/project-a', 'review/common', 1000, 100),
-      summary('/project-b', 'review/common', 3000, 100),
-    ],
+    summaries: [summary('/project-a', 'review/common'), summary('/project-b', 'review/common')],
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(summary('/project-b', 'review/common', 1000, 100)),
     reloadSelected: false,
   }),
   {
     reloadSelected: false,
     clearSelection: false,
-    externalChange: 'disk_changed',
+    externalChange: null,
     preserveEditor: true,
   },
-  'project-scoped dirty external change in all-projects aggregate'
+  'project-scoped selected resolves within its own project'
 );
 
-console.log('create/duplicate selected fingerprint must match new document');
+console.log('created/duplicated prompt present in summary never false-flags an external change');
 {
-  const newPrompt = document('/project-a', 'new-prompt', 1000, 50, 'fresh body');
   eq(
     decideSelectedRefresh({
       selectedProjectPath: '/project-a',
       selectedName: 'new-prompt',
-      summaries: [summary('/project-a', 'new-prompt', 1000, 50)],
+      summaries: [summary('/project-a', 'new-prompt', 1000)],
       editorDirty: true,
-      openedFingerprint: openedFingerprintForDocument(newPrompt),
       reloadSelected: false,
     }),
     {
@@ -190,24 +191,7 @@ console.log('create/duplicate selected fingerprint must match new document');
       externalChange: null,
       preserveEditor: true,
     },
-    'matching fingerprint after create does not false-flag disk_changed'
-  );
-  eq(
-    decideSelectedRefresh({
-      selectedProjectPath: '/project-a',
-      selectedName: 'new-prompt',
-      summaries: [summary('/project-a', 'new-prompt', 1000, 50)],
-      editorDirty: true,
-      openedFingerprint: summaryFingerprint(summary('/project-a', 'old-prompt', 2000, 80)),
-      reloadSelected: false,
-    }),
-    {
-      reloadSelected: false,
-      clearSelection: false,
-      externalChange: 'disk_changed',
-      preserveEditor: true,
-    },
-    'stale fingerprint from previous selection false-flags disk_changed'
+    'fresh create stays quiet while dirty'
   );
 }
 

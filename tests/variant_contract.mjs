@@ -50,7 +50,6 @@ function summary(projectPath, name, variantOf) {
       extra: variantOf ? { variantOf } : {},
     },
     modifiedAt: 0,
-    sizeBytes: 0,
     hasFrontmatter: true,
   };
 }

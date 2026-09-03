@@ -303,15 +303,7 @@
       </div>
     </div>
 
-    {#if library.externalChangeState === 'disk_changed'}
-      <div class="detail-error">
-        <span>This prompt changed on disk while you have unsaved edits.</span>
-        <span class="detail-error__actions">
-          <button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={keepEditingExternalChange}>Keep editing</button>
-        </span>
-      </div>
-    {:else if library.externalChangeState === 'file_missing'}
+    {#if library.externalChangeState === 'file_missing'}
       <div class="detail-error">
         <span>This prompt was deleted or moved externally. Your local edits are still in the editor.</span>
         <span class="detail-error__actions">

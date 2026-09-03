@@ -1,14 +1,8 @@
 import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
 import { parseVariables } from '$lib/variables/variables';
 
-export interface EntryFingerprint {
-  modifiedAt: number;
-  sizeBytes: number;
-}
-
 export interface SearchEntry {
   summary: PromptSummary;
-  fingerprint: EntryFingerprint;
   bodyLower: string;
   variableCount?: number;
   /** Variable names in first-appearance order, produced by the one body parser.
@@ -20,57 +14,6 @@ export interface SearchEntry {
   bodyEmpty?: boolean;
 }
 
-export interface IndexRefreshPlan {
-  reused: Map<string, SearchEntry>;
-  toRead: PromptSummary[];
-  removed: string[];
-}
-
-export function summaryFingerprint(summary: PromptSummary): EntryFingerprint {
-  return {
-    modifiedAt: summary.modifiedAt,
-    sizeBytes: summary.sizeBytes,
-  };
-}
-
-export function fingerprintsMatch(a: EntryFingerprint, b: EntryFingerprint): boolean {
-  return a.modifiedAt === b.modifiedAt && a.sizeBytes === b.sizeBytes;
-}
-
-/** Pure planner: decide which entries to reuse, reread, or drop after a scan. */
-export function planIndexRefresh(
-  oldIndex: Map<string, SearchEntry> | undefined,
-  summaries: PromptSummary[]
-): IndexRefreshPlan {
-  const reused = new Map<string, SearchEntry>();
-  const toRead: PromptSummary[] = [];
-  const seen = new Set<string>();
-
-  for (const summary of summaries) {
-    seen.add(summary.name);
-    const fingerprint = summaryFingerprint(summary);
-    const existing = oldIndex?.get(summary.name);
-    if (existing && fingerprintsMatch(existing.fingerprint, fingerprint)) {
-      reused.set(summary.name, {
-        ...existing,
-        summary,
-        fingerprint,
-      });
-    } else {
-      toRead.push(summary);
-    }
-  }
-
-  const removed: string[] = [];
-  if (oldIndex) {
-    for (const name of oldIndex.keys()) {
-      if (!seen.has(name)) removed.push(name);
-    }
-  }
-
-  return { reused, toRead, removed };
-}
-
 export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
   const summary: PromptSummary = {
     projectPath: document.projectPath,
@@ -80,14 +23,12 @@ export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
     extension: document.extension,
     metadata: document.metadata,
     modifiedAt: document.modifiedAt,
-    sizeBytes: document.sizeBytes,
     hasFrontmatter: document.hasFrontmatter,
     frontmatterError: document.frontmatterError,
   };
   const variables = parseVariables(document.body);
   return {
     summary,
-    fingerprint: summaryFingerprint(summary),
     bodyLower: document.body.toLowerCase(),
     variableCount: variables.length,
     variableNames: variables.map((variable) => variable.name),
@@ -95,10 +36,10 @@ export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
   };
 }
 
-export function summaryEntryFromScan(summary: PromptSummary): SearchEntry {
+/** Scan fallback entry when a body read fails; still searchable by name/path/metadata. */
+function summaryEntryFromScan(summary: PromptSummary): SearchEntry {
   return {
     summary,
-    fingerprint: summaryFingerprint(summary),
     bodyLower: '',
   };
 }
@@ -106,7 +47,7 @@ export function summaryEntryFromScan(summary: PromptSummary): SearchEntry {
 export interface RefreshBuildStats {
   planned: number;
   bodyReads: number;
-  selectedReuses: number;
+  failedReads: number;
 }
 
 export function isStaleSearchIndexSwap(revisionAtStart: number, currentRevision: number): boolean {
@@ -140,38 +81,34 @@ export async function buildUntilRevisionStable<T>(options: {
   }
 }
 
-/** Build a candidate index from a refresh plan; stats count actual body reads separately. */
-export async function buildSearchIndexFromPlan(
-  plan: IndexRefreshPlan,
+/** Build a fresh index from this round's summaries by bounded-reading each body.
+ *  Every refresh rebuilds from the bodies read this round — no mtime/size reuse
+ *  — so search, variable counts and Health always reflect the current content.
+ *  A failed body read keeps a summary-only entry so one bad file never clears
+ *  the other prompts' results; the complete Map is swapped in only at the end. */
+export async function buildSearchIndex(
+  summaries: PromptSummary[],
   options: {
-    projectPath: string;
     readBody: (summary: PromptSummary) => Promise<SearchEntry>;
-    selectedEntry?: (summary: PromptSummary) => SearchEntry | null;
   }
 ): Promise<{ index: Map<string, SearchEntry>; stats: RefreshBuildStats }> {
-  const index = new Map(plan.reused);
+  const index = new Map<string, SearchEntry>();
   const stats: RefreshBuildStats = {
-    planned: plan.toRead.length,
+    planned: summaries.length,
     bodyReads: 0,
-    selectedReuses: 0,
+    failedReads: 0,
   };
   let next = 0;
-  const toRead = plan.toRead;
 
   const worker = async (): Promise<void> => {
-    while (next < toRead.length) {
-      const prompt = toRead[next++];
+    while (next < summaries.length) {
+      const prompt = summaries[next++];
       let entry = summaryEntryFromScan(prompt);
       try {
-        const selected = options.selectedEntry?.(prompt);
-        if (selected) {
-          stats.selectedReuses++;
-          entry = selected;
-        } else {
-          stats.bodyReads++;
-          entry = await options.readBody(prompt);
-        }
+        stats.bodyReads++;
+        entry = await options.readBody(prompt);
       } catch {
+        stats.failedReads++;
         // The summary is still useful for name/path/metadata search when a file
         // disappears between scan and index construction.
       }
@@ -179,8 +116,8 @@ export async function buildSearchIndexFromPlan(
     }
   };
 
-  if (toRead.length > 0) {
-    const workers = Math.min(8, Math.max(1, toRead.length));
+  if (summaries.length > 0) {
+    const workers = Math.min(8, Math.max(1, summaries.length));
     await Promise.all(Array.from({ length: workers }, () => worker()));
   }
 

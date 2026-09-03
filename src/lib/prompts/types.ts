@@ -169,7 +169,8 @@ export function withVariantOf(metadata: PromptMetadata, path: string | undefined
   return { ...metadata, extra };
 }
 
-/** Lightweight library row; bodies are loaded only for the selected prompt. */
+/** Lightweight library-row DTO; the body is never carried in summaries. The
+ *  search index may separately read prompt bodies during a refresh. */
 export interface PromptSummary {
   projectPath: string;
   relativePath: string;
@@ -178,7 +179,6 @@ export interface PromptSummary {
   extension: '.md';
   metadata: PromptMetadata;
   modifiedAt: number;
-  sizeBytes: number;
   hasFrontmatter: boolean;
   frontmatterError?: string;
 }

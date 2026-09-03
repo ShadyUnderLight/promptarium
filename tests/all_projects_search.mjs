@@ -13,6 +13,7 @@ const {
   planAllProjectsGlobalCommit,
   projectLabel,
   refreshAllProjectsProjectScan,
+  refreshProjectScopeSnapshot,
 } = await import(join(root, 'src/lib/library/all-projects.ts'));
 const { promptKey } = await import(join(root, 'src/lib/library/scope.ts'));
 
@@ -49,7 +50,6 @@ function summary(projectPath, name, description = '', tags = [], status = 'activ
     extension: '.md',
     metadata: { ...defaultMetadata, description, tags: [...tags], status },
     modifiedAt: 1000,
-    sizeBytes: 100,
     hasFrontmatter: false,
   };
 }
@@ -57,7 +57,6 @@ function summary(projectPath, name, description = '', tags = [], status = 'activ
 function entry(projectPath, name, bodyLower, description = '', tags = []) {
   return {
     summary: summary(projectPath, name, description, tags),
-    fingerprint: { modifiedAt: 1000, sizeBytes: 100 },
     bodyLower,
     variableCount: 0,
   };
@@ -208,6 +207,46 @@ console.log('refreshAllProjectsProjectScan keeps first scan when revision stays 
   eq(result?.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
 }
 
+console.log('refreshProjectScopeSnapshot rescans when a save lands during the rebuild');
+{
+  let revision = 0;
+  let scanCount = 0;
+  let releaseRead;
+  const gate = new Promise((resolve) => {
+    releaseRead = resolve;
+  });
+  const preSave = summary('/project-a', 'foo', 'body', [], 'draft');
+  const postSave = summary('/project-a', 'foo', 'body', ['new-tag'], 'active');
+
+  const snapshot = refreshProjectScopeSnapshot({
+    projectPath: '/project-a',
+    scanProject: async () => {
+      scanCount++;
+      return scanCount === 1 ? [preSave] : [postSave];
+    },
+    listFolders: async () => ['prompts', 'templates'],
+    refreshSearchIndex: async (_projectPath, _summaries) => {
+      if (scanCount === 1) {
+        // The rebuild's body read is suspended; a Save lands here and changes
+        // status/tags, bumping the search-index revision.
+        await gate;
+        revision = 1;
+      }
+    },
+    getRevision: () => revision,
+  });
+
+  // Release the suspended read after the Save has landed.
+  releaseRead();
+  const result = await snapshot;
+
+  eq(scanCount, 2, 'pre-save scan is discarded and the project is rescanned');
+  eq(result?.summaries.length, 1, 'snapshot returns one summary');
+  eq(result?.summaries[0].metadata.status, 'active', 'visible list uses the post-save status, not the stale draft');
+  eq(result?.summaries[0].metadata.tags, ['new-tag'], 'visible list uses the post-save tags');
+  eq(result?.folders, ['prompts', 'templates'], 'folders stay paired with the stable snapshot');
+}
+
 console.log('finalizeAllProjectsScanResults refreshes project mutated after its scan completed');
 {
   const revisions = new Map([
@@ -303,7 +342,6 @@ console.log('planAllProjectsGlobalCommit binds visible prompts to the committed 
     selectedProjectPath: null,
     selectedName: null,
     editorDirty: false,
-    openedFingerprint: null,
     reloadSelected: true,
   });
 
@@ -316,7 +354,6 @@ console.log('planAllProjectsGlobalCommit binds visible prompts to the committed 
 
 console.log('planAllProjectsGlobalCommit plans selected refresh from the same snapshot');
 {
-  const { summaryFingerprint } = await import(join(root, 'src/lib/library/search-index.ts'));
   const committedSummary = summary('/project-a', 'foo', 'stable@5', [], 'active');
   const projects = [{ name: 'Work', path: '/project-a' }];
 
@@ -328,12 +365,11 @@ console.log('planAllProjectsGlobalCommit plans selected refresh from the same sn
     selectedProjectPath: '/project-a',
     selectedName: 'foo',
     editorDirty: true,
-    openedFingerprint: summaryFingerprint(committedSummary),
     reloadSelected: false,
   });
 
-  eq(plan.decision.externalChange, null, 'selected decision uses the same snapshot as prompts');
-  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved when snapshot matches fingerprint');
+  eq(plan.decision.externalChange, null, 'dirty editor with a present file stays quiet (no mtime/size predication)');
+  eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved on refresh');
 }
 
 if (failures) {
