@@ -923,6 +923,30 @@ pub fn asset_absolute_path_for_reveal(project: &Path, reference: &str) -> Result
     Ok(path)
 }
 
+/// Normalize a picked Project-relative path into the reference grammar
+/// (Issue #30 P3). On Windows `\` is the path separator and must become `/`;
+/// on Unix/macOS a literal `\` is a real filename character, which the
+/// reference grammar rejects (`validate_name`). Rewriting it would silently
+/// turn `assets/a\b.png` into `assets/a/b.png` — a reference that points at a
+/// different file than the user actually selected — so it fails closed instead
+/// of returning a reference that does not represent the selection.
+fn picked_relative_reference(relative: &Path, selected_display: &str) -> Result<String, String> {
+    let reference = relative.to_string_lossy();
+    #[cfg(windows)]
+    {
+        Ok(reference.replace('\\', "/"))
+    }
+    #[cfg(not(windows))]
+    {
+        if reference.contains('\\') {
+            return Err(format!(
+                "selected path contains a literal '\\', which is not a valid asset reference: {selected_display}"
+            ));
+        }
+        Ok(reference.into_owned())
+    }
+}
+
 /// Convert an absolute path the user selected in the file dialog into a
 /// canonical Project-relative asset reference (Issue #26 §8). This is the
 /// picker's authority seam: the frontend never computes relative paths from
@@ -951,13 +975,13 @@ pub fn asset_reference_from_selected_path(
         .strip_prefix(&root)
         .ok()
         .or_else(|| selected.strip_prefix(project).ok())
-        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
         .ok_or_else(|| {
             format!(
                 "selected file is outside the current Project: {}",
                 selected.display()
             )
         })?;
+    let relative = picked_relative_reference(relative, &format!("{}", selected.display()))?;
     if has_markdown_leaf(&relative) {
         return Err(format!(
             "asset reference may not point at a Markdown prompt: {relative}"
@@ -3506,6 +3530,23 @@ mod tests {
             assert_eq!(reference, "assets/x.png");
             fs::remove_dir_all(&link_dir).unwrap();
         }
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_unix_literal_backslash_filename_fails_closed() {
+        // On Unix/macOS `\` is a real filename character. Selecting a file
+        // literally named `a\b.png` must fail closed — never be silently
+        // rewritten into `assets/a/b.png`, a reference that points at a
+        // different file than the user selected (Issue #30 P3).
+        let dir = tmp_dir("picker-backslash");
+        write(&dir, "assets/a\\b.png", "x");
+        let absolute = dir.join("assets/a\\b.png").canonicalize().unwrap();
+        let error =
+            asset_reference_from_selected_path(&dir, &absolute.to_string_lossy()).unwrap_err();
+        assert!(error.contains("literal"), "{error}");
+        assert!(!error.contains("assets/a/b.png"), "{error}");
         fs::remove_dir_all(dir).unwrap();
     }
 }

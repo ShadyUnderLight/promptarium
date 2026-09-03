@@ -1,7 +1,7 @@
 <script lang="ts">
   import { resolvePromptAssets, revealAssetInFinder } from '$lib/api';
   import type { PromptExample, ResolvedPromptAsset } from '$lib/prompts/types';
-  import { exampleDisplayName } from '$lib/examples/editor-helpers';
+  import { exampleDisplayName, assetResolutionKey } from '$lib/examples/editor-helpers';
 
   interface Props {
     examples: PromptExample[];
@@ -42,18 +42,35 @@
       resolution = {};
       return;
     }
+    // A new resolve request never reuses the previous Project's visible state
+    // (Issue #30 P2): clear the map up front so a stale Ready/Missing can never
+    // leak across a Project switch, keep the stale-write guard, and handle
+    // rejection by falling back to an empty map — never an old result.
+    resolution = {};
     let cancelled = false;
     void resolvePromptAssets(
       proj,
       entries.map((e) => e.reference)
-    ).then((results) => {
-      if (cancelled) return;
-      const map: Record<string, ResolvedPromptAsset> = {};
-      results.forEach((result, i) => {
-        map[`${entries[i].index}:${entries[i].role}:${result.reference}`] = result;
-      });
-      resolution = map;
-    });
+    ).then(
+      (results) => {
+        if (cancelled) return;
+        const map: Record<string, ResolvedPromptAsset> = {};
+        results.forEach((result, i) => {
+          map[
+            assetResolutionKey(proj, {
+              index: entries[i].index,
+              role: entries[i].role,
+              reference: result.reference,
+            })
+          ] = result;
+        });
+        resolution = map;
+      },
+      () => {
+        if (cancelled) return;
+        resolution = {};
+      }
+    );
     return () => {
       cancelled = true;
     };
@@ -80,7 +97,7 @@
     role: 'inputFile' | 'outputFile' | 'asset',
     reference: string
   ): ResolvedPromptAsset | undefined {
-    return resolution[`${index}:${role}:${reference}`];
+    return resolution[assetResolutionKey(projectPath, { index, role, reference })];
   }
 
   async function reveal(project: string, reference: string): Promise<void> {
