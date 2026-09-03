@@ -18,15 +18,14 @@ const {
   moveExample,
   updateExampleField,
   addAsset,
+  addBlankAsset,
   removeAsset,
   updateAsset,
+  stripBlankAssetEntries,
   replaceInputWithFile,
   replaceOutputWithFile,
   clearFileRef,
   hasExampleContent,
-  addBlankAssetRow,
-  dropBlankAssetRow,
-  commitDraftAsset,
 } = await import(join(root, 'src/lib/examples/editor-helpers.ts'));
 
 let failures = 0;
@@ -117,7 +116,10 @@ console.log('removeAsset / updateAsset — index-based edits');
   eq(removeAsset(source, 0, 1)[0].assets, ['a', 'c'], 'removes at index');
   eq(removeAsset(source, 0, 9)[0].assets, ['a', 'b', 'c'], 'out-of-range is a no-op');
   eq(updateAsset(source, 0, 1, 'B')[0].assets, ['a', 'B', 'c'], 'replaces at index');
-  eq(updateAsset(source, 0, 1, '   ')[0].assets, ['a', 'c'], 'blank replacement removes');
+  // A blank value is kept as an editor-only draft row (so clearing a field mid-
+  // edit never removes the row the user is typing in); it is dropped later by
+  // stripBlankAssetEntries at save time.
+  eq(updateAsset(source, 0, 1, '   ')[0].assets, ['a', '', 'c'], 'blank keeps the draft row');
   eq(source[0].assets, ['a', 'b', 'c'], 'source untouched');
 }
 
@@ -146,31 +148,46 @@ console.log('hasExampleContent — name counts as content');
   assert(hasExampleContent({ notes: 'note' }), 'notes count');
 }
 
-console.log('Add blank draft rows — editable row appears, empty string never persists');
+console.log('Add blank draft rows — editable row appears, typed value enters dirty/save, blank never persists');
 
 {
   // Regression (Issue #26 §6): "Add blank" previously called addAsset(..., '')
-  // which trims and ignores blanks — the button did nothing. The editor now
-  // opens an editor-only draft row instead.
-  eq(addBlankAssetRow({}, 0), { 0: 1 }, 'Add blank opens one draft row (the row appears)');
-  const two = addBlankAssetRow(addBlankAssetRow({}, 0), 0);
-  eq(two[0], 2, 'a second Add blank opens another row');
-  eq(addBlankAssetRow({}, 1), { 1: 1 }, 'rows are keyed per example index');
+  // which trims and ignores blanks — the button did nothing. A draft row is now
+  // an empty asset entry in `examples`: it renders as an editable row and, once
+  // typed, its value is part of the in-memory metadata (dirty/save) before any
+  // blur — it never lives in child-local state.
+  eq(addBlankAsset([{ name: 'A' }], 0)[0].assets, [''],
+    'Add blank opens one editable row (empty asset entry appears)');
 
-  // A non-blank commit appends a real asset entry.
-  const typed = [{ name: 'A' }];
-  eq(commitDraftAsset(typed, 0, 'assets/new-output.png')[0].assets, ['assets/new-output.png'],
-    'typed draft commits a real asset row');
-  eq(typed[0].assets, undefined, 'source untouched');
+  // The draft row participates in the dirty/save lifecycle: typing writes the
+  // value straight into `examples`, exactly like the picker path would.
+  const typed = addBlankAsset([{ name: 'A' }], 0);
+  eq(updateAsset(typed, 0, 0, 'assets/new-output.png')[0].assets, ['assets/new-output.png'],
+    'typed draft value flows into metadata before blur');
 
-  // A blank commit writes nothing into the typed metadata.
-  sameReference(commitDraftAsset(typed, 0, '   '), typed,
-    'blank draft commit is a safe no-op (no empty string in examples)');
-  sameReference(addAsset(typed, 0, ''), typed, 'addAsset itself still drops blanks');
+  // A draft row is bound to its example by array position: removing a *previous*
+  // example must never re-target the draft onto a later example.
+  const abc = [
+    { name: 'A' },
+    { name: 'B', assets: ['assets/b.png'] },
+    { name: 'C' },
+  ];
+  eq(removeExample(abc, 0)[0], { name: 'B', assets: ['assets/b.png'] },
+    'draft content moves with its example (never crosses by index)');
 
-  // Closing a draft row decrements; closing the last row removes the key.
-  eq(dropBlankAssetRow(two, 0), { 0: 1 }, 'closing one row leaves the other open');
-  eq(dropBlankAssetRow(dropBlankAssetRow({ 0: 1 }, 0), 0), {}, 'closing the last row clears the key');
+  // Empty entries never reach the persisted file: stripBlankAssetEntries is the
+  // single strip point called at save time, and returns the same reference when
+  // there is nothing to strip.
+  eq(stripBlankAssetEntries([{ name: 'A', assets: ['a', '', 'c'] }])[0].assets, ['a', 'c'],
+    'blank asset entries are stripped before persisting');
+  const noBlanks = [{ name: 'A', assets: ['a', 'c'] }];
+  sameReference(stripBlankAssetEntries(noBlanks), noBlanks,
+    'no-blank input returns the same array (no churn on unrelated saves)');
+  const noAssets = [{ name: 'A' }];
+  sameReference(stripBlankAssetEntries(noAssets), noAssets,
+    'examples without assets are untouched');
+  eq(addAsset([{ name: 'A' }], 0, '  ')[0].assets, undefined,
+    'addAsset (picker path) still drops blanks — blank draft rows only enter via addBlankAsset');
 }
 
 if (failures > 0) {

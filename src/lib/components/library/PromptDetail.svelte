@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
   import { cloneMetadata } from '$lib/prompts/duplicate';
+  import { stripBlankAssetEntries } from '$lib/examples/editor-helpers';
   import {
     formatModifiedAt,
     library,
@@ -148,10 +149,15 @@
     saving = true;
     saveError = '';
     try {
+      const toSave = cloneMetadata(metadata);
+      // "Add blank" draft rows live in memory as empty asset entries so their
+      // typed value participates in dirty/save; strip them here so `assets: ['']`
+      // never reaches the file (Issue #26 review P1).
+      if (toSave.examples) toSave.examples = stripBlankAssetEntries(toSave.examples);
       const saved = await onSave(
         document,
         body,
-        cloneMetadata(metadata),
+        toSave,
         frontmatterPrefix,
         metadataDirty,
         originalRaw

@@ -8,17 +8,13 @@
     moveExample,
     updateExampleField,
     addAsset,
+    addBlankAsset,
     updateAsset,
     removeAsset,
     replaceInputWithFile,
     replaceOutputWithFile,
     clearFileRef,
-    addBlankAssetRow,
-    dropBlankAssetRow,
-    commitDraftAsset,
-    type AssetDrafts,
   } from '$lib/examples/editor-helpers';
-  import AssetDraftRow from './AssetDraftRow.svelte';
 
   interface Props {
     examples: PromptExample[];
@@ -39,15 +35,17 @@
   // backend resolver; a state chip sits next to each reference input so a
   // hand-typed path shows Ready / Missing / Invalid without a separate save.
   // References are identified by `{index, role, sub}` (position, no persistent
-  // IDs) and re-resolved whenever the set or the Project changes.
+  // IDs) and re-resolved whenever the set or the Project changes. Empty asset
+  // entries are the editor's "Add blank" draft rows and are skipped here.
   const refs = $derived(
     examples.flatMap((example, index) => {
       const list: Array<{ index: number; role: 'inputFile' | 'outputFile' | 'asset'; reference: string; sub?: number }> = [];
       if (example.inputFile) list.push({ index, role: 'inputFile', reference: example.inputFile });
       if (example.outputFile) list.push({ index, role: 'outputFile', reference: example.outputFile });
-      (example.assets ?? []).forEach((reference, sub) =>
-        list.push({ index, role: 'asset', reference, sub })
-      );
+      (example.assets ?? []).forEach((reference, sub) => {
+        if (!reference.trim()) return;
+        list.push({ index, role: 'asset', reference, sub });
+      });
       return list;
     })
   );
@@ -149,35 +147,6 @@
       pickerError = result.error;
     }
     return null;
-  }
-
-  // ── Editor-only draft asset rows (Issue #26 §6) ─────────────────────────
-  // "Add blank" opens an editable draft row that is only committed to
-  // `examples` once it has non-blank content (a blank commit is dropped), so
-  // the typed metadata never contains an empty asset string. Drafts are pure UI
-  // state — never serialized, never written to `examplesRaw`'s replacement.
-  let drafts = $state<AssetDrafts>({});
-
-  // Prune drafts whose example index no longer exists (e.g. the example was
-  // removed), so a stale count can never attach to a later example.
-  $effect(() => {
-    const count = examples.length;
-    let changed = false;
-    const next: AssetDrafts = {};
-    for (const [key, value] of Object.entries(drafts)) {
-      if (Number(key) < count) next[Number(key)] = value;
-      else changed = true;
-    }
-    if (changed) drafts = next;
-  });
-
-  function addBlankAsset(index: number): void {
-    drafts = addBlankAssetRow(drafts, index);
-  }
-
-  function commitDraft(index: number, value: string): void {
-    if (value.trim()) onChange(commitDraftAsset(examples, index, value));
-    drafts = dropBlankAssetRow(drafts, index);
   }
 </script>
 
@@ -310,11 +279,12 @@
         <div class="example-assets-edit">
           <span class="example-field__label">Files</span>
           {#each example.assets ?? [] as reference, assetIndex (assetIndex)}
-            <div class="example-file-edit__row">
+            <div class="example-file-edit__row" class:example-file-edit__row--draft={!reference.trim()}>
               <input
                 value={reference}
+                placeholder={reference.trim() ? '' : 'Type a Project-relative path…'}
                 aria-label="Asset file reference"
-                onchange={(event) =>
+                oninput={(event) =>
                   onChange(updateAsset(examples, index, assetIndex, event.currentTarget.value))
                 }
               />
@@ -322,14 +292,9 @@
               <button type="button" class="link-btn" onclick={() => onChange(removeAsset(examples, index, assetIndex))}>Remove</button>
             </div>
           {/each}
-          {#if (drafts[index] ?? 0) > 0}
-            {#each Array(drafts[index]) as _, draftIndex (draftIndex)}
-              <AssetDraftRow onCommit={(value) => commitDraft(index, value)} />
-            {/each}
-          {/if}
           <div class="example-assets-edit__actions">
             <button type="button" class="link-btn" onclick={() => chooseAsset(index)}>Choose file…</button>
-            <button type="button" class="link-btn" onclick={() => addBlankAsset(index)}>Add blank</button>
+            <button type="button" class="link-btn" onclick={() => onChange(addBlankAsset(examples, index))}>Add blank</button>
           </div>
         </div>
       </div>

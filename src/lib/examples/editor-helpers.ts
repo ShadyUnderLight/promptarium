@@ -91,67 +91,60 @@ export function removeAsset(
   return next;
 }
 
-/** Replace the asset at `assetIndex` with `reference`. A blank replacement
- *  removes the asset (clearing the field deletes the entry). */
+/** Replace the asset at `assetIndex` with `reference` (trimmed). A blank value
+ *  is kept as an empty draft row rather than removed: it is still on screen and
+ *  in the in-memory metadata (so it participates in dirty/save), and is only
+ *  dropped when the entry is explicitly removed (`removeAsset`) or when the
+ *  metadata is saved (`stripBlankAssetEntries`). Removing a row while the user
+ *  is mid-typing would lose focus and the live value. */
 export function updateAsset(
   examples: PromptExample[],
   index: number,
   assetIndex: number,
   reference: string
 ): PromptExample[] {
-  const trimmed = reference.trim();
   if (index < 0 || index >= examples.length) return examples;
   const assets = examples[index].assets;
   if (!assets || assetIndex < 0 || assetIndex >= assets.length) return examples;
   const next = [...examples];
   const current = { ...next[index] };
-  if (trimmed) {
-    const list = [...assets];
-    list[assetIndex] = trimmed;
-    current.assets = list;
-  } else {
-    current.assets = assets.filter((_, i) => i !== assetIndex);
-  }
+  const list = [...assets];
+  list[assetIndex] = reference.trim();
+  current.assets = list;
   next[index] = current;
   return next;
 }
 
-/** Editor-only pending asset rows (Issue #26 §6): an "Add blank" click must
- *  show an editable row without writing an empty string into `examples`. A
- *  draft row is committed only once it has non-blank content. Drafts are pure
- *  UI state keyed by example array index (no persistent IDs) and are never
- *  serialized. */
-export interface AssetDrafts {
-  /** Count of open draft rows per example (by array index). */
-  [exampleIndex: number]: number;
-}
-
-/** Open one more editable draft row for an example. This is what the "Add
- *  blank" action must do — a previous implementation called `addAsset` with an
- *  empty reference, which `addAsset` (correctly) ignores, so nothing appeared. */
-export function addBlankAssetRow(drafts: AssetDrafts, index: number): AssetDrafts {
-  return { ...drafts, [index]: (drafts[index] ?? 0) + 1 };
-}
-
-/** Close one draft row for an example. When the last row closes, the key is
- *  removed entirely. */
-export function dropBlankAssetRow(drafts: AssetDrafts, index: number): AssetDrafts {
-  const count = (drafts[index] ?? 0) - 1;
-  if (count > 0) return { ...drafts, [index]: count };
-  const next = { ...drafts };
-  delete next[index];
+/** Append an empty asset entry — the editor's "Add blank" draft row (Issue #26
+ *  §6). Unlike `addAsset` (the picker path, which trims and drops blanks), this
+ *  deliberately keeps an empty string in memory: the row is editable, its typed
+ *  value flows into dirty/save live, and it is stripped from what is persisted
+ *  by `stripBlankAssetEntries` at save time, so `assets: ['']` never reaches
+ *  the file. */
+export function addBlankAsset(examples: PromptExample[], index: number): PromptExample[] {
+  if (index < 0 || index >= examples.length) return examples;
+  const next = [...examples];
+  const current = { ...next[index] };
+  current.assets = [...(current.assets ?? []), ''];
+  next[index] = current;
   return next;
 }
 
-/** Commit a draft asset row into `examples`. Delegates to `addAsset`, which
- *  trims the value and drops blanks, so a committed draft never writes an
- *  empty asset string into the typed metadata. */
-export function commitDraftAsset(
-  examples: PromptExample[],
-  index: number,
-  value: string
-): PromptExample[] {
-  return addAsset(examples, index, value);
+/** Remove every empty asset entry before persisting. Returns the same array
+ *  reference when nothing is blank so an unrelated save never churns the array.
+ *  This is the single point that guarantees `assets: ['']` never reaches the
+ *  file — the editor keeps blank rows in memory for editing, and strips them
+ *  only when the metadata is saved (Issue #26 review P1). */
+export function stripBlankAssetEntries(examples: PromptExample[]): PromptExample[] {
+  let changed = false;
+  const next = examples.map((example) => {
+    const assets = example.assets;
+    if (!assets || !assets.some((reference) => !reference.trim())) return example;
+    const kept = assets.filter((reference) => reference.trim());
+    changed = true;
+    return { ...example, assets: kept };
+  });
+  return changed ? next : examples;
 }
 
 /** Replace an example's inline `input` with a file reference (`inputFile`).

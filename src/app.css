@@ -1867,7 +1867,6 @@ body {
 .example-chip--missing { color: #c98222; }
 .example-file-row__state--invalid,
 .example-chip--invalid { color: var(--accent-result-err); }
-.example-chip--draft { color: var(--text-muted); }
 
 .example-file-edit__row--draft {
   border: 1px dashed var(--border-strong);
