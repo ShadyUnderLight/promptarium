@@ -272,17 +272,18 @@ export interface ProjectScopeSnapshot {
   folders: string[];
 }
 
-/** Project-scope analog of refreshAllProjectsProjectScan: the scan and the index
- *  rebuild share one stable-revision interval, so the caller can commit the
- *  visible list from the same snapshot the index was built from. If a save bumps
- *  the revision during the rebuild, the pre-save scan is discarded and everything
- *  is rescanned — a stale summary must never be committed to the UI list. */
+/** Project-scope analog of refreshAllProjectsProjectScan. The scan and index
+ * rebuild share one stable-revision interval; onScan lets the caller publish
+ * the lightweight summary list before the bounded body rebuild finishes. If a
+ * save bumps the revision during the rebuild, the pre-save scan is discarded
+ * and everything is rescanned. */
 export async function refreshProjectScopeSnapshot(options: {
   projectPath: string;
   scanProject: (projectPath: string) => Promise<PromptSummary[]>;
   listFolders: (projectPath: string) => Promise<string[]>;
   refreshSearchIndex: (projectPath: string, summaries: PromptSummary[]) => Promise<unknown>;
   getRevision: (projectPath: string) => number;
+  onScan?: (summaries: PromptSummary[], folders: string[]) => void;
   shouldAbort?: () => boolean;
 }): Promise<ProjectScopeSnapshot | null> {
   while (true) {
@@ -293,6 +294,7 @@ export async function refreshProjectScopeSnapshot(options: {
       options.listFolders(options.projectPath),
     ]);
     if (options.shouldAbort?.()) return null;
+    options.onScan?.(summaries, folders);
     await options.refreshSearchIndex(options.projectPath, summaries);
     if (options.shouldAbort?.()) return null;
     if (revisionAtStart !== options.getRevision(options.projectPath)) continue;

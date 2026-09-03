@@ -21,7 +21,7 @@ export interface SelectedRefreshDecision {
  *  Refresh never replaces a dirty editor buffer; only a deleted/renamed file
  *  surfaces as an external change while dirty. Disk-content conflicts are
  *  detected at save time by the Rust `expectedRaw` full-text compare, so no
- *  mtime/size predication happens here. */
+ *  mtime/size prediction happens here. */
 export function decideSelectedRefresh(input: SelectedRefreshInput): SelectedRefreshDecision {
   const { selectedProjectPath, selectedName, summaries, editorDirty, reloadSelected } = input;
   if (!selectedName || !selectedProjectPath) {

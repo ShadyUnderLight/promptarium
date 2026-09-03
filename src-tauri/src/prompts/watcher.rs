@@ -1,7 +1,7 @@
 //! Filesystem watcher for the active prompt project.
 //!
 //! Watcher events are debounced coalesced refresh triggers only. The frontend
-//! rescans summaries and applies incremental index updates; we never mutate
+//! rescans summaries and refreshes the disposable search index; we never mutate
 //! library state from raw notify payloads.
 
 use std::path::{Component, Path, PathBuf};

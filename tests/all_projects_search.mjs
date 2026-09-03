@@ -207,7 +207,7 @@ console.log('refreshAllProjectsProjectScan keeps first scan when revision stays 
   eq(result?.summaries[0].metadata.description, 'stable body', 'first scan summaries are reused');
 }
 
-console.log('refreshProjectScopeSnapshot rescans when a save lands during the rebuild');
+console.log('refreshProjectScopeSnapshot publishes summaries before the body rebuild finishes');
 {
   let revision = 0;
   let scanCount = 0;
@@ -217,6 +217,7 @@ console.log('refreshProjectScopeSnapshot rescans when a save lands during the re
   });
   const preSave = summary('/project-a', 'foo', 'body', [], 'draft');
   const postSave = summary('/project-a', 'foo', 'body', ['new-tag'], 'active');
+  const published = [];
 
   const snapshot = refreshProjectScopeSnapshot({
     projectPath: '/project-a',
@@ -225,25 +226,27 @@ console.log('refreshProjectScopeSnapshot rescans when a save lands during the re
       return scanCount === 1 ? [preSave] : [postSave];
     },
     listFolders: async () => ['prompts', 'templates'],
-    refreshSearchIndex: async (_projectPath, _summaries) => {
+    refreshSearchIndex: async () => {
       if (scanCount === 1) {
-        // The rebuild's body read is suspended; a Save lands here and changes
-        // status/tags, bumping the search-index revision.
         await gate;
         revision = 1;
       }
     },
     getRevision: () => revision,
+    onScan: (summaries, folders) => published.push({ summaries, folders }),
   });
 
-  // Release the suspended read after the Save has landed.
+  await Promise.resolve();
+  await Promise.resolve();
+  eq(published.length, 1, 'summary list is published before the rebuild resolves');
+  eq(published[0].summaries[0].metadata.status, 'draft', 'first scan is published immediately');
+
   releaseRead();
   const result = await snapshot;
-
   eq(scanCount, 2, 'pre-save scan is discarded and the project is rescanned');
-  eq(result?.summaries.length, 1, 'snapshot returns one summary');
-  eq(result?.summaries[0].metadata.status, 'active', 'visible list uses the post-save status, not the stale draft');
-  eq(result?.summaries[0].metadata.tags, ['new-tag'], 'visible list uses the post-save tags');
+  eq(published.length, 2, 'post-save scan is published on the retry');
+  eq(result?.summaries[0].metadata.status, 'active', 'stable snapshot uses post-save status');
+  eq(result?.summaries[0].metadata.tags, ['new-tag'], 'stable snapshot uses post-save tags');
   eq(result?.folders, ['prompts', 'templates'], 'folders stay paired with the stable snapshot');
 }
 
@@ -368,7 +371,7 @@ console.log('planAllProjectsGlobalCommit plans selected refresh from the same sn
     reloadSelected: false,
   });
 
-  eq(plan.decision.externalChange, null, 'dirty editor with a present file stays quiet (no mtime/size predication)');
+  eq(plan.decision.externalChange, null, 'dirty editor with a present file stays quiet (no mtime/size prediction)');
   eq(plan.decision.preserveEditor, true, 'dirty editor stays preserved on refresh');
 }
 
