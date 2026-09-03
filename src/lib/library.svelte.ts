@@ -148,7 +148,7 @@ const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
 /** Disposable derived index: promptKey -> deterministic structural issues. Like
  *  variableCounts, it is never written back to Markdown and is rebuilt from the
- *  same incremental search-index pass (so Health never triggers a second body
+ *  same search-index rebuild pass (so Health never triggers a second body
  *  read). */
 const healthIndex = new Map<string, PromptHealthIssue[]>();
 const fsRefreshScheduler = new FsRefreshScheduler(300);
@@ -502,8 +502,9 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     // Scan + index rebuild + the UI snapshot below share one stable-revision
     // interval (refreshProjectScopeSnapshot rescans if a save lands during the
     // rebuild). The await also makes refresh completion — and therefore the
-    // filesystem scheduler's single-flight — cover this round's body reads, so
-    // a second refresh cannot start another full rebuild while this one reads.
+    // filesystem scheduler's single-flight — cover this round's body reads, so a
+    // filesystem-scheduled refresh cannot start another full rebuild while this
+    // one reads (manual/focus refresh may still run concurrently; see PR #33).
     const snapshot = await refreshProjectScopeSnapshot({
       projectPath: project,
       scanProject: apiScanProject,
