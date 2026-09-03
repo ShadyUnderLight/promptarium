@@ -372,6 +372,20 @@ pub async fn reveal_asset_in_finder(project: String, relative_path: String) -> R
     }
 }
 
+/// Convert a user-selected absolute path into a canonical Project-relative
+/// asset reference (Issue #26 §8). The frontend never computes relative paths:
+/// Rust validates the Project registration and the selected path, then returns
+/// a reference that satisfies the exact same contract as a hand-written one.
+/// Only a successful return is written into editor state.
+#[tauri::command]
+pub async fn asset_reference_from_selected_path(
+    project: String,
+    absolute_path: String,
+) -> Result<String, String> {
+    let project = registered_project(&project)?;
+    blocking(move || store::asset_reference_from_selected_path(&project, &absolute_path)).await
+}
+
 #[tauri::command]
 pub async fn git_repository_info(project: String) -> Result<GitRepositoryInfo, String> {
     let project = registered_project(&project)?;

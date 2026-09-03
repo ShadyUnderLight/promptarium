@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
+  import { cloneMetadata } from '$lib/prompts/duplicate';
+  import { effectiveMetadataForSave } from '$lib/examples/editor-helpers';
   import {
     formatModifiedAt,
     library,
@@ -17,6 +19,7 @@
   import RelatedList from './RelatedList.svelte';
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
+  import ExamplesSection from './ExamplesSection.svelte';
 
   interface Props {
     document: PromptDocument | null;
@@ -77,9 +80,6 @@
   const dirty = $derived(
     Boolean(document && metadata && originalMetadata && (body !== originalBody || JSON.stringify(metadata) !== JSON.stringify(originalMetadata)))
   );
-  const metadataDirty = $derived(
-    Boolean(metadata && originalMetadata && JSON.stringify(metadata) !== JSON.stringify(originalMetadata))
-  );
   // Disk-derived structural issues (Issue #13). Health is derived state only:
   // it reflects the last saved/scan state, so it is shown in Preview rather
   // than while the editor holds unsaved changes.
@@ -129,20 +129,6 @@
     onDirtyChange(dirty);
   });
 
-  function cloneMetadata(value: PromptMetadata): PromptMetadata {
-    const variables = value.variables
-      ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
-      : undefined;
-    return {
-      ...value,
-      tags: [...value.tags],
-      models: [...value.models],
-      related: [...value.related],
-      extra: { ...value.extra },
-      ...(variables ? { variables } : {}),
-    };
-  }
-
   function updateMetadata(value: PromptMetadata): void {
     metadata = value;
     saveError = '';
@@ -156,16 +142,35 @@
   }
 
   export async function save(): Promise<void> {
-    if (!document || !metadata || !dirty || saving) return;
+    if (!document || !metadata || !originalMetadata || !dirty || saving) return;
     saving = true;
     saveError = '';
     try {
+      // Effective metadata: strip empty "Add blank" draft entries and, when the
+      // examples list is semantically unchanged, restore the original raw AST so
+      // a net-zero draft interaction never rewrites a hand-written examples
+      // block (Issue #26 review P1). `dirty` is recomputed against the effective
+      // metadata, so the net-zero case is not a real metadata edit.
+      const { effective, dirty: effectiveMetadataDirty } = effectiveMetadataForSave(
+        metadata,
+        originalMetadata
+      );
+      if (body === originalBody && !effectiveMetadataDirty) {
+        // Nothing actually changed (e.g. Add blank → nothing → Cmd+S, or an
+        // empty draft row created then removed): restore the clean baseline
+        // locally without writing to disk.
+        metadata = effective;
+        originalMetadata = cloneMetadata(effective);
+        mode = 'preview';
+        onNotice('No changes to save.');
+        return;
+      }
       const saved = await onSave(
         document,
         body,
-        cloneMetadata(metadata),
+        effective,
         frontmatterPrefix,
-        metadataDirty,
+        effectiveMetadataDirty,
         originalRaw
       );
       body = saved.body;
@@ -352,7 +357,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -362,7 +367,7 @@
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
         </div>
       </div>
     {/if}
@@ -371,6 +376,9 @@
       {#if mode !== 'history'}
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
+        {#if mode === 'preview'}
+          <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
+        {/if}
         <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
       {/if}

@@ -232,6 +232,50 @@ export async function revealAssetInFinder(project: string, relativePath: string)
   await call<null>('reveal_asset_in_finder', { project, relativePath });
 }
 
+/** Convert an absolute path selected by the user into a canonical
+ *  Project-relative asset reference (Issue #26 §8). Rust is the only authority
+ *  on path safety; the frontend never computes relative paths. The desktop
+ *  command fails closed for paths outside the Project, symlinks, `.md` files
+ *  and non-regular targets. */
+export async function assetReferenceFromSelectedPath(
+  project: string,
+  absolutePath: string
+): Promise<string> {
+  if (!isTauri()) {
+    // Browser dev has no real filesystem: accept a project-relative reference
+    // typed by the developer. No path rules are replicated here.
+    return absolutePath.trim();
+  }
+  return call<string>('asset_reference_from_selected_path', { project, absolutePath });
+}
+
+export interface AssetPickResult {
+  reference?: string;
+  error?: string;
+}
+
+/** Open the native file dialog and convert the selection into a canonical
+ *  Project-relative asset reference. Returns `{ reference }` on success or
+ *  `{ error }` on cancel/rejection; the UI only writes editor state after a
+ *  successful result. In browser dev the dialog is replaced by a prompt that
+ *  accepts a project-relative path (the browser fixture has no filesystem). */
+export async function pickAssetReference(project: string): Promise<AssetPickResult> {
+  if (!isTauri()) {
+    const typed = window.prompt('Asset reference (project-relative, browser-dev only):');
+    if (typed === null) return { error: 'Selection cancelled.' };
+    const trimmed = typed.trim();
+    return trimmed ? { reference: trimmed } : { error: 'No asset reference given.' };
+  }
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const picked = await open({ multiple: false, title: 'Choose a file inside the current Project' });
+  if (typeof picked !== 'string' || !picked) return { error: 'Selection cancelled.' };
+  try {
+    return { reference: await assetReferenceFromSelectedPath(project, picked) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function gitRepositoryInfo(project: string): Promise<GitRepositoryInfo> {
   if (!isTauri()) return { available: false, reason: 'not-a-repository' };
   return call<GitRepositoryInfo>('git_repository_info', { project });
@@ -351,6 +395,24 @@ const devMetadata: Record<string, PromptMetadata> = {
     related: ['review/pr-checklist', 'refactor/refactor-safely'],
     notes: 'Works best on normal-sized pull requests.\n\nFor architecture reviews, set the focus to: architecture, boundaries and dependency direction.',
     extra: {},
+    examples: [
+      {
+        name: 'Small PR',
+        input: 'Repository: foo/bar\nPR: 9\n',
+        output: 'Looks good; add a test for the null case.',
+        notes: 'Minimal happy-path example.',
+      },
+      {
+        name: 'Large PR',
+        inputFile: 'examples/review-pr-large.txt',
+        output: 'inline output text',
+      },
+      {
+        name: 'Ref',
+        input: 'in',
+        assets: ['examples/reference.png', 'missing/asset.txt'],
+      },
+    ],
   },
   '/dev/mock/engineering::review/pr-checklist': {
     description: 'Review a pull request for regressions, missing tests and silent failures.',
