@@ -19,6 +19,27 @@ export function exampleDisplayName(example: PromptExample, index: number): strin
   return name ? name : `Example ${index + 1}`;
 }
 
+/** One asset reference's position inside the examples editor: which example,
+ *  which role (inputFile / outputFile / asset), and for `asset` the position
+ *  within `assets[]`. There is no persistent example ID; array position is the
+ *  only ordering (Issue #26 §6). */
+export interface AssetRefIdentity {
+  index: number;
+  role: 'inputFile' | 'outputFile' | 'asset';
+  sub?: number;
+  reference: string;
+}
+
+/** Build the project-scoped key used by the asset resolution map (Issue #30
+ *  P2). Binding the source Project path means two Projects that share the same
+ *  `index:role:reference` can never collide across a Project switch — a stale
+ *  entry from Project A can never be read back as Project B's resolution state.
+ *  NUL cannot appear in a real filesystem path, so it is a safe delimiter
+ *  inside the internal map key. */
+export function assetResolutionKey(projectPath: string, ref: AssetRefIdentity): string {
+  return `${projectPath}\u0000${ref.index}:${ref.role}:${ref.sub ?? ''}:${ref.reference}`;
+}
+
 /** Append one blank example. */
 export function addExample(examples: PromptExample[]): PromptExample[] {
   return [...examples, {}];

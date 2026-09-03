@@ -14,6 +14,7 @@
     replaceInputWithFile,
     replaceOutputWithFile,
     clearFileRef,
+    assetResolutionKey,
   } from '$lib/examples/editor-helpers';
 
   interface Props {
@@ -67,18 +68,36 @@
       resolution = {};
       return;
     }
+    // A new resolve request never reuses the previous Project's visible state
+    // (Issue #30 P2): clear the map up front so a stale Ready/Missing can never
+    // leak across a Project switch, keep the stale-write guard, and handle
+    // rejection by falling back to an empty map — never an old result.
+    resolution = {};
     let cancelled = false;
     void resolvePromptAssets(
       proj,
       refs.map((r) => r.reference)
-    ).then((results) => {
-      if (cancelled) return;
-      const map: Record<string, ResolvedPromptAsset> = {};
-      results.forEach((result, i) => {
-        map[`${refs[i].index}:${refs[i].role}:${refs[i].sub ?? ''}:${result.reference}`] = result;
-      });
-      resolution = map;
-    });
+    ).then(
+      (results) => {
+        if (cancelled) return;
+        const map: Record<string, ResolvedPromptAsset> = {};
+        results.forEach((result, i) => {
+          map[
+            assetResolutionKey(proj, {
+              index: refs[i].index,
+              role: refs[i].role,
+              sub: refs[i].sub,
+              reference: result.reference,
+            })
+          ] = result;
+        });
+        resolution = map;
+      },
+      () => {
+        if (cancelled) return;
+        resolution = {};
+      }
+    );
     return () => {
       cancelled = true;
     };
@@ -90,7 +109,7 @@
     reference: string,
     sub?: number
   ): ResolvedPromptAsset | undefined {
-    return resolution[`${index}:${role}:${sub ?? ''}:${reference}`];
+    return resolution[assetResolutionKey(projectPath, { index, role, sub, reference })];
   }
 
   function stateLabel(state: ResolvedPromptAsset['state']): string {
@@ -212,7 +231,7 @@
               <input
                 value={example.inputFile}
                 aria-label="Input file reference"
-                onchange={(event) =>
+                oninput={(event) =>
                   onChange(updateExampleField(examples, index, 'inputFile', event.currentTarget.value || undefined))
                 }
               />
@@ -242,7 +261,7 @@
               <input
                 value={example.outputFile}
                 aria-label="Output file reference"
-                onchange={(event) =>
+                oninput={(event) =>
                   onChange(updateExampleField(examples, index, 'outputFile', event.currentTarget.value || undefined))
                 }
               />

@@ -27,6 +27,7 @@ const {
   replaceOutputWithFile,
   clearFileRef,
   hasExampleContent,
+  assetResolutionKey,
 } = await import(join(root, 'src/lib/examples/editor-helpers.ts'));
 
 let failures = 0;
@@ -255,6 +256,28 @@ console.log('effectiveMetadataForSave — net-zero drafts never rewrite the raw 
   const r5 = effectiveMetadataForSave(noRawBlank, noRaw);
   assert(r5.dirty === false, 'net-zero draft is not dirty when the file had no raw AST');
   assert(r5.effective.examplesRaw === undefined, 'no raw AST to restore');
+}
+
+console.log('assetResolutionKey — project-scoped identity never collides across Projects (Issue #30 P2)');
+
+{
+  // Two Projects that share the same `index:role:reference` must produce
+  // different keys: a stale resolution entry from Project A must never be read
+  // back as Project B's state after a Project switch.
+  const a = assetResolutionKey('/projects/a', { index: 0, role: 'asset', sub: 1, reference: 'assets/ref.png' });
+  const b = assetResolutionKey('/projects/b', { index: 0, role: 'asset', sub: 1, reference: 'assets/ref.png' });
+  assert(a !== b, 'same ref under different Projects produces different keys');
+
+  // The identity is deterministic for the same Project + ref.
+  const aAgain = assetResolutionKey('/projects/a', { index: 0, role: 'asset', sub: 1, reference: 'assets/ref.png' });
+  assert(a === aAgain, 'same Project + ref is deterministic');
+
+  // Example index, role and asset sub-index are part of the identity, and
+  // inputFile/outputFile stay distinct from assets.
+  assert(assetResolutionKey('/projects/a', { index: 1, role: 'asset', sub: 1, reference: 'assets/ref.png' }) !== a, 'example index is part of the identity');
+  assert(assetResolutionKey('/projects/a', { index: 0, role: 'outputFile', reference: 'assets/ref.png' }) !== a, 'role is part of the identity');
+  assert(assetResolutionKey('/projects/a', { index: 0, role: 'asset', reference: 'assets/ref.png' }) !== a, 'asset sub index is part of the identity');
+  assert(assetResolutionKey('/projects/a', { index: 0, role: 'asset', sub: 1, reference: 'assets/other.png' }) !== a, 'reference is part of the identity');
 }
 
 if (failures > 0) {
