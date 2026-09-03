@@ -200,6 +200,62 @@ console.log('save before first live index bumps revision and blocks stale swap')
   eq(fresh.index.get('b')?.bodyLower, 'b fresh body', 'rebuild still builds remaining prompts');
 }
 
+console.log('a second refresh round never commits the superseded round\'s in-flight body reads');
+{
+  let revision = 0;
+  let superseded = false;
+  let releaseFirstRead;
+  const firstReadGate = new Promise((resolve) => {
+    releaseFirstRead = resolve;
+  });
+  const commitLog = [];
+  let buildCount = 0;
+
+  // Round 1 refresh: the full rebuild starts and its body read is suspended.
+  const round1 = buildUntilRevisionStable({
+    getRevision: () => revision,
+    shouldAbort: () => superseded,
+    build: async () => {
+      buildCount++;
+      const { index } = await buildSearchIndex([summary('a')], {
+        readBody: async () => {
+          if (buildCount === 1) await firstReadGate; // slow disk read
+          return searchEntryFromDocument(document('a', 1000, 'round 1 body'));
+        },
+      });
+      return index;
+    },
+    commit: (index) => {
+      commitLog.push('round1:' + index.get('a').bodyLower);
+    },
+  });
+
+  // Round 2 refresh supersedes round 1 before its read completes: the revision
+  // moves and round 1's abort flag is set (its loadSerial is no longer current).
+  revision = 1;
+  superseded = true;
+  releaseFirstRead();
+
+  // Round 2's own rebuild completes and commits the live index.
+  const round2 = await buildUntilRevisionStable({
+    getRevision: () => revision,
+    build: async () => {
+      const { index } = await buildSearchIndex([summary('a')], {
+        readBody: async () => searchEntryFromDocument(document('a', 2000, 'round 2 body')),
+      });
+      return index;
+    },
+    commit: (index) => {
+      commitLog.push('round2:' + index.get('a').bodyLower);
+    },
+  });
+
+  const r1 = await round1;
+  eq(r1, null, 'superseded round aborts and returns no committed snapshot');
+  eq(round2?.value?.get('a')?.bodyLower, 'round 2 body', 'latest round commits its own snapshot');
+  eq(commitLog, ['round2:round 2 body'], 'only the latest round commits; superseded body reads never reach the live index');
+}
+
 console.log('buildUntilRevisionStable awaits retry until revision stabilizes');
 {
   let revision = 0;

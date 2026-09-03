@@ -503,7 +503,12 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     library.allPrompts = summaries;
     library.folderPaths = folders;
     library.error = null;
-    void refreshSearchIndex(project, summaries, serial);
+    // Await the full index rebuild so refresh completion — and therefore the
+    // filesystem scheduler's single-flight — covers this round's body reads.
+    // Fire-and-forget would let a second refresh start another full rebuild
+    // while this one is still reading every body.
+    await refreshSearchIndex(project, summaries, serial);
+    if (serial !== loadSerial) return;
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {

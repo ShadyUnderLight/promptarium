@@ -66,9 +66,14 @@ discarding. Refresh offers explicit Reload from disk or Keep editing. Save write
 database record or an in-project sidecar.
 
 Invalid frontmatter keeps the prompt in the library with a warning badge. The
-detail view can show raw content and never silently repairs it. If the file
-changes externally while editing, the UI shows a conflict and offers Reload or
-Keep editing rather than overwriting the external edit.
+detail view can show raw content and never silently repairs it. A refresh never
+warns about external content changes: the dirty editor buffer is preserved and
+no mtime/size predication is used. An external content change is only detected
+when Save is attempted — the current file text is compared against the
+expectedRaw the editor loaded, and a conflict is shown with Reload or Keep
+editing rather than overwriting the external edit. A file deleted or moved
+externally is surfaced as a file-missing notice after refresh while the editor
+still holds the unsaved edits.
 
 ## Prompt-specific sections
 
