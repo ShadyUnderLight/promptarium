@@ -4,7 +4,7 @@
  * Refresh never replaces a dirty editor buffer; only a deleted/renamed file
  * surfaces as an external change while dirty. Disk-content conflicts are the
  * save-time `expectedRaw` full-text compare's job, so no mtime/size
- * predication exists here.
+ * prediction exists here.
  */
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -100,7 +100,7 @@ eq(
     externalChange: null,
     preserveEditor: true,
   },
-  'dirty buffer preserved without mtime/size predication'
+  'dirty buffer preserved without mtime/size prediction'
 );
 
 console.log('clean selected without reload stays quiet');

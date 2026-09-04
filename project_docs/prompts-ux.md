@@ -68,7 +68,7 @@ database record or an in-project sidecar.
 Invalid frontmatter keeps the prompt in the library with a warning badge. The
 detail view can show raw content and never silently repairs it. A refresh never
 warns about external content changes: the dirty editor buffer is preserved and
-no mtime/size predication is used. An external content change is only detected
+no mtime/size prediction is used. An external content change is only detected
 when Save is attempted — the current file text is compared against the
 expectedRaw the editor loaded, and a conflict is shown with Reload or Keep
 editing rather than overwriting the external edit. A file deleted or moved

@@ -499,18 +499,28 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
   library.refreshing = projectRefreshFlags.refreshing;
   library.loading = true;
   try {
-    // Scan + index rebuild + the UI snapshot below share one stable-revision
-    // interval (refreshProjectScopeSnapshot rescans if a save lands during the
-    // rebuild). The await also makes refresh completion — and therefore the
-    // filesystem scheduler's single-flight — cover this round's body reads, so a
-    // filesystem-scheduled refresh cannot start another full rebuild while this
-    // one reads (manual/focus refresh may still run concurrently; see PR #33).
     const snapshot = await refreshProjectScopeSnapshot({
       projectPath: project,
       scanProject: apiScanProject,
       listFolders: apiListFolders,
       refreshSearchIndex: (projectPath, summaries) => refreshSearchIndex(projectPath, summaries, serial),
       getRevision: searchIndexRevision,
+      onScan: (summaries, folders) => {
+        if (serial !== loadSerial || project !== library.activeProjectPath) return;
+        library.allPrompts = summaries;
+        library.folderPaths = folders;
+        library.error = null;
+        const query = library.searchQuery.trim();
+        if (!query) {
+          library.prompts = summaries;
+          library.loading = false;
+        } else if (searchIndexes.has(project)) {
+          // Keep the previous complete index visible until the new complete
+          // index swaps in; never expose the in-progress body reads.
+          library.prompts = searchIndexed(project, query) ?? library.prompts;
+          library.loading = false;
+        }
+      },
       shouldAbort: () => serial !== loadSerial || project !== library.activeProjectPath,
     });
     if (!snapshot) return;
@@ -535,11 +545,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
       reloadSelected,
     });
 
-    if (decision.externalChange) {
-      library.externalChangeState = decision.externalChange;
-    } else if (decision.reloadSelected) {
-      library.externalChangeState = null;
-    }
+    library.externalChangeState = decision.externalChange;
 
     const selectedName = library.selectedName;
     const selectedProject = library.selectedProjectPath;
@@ -651,11 +657,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
         library.folderPaths = [];
         library.allProjectsWarnings = warnings;
         library.error = null;
-        if (plan.decision.externalChange) {
-          library.externalChangeState = plan.decision.externalChange;
-        } else if (plan.decision.reloadSelected) {
-          library.externalChangeState = null;
-        }
+        library.externalChangeState = plan.decision.externalChange;
         if (plan.decision.clearSelection) {
           clearSelectedDocument();
         }

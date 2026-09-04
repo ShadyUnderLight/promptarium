@@ -100,10 +100,10 @@ console.log('single-flight covers a full rebuild that happens inside the refresh
   const gate = new Promise((resolve) => {
     releaseRead = resolve;
   });
-  // Models refreshLibrary: the refresh task now AWAITS the full index rebuild
-  // (slow body reads) before returning. The scheduler must hold its single-flight
-  // boundary for the whole build, so a second refresh never runs a parallel full
-  // rebuild; the queued run re-executes the same task only after the first ends.
+  // Models refreshLibrary: the refresh task awaits the full index rebuild
+  // (including slow body reads) before returning. The scheduler must hold its
+  // single-flight boundary for the whole build, so a second refresh cannot
+  // start a parallel full rebuild.
   const refreshTask = async () => {
     runCount++;
     active++;
