@@ -88,6 +88,49 @@ console.log('queues one follow-up refresh while in flight');
   assert(runs === 2, 'queued refresh runs once');
 }
 
+console.log('single-flight covers a full rebuild that happens inside the refresh task');
+{
+  const fake = createFakeClock();
+  const scheduler = new FsRefreshScheduler(0, fake.clock);
+  const events = [];
+  let active = 0;
+  let maxActive = 0;
+  let runCount = 0;
+  let releaseRead;
+  const gate = new Promise((resolve) => {
+    releaseRead = resolve;
+  });
+  // Models refreshLibrary: the refresh task awaits the full index rebuild
+  // (including slow body reads) before returning. The scheduler must hold its
+  // single-flight boundary for the whole build, so a second refresh cannot
+  // start a parallel full rebuild.
+  const refreshTask = async () => {
+    runCount++;
+    active++;
+    maxActive = Math.max(maxActive, active);
+    events.push('refresh-' + runCount + '-start');
+    await gate;
+    events.push('refresh-' + runCount + '-end');
+    active--;
+  };
+  scheduler.notify(refreshTask);
+  fake.advance(0);
+  assert(events.join() === 'refresh-1-start', 'first refresh starts its rebuild');
+  scheduler.notify(refreshTask);
+  fake.advance(0);
+  assert(maxActive === 1, 'second refresh never starts a build while the first is in flight');
+  assert(events.join() === 'refresh-1-start', 'second refresh is queued behind the in-flight rebuild');
+  releaseRead();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert(maxActive === 1, 'still no overlap across the queued re-run');
+  assert(
+    events.join() === 'refresh-1-start,refresh-1-end,refresh-2-start,refresh-2-end',
+    'queued refresh re-runs only after the first fully completes'
+  );
+}
+
 if (failures) {
   console.error('\n' + failures + ' failure(s)');
   process.exit(1);
