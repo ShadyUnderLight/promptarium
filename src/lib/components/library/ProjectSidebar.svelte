@@ -20,6 +20,7 @@
   import type { FolderNode, Project } from '$lib/prompts/types';
   import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
   import { t } from '$lib/i18n/i18n.svelte';
+  import { errorDetail } from '$lib/library/errors';
   import ProjectMenu from './ProjectMenu.svelte';
 
   interface Props {
@@ -92,7 +93,7 @@
       addPath = null;
       relocateFrom = null;
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     } finally {
       busy = false;
     }
@@ -127,7 +128,7 @@
     try {
       await setActiveProject(path);
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -140,7 +141,7 @@
     try {
       await setAllProjectsScope();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -174,7 +175,7 @@
       await createFolder(name.trim());
       library.folderFilter = name.trim().replace(/\/+$/, '');
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -191,7 +192,7 @@
           library.folderFilter = next.trim() + library.folderFilter.slice(folder.length);
         }
       } catch (error) {
-        onNotice(error instanceof Error ? error.message : String(error));
+        onNotice(errorDetail(error));
       }
     } else if (action === 'delete' && window.confirm('Delete empty folder “' + folder + '”?')) {
       if (!canNavigate()) return;
@@ -199,7 +200,7 @@
         await deleteFolder(folder);
         if (library.folderFilter === folder) library.folderFilter = '';
       } catch (error) {
-        onNotice(error instanceof Error ? error.message : String(error));
+        onNotice(errorDetail(error));
       }
     }
   }
@@ -212,7 +213,7 @@
       await forgetProject(library.activeProjectPath);
       onNotice('Project forgotten. Its files were not changed.');
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 </script>

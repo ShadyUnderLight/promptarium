@@ -14,6 +14,7 @@ import type {
   ResolvedPromptAsset,
 } from './prompts/types';
 import type { GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from './prompts/git-types';
+import { errorDetail } from './library/errors';
 import { cloneMetadata } from './prompts/duplicate';
 
 export function isTauri(): boolean {
@@ -272,7 +273,7 @@ export async function pickAssetReference(project: string): Promise<AssetPickResu
   try {
     return { reference: await assetReferenceFromSelectedPath(project, picked) };
   } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+    return { error: errorDetail(error) };
   }
 }
 

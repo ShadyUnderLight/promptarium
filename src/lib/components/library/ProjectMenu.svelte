@@ -4,6 +4,7 @@
   import { revealInFinder as apiRevealInFinder } from '$lib/api';
   import type { Project } from '$lib/prompts/types';
   import { forgetProject, renameProjectLabel, setProjectColor } from '$lib/library.svelte';
+  import { errorDetail } from '$lib/library/errors';
 
   interface Props {
     project: Project;
@@ -28,7 +29,7 @@
       onNotice('Project label updated.');
       onClose();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -37,7 +38,7 @@
       await setProjectColor(project.path, color);
       onClose();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -49,7 +50,7 @@
       onNotice('Project forgotten. Its files are still on disk.');
       onClose();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -57,7 +58,7 @@
     try {
       await apiRevealInFinder(project.path);
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
     onClose();
   }

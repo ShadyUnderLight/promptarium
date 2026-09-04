@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -25,6 +27,13 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Issue #35 "Full suite": reject trailing whitespace / bad patch hygiene
+      # across the whole PR diff. Only meaningful on pull requests (base ref is
+      # empty on branch pushes).
+      - name: Whitespace check
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${GITHUB_BASE_REF}"...HEAD
 
       - name: Type-check (svelte-check)
         run: pnpm check

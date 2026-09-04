@@ -13,7 +13,7 @@ import { zhCN } from '../src/lib/i18n/locales/zh-CN';
 import type { MessageKey } from '../src/lib/i18n/locales/en';
 import { locale, setPreference, t, interpolateMessage } from '../src/lib/i18n/i18n.svelte';
 import { formatDate, formatDateTime, formatNumber } from '../src/lib/i18n/format';
-import { parseError, isNotFoundError } from '../src/lib/library/errors';
+import { parseError, errorDetail, isNotFoundError } from '../src/lib/library/errors';
 
 describe('resolveSystemLocale', () => {
   it('maps Simplified Chinese variants to zh-CN', () => {
@@ -221,5 +221,15 @@ describe('parseError — machine state seam', () => {
     expect(isNotFoundError('PROMPT_FILE_NOT_FOUND')).toBe(true);
     expect(isNotFoundError('PROMPT_CONFLICT')).toBe(false);
     expect(isNotFoundError(null)).toBe(false);
+  });
+
+  it('errorDetail strips the machine prefix for user-facing display', () => {
+    expect(errorDetail('PROMPT_FILE_NOT_FOUND: /p.md')).toBe('/p.md');
+    expect(errorDetail('PROJECT_FOLDER_NOT_FOUND: /Users/me/proj')).toBe('/Users/me/proj');
+    expect(errorDetail('PROMPT_CONFLICT: /p.md changed on disk while you were editing it')).toBe(
+      '/p.md changed on disk while you were editing it'
+    );
+    expect(errorDetail('plain failure')).toBe('plain failure');
+    expect(errorDetail(new Error('PROMPT_FILE_NOT_FOUND: /x'))).toBe('/x');
   });
 });

@@ -82,7 +82,7 @@ import {
   promptKey,
   type LibraryScope,
 } from './library/scope';
-import { isNotFoundError, parseError, type ErrorCode } from './library/errors';
+import { errorDetail, isNotFoundError, parseError, type ErrorCode } from './library/errors';
 import {
   allProjectsRefreshFlagsAtStart,
   finalizeAllProjectsRefreshFlags,
@@ -166,10 +166,6 @@ function searchIndexRevision(projectPath: string): number {
 
 function bumpSearchIndexRevision(projectPath: string): void {
   searchIndexRevisions.set(projectPath, searchIndexRevision(projectPath) + 1);
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 /** Set `library.error`/`library.errorCode` together. The display string keeps
@@ -715,7 +711,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
 export async function setAllProjectsScope(): Promise<void> {
   library.libraryScope = { kind: 'all-projects' };
   library.folderFilter = '';
-  library.error = null;
+  setLibraryError(null);
   await refreshAllProjects();
 }
 
@@ -808,7 +804,7 @@ export async function selectPrompt(project: string, name: string): Promise<void>
     if (serial !== documentSerial || !selectedIdentityMatches(project, name)) return;
     setSelectedDocument(document);
   } catch (error) {
-    if (serial === documentSerial && selectedIdentityMatches(project, name)) library.error = errorText(error);
+    if (serial === documentSerial && selectedIdentityMatches(project, name)) setLibraryError(error);
   } finally {
     if (serial === documentSerial) library.loadingDocument = false;
   }
@@ -841,7 +837,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (
@@ -870,7 +866,7 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (
@@ -925,7 +921,7 @@ export async function selectHistoryCommit(
         library.historySelectedCommit
       )
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (

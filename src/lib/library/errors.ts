@@ -27,6 +27,14 @@ export function parseError(error: unknown): ParsedError {
   return { code: null, detail: raw };
 }
 
+/** Human-safe message for user-facing display (toasts, banners) — strips any
+ *  machine code prefix. All user-visible error text should go through this
+ *  seam rather than `error.message`, so a coded backend error never leaks its
+ *  prefix to the user. */
+export function errorDetail(error: unknown): string {
+  return parseError(error).detail;
+}
+
 /** True for the "something that used to exist is gone" family. */
 export function isNotFoundError(code: ErrorCode | null): boolean {
   return code === 'PROJECT_FOLDER_NOT_FOUND' || code === 'PROMPT_FILE_NOT_FOUND';
