@@ -82,6 +82,7 @@ import {
   promptKey,
   type LibraryScope,
 } from './library/scope';
+import { errorDetail, isNotFoundError, parseError, type ErrorCode } from './library/errors';
 import {
   allProjectsRefreshFlagsAtStart,
   finalizeAllProjectsRefreshFlags,
@@ -106,6 +107,7 @@ export const library = $state({
   refreshing: false,
   loadingDocument: false,
   error: null as string | null,
+  errorCode: null as ErrorCode | null,
   searchQuery: '',
   smartView: 'all' as 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention',
   folderFilter: '',
@@ -166,8 +168,18 @@ function bumpSearchIndexRevision(projectPath: string): void {
   searchIndexRevisions.set(projectPath, searchIndexRevision(projectPath) + 1);
 }
 
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/** Set `library.error`/`library.errorCode` together. The display string keeps
+ *  only the human `detail` (code prefix stripped); business branches read
+ *  `library.errorCode`, never the message text. */
+function setLibraryError(error: unknown): void {
+  if (error == null) {
+    library.error = null;
+    library.errorCode = null;
+    return;
+  }
+  const parsed = parseError(error);
+  library.error = parsed.detail;
+  library.errorCode = parsed.code;
 }
 
 export function isAllProjects(): boolean {
@@ -457,12 +469,12 @@ export async function refreshProjects(options: RefreshProjectsOptions = {}): Pro
     library.libraryScope = resolveLibraryScope(previousScope, result.projects, result.active, {
       preserveScope,
     });
-    library.error = null;
+    setLibraryError(null);
     if (isAllProjects()) await refreshAllProjects();
     else await refreshLibrary();
   } catch (error) {
     invalidateDocumentLoad();
-    library.error = errorText(error);
+    setLibraryError(error);
     library.projects = [];
     library.activeProjectPath = null;
     library.libraryScope = { kind: 'all-projects' };
@@ -509,7 +521,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
         if (serial !== loadSerial || project !== library.activeProjectPath) return;
         library.allPrompts = summaries;
         library.folderPaths = folders;
-        library.error = null;
+        setLibraryError(null);
         const query = library.searchQuery.trim();
         if (!query) {
           library.prompts = summaries;
@@ -526,7 +538,7 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     if (!snapshot) return;
     library.allPrompts = snapshot.summaries;
     library.folderPaths = snapshot.folders;
-    library.error = null;
+    setLibraryError(null);
     const query = library.searchQuery;
     const querySerial = searchSerial;
     if (library.searchQuery.trim()) {
@@ -570,10 +582,10 @@ export async function refreshLibrary(options: RefreshLibraryOptions = {}): Promi
     }
   } catch (error) {
     if (serial !== loadSerial || project !== library.activeProjectPath) return;
-    library.error = errorText(error);
+    setLibraryError(error);
     library.allPrompts = [];
     library.prompts = [];
-    if (library.error.toLowerCase().includes('not found')) {
+    if (isNotFoundError(library.errorCode)) {
       if (!editorDirty) {
         library.selected = null;
         library.selectedProjectPath = null;
@@ -617,7 +629,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
           () => !scopeStillCurrent(serial, scope)
         );
       } catch (error) {
-        warnings.push({ projectPath: project.path, error: errorText(error) });
+        warnings.push({ projectPath: project.path, error: parseError(error).detail });
         return null;
       }
     });
@@ -656,7 +668,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
         library.prompts = plan.prompts;
         library.folderPaths = [];
         library.allProjectsWarnings = warnings;
-        library.error = null;
+        setLibraryError(null);
         library.externalChangeState = plan.decision.externalChange;
         if (plan.decision.clearSelection) {
           clearSelectedDocument();
@@ -684,7 +696,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
     }
   } catch (error) {
     if (!scopeStillCurrent(serial, scope)) return;
-    library.error = errorText(error);
+    setLibraryError(error);
     library.allPrompts = [];
     library.prompts = [];
   } finally {
@@ -699,7 +711,7 @@ export async function refreshAllProjects(options: RefreshLibraryOptions = {}): P
 export async function setAllProjectsScope(): Promise<void> {
   library.libraryScope = { kind: 'all-projects' };
   library.folderFilter = '';
-  library.error = null;
+  setLibraryError(null);
   await refreshAllProjects();
 }
 
@@ -792,7 +804,7 @@ export async function selectPrompt(project: string, name: string): Promise<void>
     if (serial !== documentSerial || !selectedIdentityMatches(project, name)) return;
     setSelectedDocument(document);
   } catch (error) {
-    if (serial === documentSerial && selectedIdentityMatches(project, name)) library.error = errorText(error);
+    if (serial === documentSerial && selectedIdentityMatches(project, name)) setLibraryError(error);
   } finally {
     if (serial === documentSerial) library.loadingDocument = false;
   }
@@ -825,7 +837,7 @@ export async function loadPromptHistory(project: string, name: string): Promise<
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (
@@ -854,7 +866,7 @@ export async function loadMorePromptHistory(project: string, name: string): Prom
     if (
       !isStaleHistoryResponse(serial, historySerial, project, name, library.selectedProjectPath, library.selectedName)
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (
@@ -909,7 +921,7 @@ export async function selectHistoryCommit(
         library.historySelectedCommit
       )
     ) {
-      library.historyError = errorText(error);
+      library.historyError = errorDetail(error);
     }
   } finally {
     if (
@@ -1097,7 +1109,7 @@ async function runSearch(): Promise<void> {
       if (serial !== searchSerial || !isAllProjects()) return;
       library.prompts = results;
     } catch (error) {
-      library.error = errorText(error);
+      setLibraryError(error);
       library.prompts = [];
     }
     return;
@@ -1113,7 +1125,7 @@ async function runSearch(): Promise<void> {
     if (serial !== searchSerial || project !== library.activeProjectPath) return;
     library.prompts = results;
   } catch (error) {
-    library.error = errorText(error);
+    setLibraryError(error);
     library.prompts = [];
   }
 }

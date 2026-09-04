@@ -20,6 +20,7 @@
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
   import ExamplesSection from './ExamplesSection.svelte';
+  import { parseError } from '$lib/library/errors';
 
   interface Props {
     document: PromptDocument | null;
@@ -75,6 +76,7 @@
   let loadedKey = $state('');
   let rawVisible = $state(false);
   let saveError = $state('');
+  let saveConflict = $state(false);
   let saving = $state(false);
 
   const dirty = $derived(
@@ -123,6 +125,7 @@
     mode = 'preview';
     rawVisible = false;
     saveError = '';
+    saveConflict = false;
   });
 
   $effect(() => {
@@ -132,6 +135,7 @@
   function updateMetadata(value: PromptMetadata): void {
     metadata = value;
     saveError = '';
+    saveConflict = false;
   }
 
   export function discardChanges(): void {
@@ -139,12 +143,14 @@
     body = originalBody;
     metadata = cloneMetadata(originalMetadata);
     saveError = '';
+    saveConflict = false;
   }
 
   export async function save(): Promise<void> {
     if (!document || !metadata || !originalMetadata || !dirty || saving) return;
     saving = true;
     saveError = '';
+    saveConflict = false;
     try {
       // Effective metadata: strip empty "Add blank" draft entries and, when the
       // examples list is semantically unchanged, restore the original raw AST so
@@ -182,7 +188,9 @@
       mode = 'preview';
       onNotice('Prompt saved.');
     } catch (error) {
-      saveError = error instanceof Error ? error.message : String(error);
+      const parsed = parseError(error);
+      saveError = parsed.detail;
+      saveConflict = parsed.code === 'PROMPT_CONFLICT';
     } finally {
       saving = false;
     }
@@ -200,6 +208,7 @@
     if (!document) return;
     await onReload(document);
     saveError = '';
+    saveConflict = false;
     onDismissExternalChange();
     onNotice('Reloaded the prompt from disk. Local edits were discarded.');
   }
@@ -312,7 +321,7 @@
       </div>
     {/if}
 
-    {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveError.includes('CONFLICT')}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '')}>Keep editing</button></span>{/if}</div>{/if}
+    {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveConflict}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '', saveConflict = false)}>Keep editing</button></span>{/if}</div>{/if}
     {#if document.frontmatterError}
       <div class="frontmatter-warning">
         <span>Frontmatter warning: {document.frontmatterError}</span>
@@ -355,7 +364,7 @@
       <div class="editor-layout">
         <div class="editor-main">
           <label class="editor-label" for="prompt-body">Prompt Markdown</label>
-          <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '')}></textarea>
+          <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
           <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
         </div>
         <div class="editor-inspector">

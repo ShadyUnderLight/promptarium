@@ -27,6 +27,7 @@
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { copyToClipboard } from '$lib/copy';
   import { toasts } from '$lib/prompts/toasts.svelte';
+  import { errorDetail } from '$lib/library/errors';
   import ProjectSidebar from './library/ProjectSidebar.svelte';
   import PromptLibrary from './library/PromptLibrary.svelte';
   import PromptDetail from './library/PromptDetail.svelte';
@@ -40,7 +41,7 @@
   let deleteTarget = $state<PromptDocument | null>(null);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
-    !isAllProjects() && Boolean(library.error?.toLowerCase().includes('project folder not found'))
+    !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
   );
   let scopeTitle = $derived(
     isAllProjects()
@@ -143,7 +144,7 @@
   }
 
   function handleReveal(document: PromptDocument): void {
-    void revealPrompt(document).catch((error) => notice(errorText(error)));
+    void revealPrompt(document).catch((error) => notice(errorDetail(error)));
   }
 
   function handleRename(document: PromptDocument, newName: string): void {
@@ -153,7 +154,7 @@
         if (isCurrentDocument({ ...document, name: newName })) detailDirty = false;
         notice('Prompt renamed.');
       })
-      .catch((error) => notice(errorText(error)));
+      .catch((error) => notice(errorDetail(error)));
   }
 
   function handleMove(document: PromptDocument, destination: string): void {
@@ -163,7 +164,7 @@
         if (isCurrentDocument({ ...document, name: destination })) detailDirty = false;
         notice('Prompt moved.');
       })
-      .catch((error) => notice(errorText(error)));
+      .catch((error) => notice(errorDetail(error)));
   }
 
   function handleDuplicate(document: PromptDocument, name: string): void {
@@ -173,7 +174,7 @@
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
         notice('Prompt duplicated.');
       })
-      .catch((error) => notice(errorText(error)));
+      .catch((error) => notice(errorDetail(error)));
   }
 
   function handleDuplicateAsVariant(document: PromptDocument, name: string): void {
@@ -183,7 +184,7 @@
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
         notice('Prompt duplicated as variant.');
       })
-      .catch((error) => notice(errorText(error)));
+      .catch((error) => notice(errorDetail(error)));
   }
 
   function requestDelete(document: PromptDocument): void {
@@ -197,7 +198,7 @@
     try {
       await deletePrompt(document);
     } catch (error) {
-      notice(errorText(error));
+      notice(errorDetail(error));
       return;
     }
     deleteTarget = null;
@@ -304,10 +305,6 @@
     dismissExternalChange();
     if (isAllProjects()) await refreshAllProjects();
     else await refreshLibrary();
-  }
-
-  function errorText(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
   }
 
   function startResize(which: 'sidebar' | 'library', event: PointerEvent): void {

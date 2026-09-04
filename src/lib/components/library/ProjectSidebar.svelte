@@ -19,6 +19,8 @@
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
   import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
+  import { t } from '$lib/i18n/i18n.svelte';
+  import { errorDetail } from '$lib/library/errors';
   import ProjectMenu from './ProjectMenu.svelte';
 
   interface Props {
@@ -39,7 +41,7 @@
   const folders = $derived(flattenFolders(buildFolderTree(library.allPrompts, library.folderPaths)));
   const tags = $derived(tagCounts(library.allPrompts));
   const isMissing = $derived(
-    !allProjectsActive && Boolean(library.error?.toLowerCase().includes('project folder not found'))
+    !allProjectsActive && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
   );
   const showNavigation = $derived(Boolean(project) || allProjectsActive);
 
@@ -91,7 +93,7 @@
       addPath = null;
       relocateFrom = null;
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     } finally {
       busy = false;
     }
@@ -126,7 +128,7 @@
     try {
       await setActiveProject(path);
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -139,7 +141,7 @@
     try {
       await setAllProjectsScope();
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -173,7 +175,7 @@
       await createFolder(name.trim());
       library.folderFilter = name.trim().replace(/\/+$/, '');
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 
@@ -190,7 +192,7 @@
           library.folderFilter = next.trim() + library.folderFilter.slice(folder.length);
         }
       } catch (error) {
-        onNotice(error instanceof Error ? error.message : String(error));
+        onNotice(errorDetail(error));
       }
     } else if (action === 'delete' && window.confirm('Delete empty folder “' + folder + '”?')) {
       if (!canNavigate()) return;
@@ -198,7 +200,7 @@
         await deleteFolder(folder);
         if (library.folderFilter === folder) library.folderFilter = '';
       } catch (error) {
-        onNotice(error instanceof Error ? error.message : String(error));
+        onNotice(errorDetail(error));
       }
     }
   }
@@ -211,7 +213,7 @@
       await forgetProject(library.activeProjectPath);
       onNotice('Project forgotten. Its files were not changed.');
     } catch (error) {
-      onNotice(error instanceof Error ? error.message : String(error));
+      onNotice(errorDetail(error));
     }
   }
 </script>
@@ -276,15 +278,15 @@
 
   {#if isMissing}
     <div class="missing-project">
-      <strong>Project folder not found</strong>
+      <strong>{t('error.projectFolderNotFound')}</strong>
       <span>{library.activeProjectPath}</span>
       <div>
         <button
           type="button"
           class="btn btn--sm"
           onclick={() => { addPath = library.activeProjectPath; relocateFrom = library.activeProjectPath; }}
-        >Locate folder</button>
-        <button type="button" class="btn btn--ghost btn--sm" onclick={forgetMissingProject}>Forget</button>
+        >{t('project.missing.locate')}</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick={forgetMissingProject}>{t('project.missing.forget')}</button>
       </div>
     </div>
   {/if}

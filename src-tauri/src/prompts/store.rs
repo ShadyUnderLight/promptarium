@@ -686,7 +686,10 @@ fn summary(project: &Path, path: &Path, raw: &str) -> Option<(PromptSummary, Par
 
 pub(crate) fn project_root(project: &Path) -> Result<PathBuf, String> {
     if !project.exists() {
-        return Err(format!("project folder not found: {}", project.display()));
+        return Err(format!(
+            "PROJECT_FOLDER_NOT_FOUND: project folder not found: {}",
+            project.display()
+        ));
     }
     if !project.is_dir() {
         return Err(format!(
@@ -1114,7 +1117,10 @@ pub fn read_prompt(project: &Path, name: &str) -> Result<PromptDocument, String>
     let root = project_root(project)?;
     let path = prompt_path(&root, name)?;
     if !path.is_file() {
-        return Err(format!("prompt file not found: {}", path.display()));
+        return Err(format!(
+            "PROMPT_FILE_NOT_FOUND: prompt file not found: {}",
+            path.display()
+        ));
     }
     parse_prompt(&root, &path)
 }
@@ -1389,7 +1395,10 @@ pub fn rename_prompt(project: &Path, name: &str, new_name: &str) -> Result<Promp
         return parse_prompt(&root, &source);
     }
     if !source.is_file() {
-        return Err(format!("prompt file not found: {}", source.display()));
+        return Err(format!(
+            "PROMPT_FILE_NOT_FOUND: prompt file not found: {}",
+            source.display()
+        ));
     }
     if target.exists() {
         return Err(format!("prompt already exists: {new_name}"));
@@ -1878,7 +1887,7 @@ mod tests {
         let dir = tmp_dir("missing");
         assert!(scan_prompts(&dir.join("gone"))
             .unwrap_err()
-            .contains("not found"));
+            .contains("PROJECT_FOLDER_NOT_FOUND"));
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -11,6 +11,7 @@
   import { getTheme, toggleTheme } from '$lib/theme';
   import { isTauri } from '$lib/api';
   import { update, openUpdatePrompt } from '$lib/updater.svelte';
+  import LanguageSelector from '$lib/components/LanguageSelector.svelte';
   import PromptsView from '$lib/components/PromptsView.svelte';
 
   let theme = $state(getTheme());
@@ -57,6 +58,7 @@
     <h1>Promptarium</h1>
   </div>
   <div class="app-header__actions">
+    <LanguageSelector />
     <button class="btn btn--ghost btn--sm" onclick={handleToggleTheme} type="button">
       {theme === 'dark' ? 'Dark' : 'Light'}
     </button>
