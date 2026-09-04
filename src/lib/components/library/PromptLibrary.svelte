@@ -2,6 +2,7 @@
   import { isAllProjects, library, projectDisplayName, promptVariableCount, visiblePrompts } from '$lib/library.svelte';
   import { promptKey } from '$lib/library/scope';
   import type { PromptSummary } from '$lib/prompts/types';
+  import { t } from '$lib/i18n/i18n.svelte';
   import PromptListItem from './PromptListItem.svelte';
   import PromptToolbar from './PromptToolbar.svelte';
 
@@ -78,11 +79,11 @@
       <p>Add a folder from the sidebar. Every Markdown file inside becomes a prompt.</p>
       <button type="button" class="btn btn--primary" onclick={onNewPrompt}>Add your first prompt</button>
     </div>
-  {:else if !allProjects && library.error?.toLowerCase().includes('project folder not found')}
+  {:else if !allProjects && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'}
     <div class="library-empty library-empty--error">
       <div class="empty-icon">!</div>
-      <h2>Project folder not found</h2>
-      <p>Locate the folder again from the project sidebar, or forget this project.</p>
+      <h2>{t('error.projectFolderNotFound')}</h2>
+      <p>{t('project.missing.hint')}</p>
     </div>
   {:else if !prompts.length}
     <div class="library-empty">

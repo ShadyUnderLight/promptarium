@@ -40,7 +40,7 @@
   let deleteTarget = $state<PromptDocument | null>(null);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
-    !isAllProjects() && Boolean(library.error?.toLowerCase().includes('project folder not found'))
+    !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
   );
   let scopeTitle = $derived(
     isAllProjects()
