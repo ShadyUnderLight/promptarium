@@ -186,13 +186,13 @@ describe('missing-key safety', () => {
 
 describe('parseError — machine state seam', () => {
   it('parses coded errors into code + detail', () => {
-    expect(parseError('PROJECT_FOLDER_NOT_FOUND: /Users/me/proj')).toEqual({
+    expect(parseError('PROJECT_FOLDER_NOT_FOUND: project folder not found: /Users/me/proj')).toEqual({
       code: 'PROJECT_FOLDER_NOT_FOUND',
-      detail: '/Users/me/proj',
+      detail: 'project folder not found: /Users/me/proj',
     });
-    expect(parseError('PROMPT_FILE_NOT_FOUND: /p.md')).toEqual({
+    expect(parseError('PROMPT_FILE_NOT_FOUND: prompt file not found: /p.md')).toEqual({
       code: 'PROMPT_FILE_NOT_FOUND',
-      detail: '/p.md',
+      detail: 'prompt file not found: /p.md',
     });
     expect(parseError('PROMPT_CONFLICT: /p.md changed on disk while you were editing it')).toEqual({
       code: 'PROMPT_CONFLICT',
@@ -201,9 +201,9 @@ describe('parseError — machine state seam', () => {
   });
 
   it('accepts Error instances', () => {
-    expect(parseError(new Error('PROJECT_FOLDER_NOT_FOUND: /x'))).toEqual({
+    expect(parseError(new Error('PROJECT_FOLDER_NOT_FOUND: project folder not found: /x'))).toEqual({
       code: 'PROJECT_FOLDER_NOT_FOUND',
-      detail: '/x',
+      detail: 'project folder not found: /x',
     });
   });
 
@@ -223,13 +223,19 @@ describe('parseError — machine state seam', () => {
     expect(isNotFoundError(null)).toBe(false);
   });
 
-  it('errorDetail strips the machine prefix for user-facing display', () => {
-    expect(errorDetail('PROMPT_FILE_NOT_FOUND: /p.md')).toBe('/p.md');
-    expect(errorDetail('PROJECT_FOLDER_NOT_FOUND: /Users/me/proj')).toBe('/Users/me/proj');
+  it('errorDetail strips only the machine prefix, keeping the human diagnostic', () => {
+    expect(errorDetail('PROMPT_FILE_NOT_FOUND: prompt file not found: /p.md')).toBe(
+      'prompt file not found: /p.md'
+    );
+    expect(errorDetail('PROJECT_FOLDER_NOT_FOUND: project folder not found: /Users/me/proj')).toBe(
+      'project folder not found: /Users/me/proj'
+    );
     expect(errorDetail('PROMPT_CONFLICT: /p.md changed on disk while you were editing it')).toBe(
       '/p.md changed on disk while you were editing it'
     );
     expect(errorDetail('plain failure')).toBe('plain failure');
-    expect(errorDetail(new Error('PROMPT_FILE_NOT_FOUND: /x'))).toBe('/x');
+    expect(errorDetail(new Error('PROMPT_FILE_NOT_FOUND: prompt file not found: /x'))).toBe(
+      'prompt file not found: /x'
+    );
   });
 });
