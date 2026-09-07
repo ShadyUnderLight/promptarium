@@ -1,6 +1,7 @@
 <script lang="ts">
   import { library, setSort, setViewMode, visiblePrompts } from '$lib/library.svelte';
   import type { PromptSort, PromptViewMode } from '$lib/prompts/types';
+  import { t, tPlural } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     selectedCount: number;
@@ -26,38 +27,38 @@
 <div class="prompt-toolbar">
   {#if selectedCount}
     <div class="batch-toolbar">
-      <span class="batch-toolbar__count">{selectedCount} selected</span>
-      <button type="button" class="toolbar-button" onclick={onSelectAll}>Select all</button>
-      <button type="button" class="toolbar-button" onclick={() => onBatch('favorite')}>Favorite</button>
-      <button type="button" class="toolbar-button" onclick={() => onBatch('unfavorite')}>Unfavorite</button>
-      <button type="button" class="toolbar-button" onclick={() => onBatch('archive')}>Archive</button>
-      <button type="button" class="toolbar-button" onclick={() => onBatch('active')}>Active</button>
-      <label class="batch-tag-input"><input bind:value={batchTag} placeholder="tag" onkeydown={(event) => event.key === 'Enter' && applyTag('add-tag')} /><button type="button" aria-label="Add tag" onclick={() => applyTag('add-tag')}>＋</button><button type="button" aria-label="Remove tag" onclick={() => applyTag('remove-tag')}>−</button></label>
-      <button type="button" class="toolbar-button toolbar-button--danger" onclick={() => onBatch('delete')}>Delete</button>
-      <button type="button" class="toolbar-button" onclick={onClearSelection}>Cancel</button>
+      <span class="batch-toolbar__count">{t('toolbar.selectedCount', { count: selectedCount })}</span>
+      <button type="button" class="toolbar-button" onclick={onSelectAll}>{t('toolbar.selectAll')}</button>
+      <button type="button" class="toolbar-button" onclick={() => onBatch('favorite')}>{t('toolbar.favorite')}</button>
+      <button type="button" class="toolbar-button" onclick={() => onBatch('unfavorite')}>{t('toolbar.unfavorite')}</button>
+      <button type="button" class="toolbar-button" onclick={() => onBatch('archive')}>{t('toolbar.archive')}</button>
+      <button type="button" class="toolbar-button" onclick={() => onBatch('active')}>{t('toolbar.active')}</button>
+      <label class="batch-tag-input"><input bind:value={batchTag} placeholder={t('toolbar.tagPlaceholder')} onkeydown={(event) => event.key === 'Enter' && applyTag('add-tag')} /><button type="button" aria-label={t('toolbar.addTag')} onclick={() => applyTag('add-tag')}>＋</button><button type="button" aria-label={t('toolbar.removeTag')} onclick={() => applyTag('remove-tag')}>−</button></label>
+      <button type="button" class="toolbar-button toolbar-button--danger" onclick={() => onBatch('delete')}>{t('toolbar.delete')}</button>
+      <button type="button" class="toolbar-button" onclick={onClearSelection}>{t('toolbar.cancel')}</button>
     </div>
   {:else}
     <div class="prompt-toolbar__count">
-      <strong>{visibleCount}</strong> prompt{visibleCount === 1 ? '' : 's'}
-      {#if visibleCount !== totalCount}<span>of {totalCount}</span>{/if}
+      <strong>{visibleCount}</strong> {tPlural('toolbar.count', visibleCount)}
+      {#if visibleCount !== totalCount}<span>{t('toolbar.countOf', { total: totalCount })}</span>{/if}
     </div>
     <div class="prompt-toolbar__controls">
-      <select aria-label="Sort prompts" value={library.sort} onchange={(event) => setSort(event.currentTarget.value as PromptSort)}>
-        <option value="modified-desc">Modified newest</option>
-        <option value="modified-asc">Modified oldest</option>
-        <option value="name-asc">Name A–Z</option>
-        <option value="name-desc">Name Z–A</option>
-        <option value="favorite-first">Favorites first</option>
+      <select aria-label={t('toolbar.sort.aria')} value={library.sort} onchange={(event) => setSort(event.currentTarget.value as PromptSort)}>
+        <option value="modified-desc">{t('toolbar.sort.modifiedDesc')}</option>
+        <option value="modified-asc">{t('toolbar.sort.modifiedAsc')}</option>
+        <option value="name-asc">{t('toolbar.sort.nameAsc')}</option>
+        <option value="name-desc">{t('toolbar.sort.nameDesc')}</option>
+        <option value="favorite-first">{t('toolbar.sort.favoriteFirst')}</option>
       </select>
       {#if models.length}
-        <select aria-label="Filter by model" value={library.modelFilter} onchange={(event) => (library.modelFilter = event.currentTarget.value)}>
-          <option value="">All models</option>
+        <select aria-label={t('toolbar.filterModel.aria')} value={library.modelFilter} onchange={(event) => (library.modelFilter = event.currentTarget.value)}>
+          <option value="">{t('toolbar.allModels')}</option>
           {#each models as model (model)}<option value={model}>{model}</option>{/each}
         </select>
       {/if}
-      <div class="view-toggle" aria-label="View mode">
-        <button type="button" class:toggle-button--active={library.viewMode === 'list'} class="toggle-button" aria-label="List view" onclick={() => setViewMode('list' as PromptViewMode)}>☷</button>
-        <button type="button" class:toggle-button--active={library.viewMode === 'grid'} class="toggle-button" aria-label="Grid view" onclick={() => setViewMode('grid' as PromptViewMode)}>▦</button>
+      <div class="view-toggle" aria-label={t('toolbar.viewMode.aria')}>
+        <button type="button" class:toggle-button--active={library.viewMode === 'list'} class="toggle-button" aria-label={t('toolbar.listView')} onclick={() => setViewMode('list' as PromptViewMode)}>☷</button>
+        <button type="button" class:toggle-button--active={library.viewMode === 'grid'} class="toggle-button" aria-label={t('toolbar.gridView')} onclick={() => setViewMode('grid' as PromptViewMode)}>▦</button>
       </div>
     </div>
   {/if}

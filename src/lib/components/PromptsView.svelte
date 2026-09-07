@@ -28,6 +28,7 @@
   import { copyToClipboard } from '$lib/copy';
   import { toasts } from '$lib/prompts/toasts.svelte';
   import { errorDetail } from '$lib/library/errors';
+  import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import ProjectSidebar from './library/ProjectSidebar.svelte';
   import PromptLibrary from './library/PromptLibrary.svelte';
   import PromptDetail from './library/PromptDetail.svelte';
@@ -45,10 +46,10 @@
   );
   let scopeTitle = $derived(
     isAllProjects()
-      ? 'All Projects'
+      ? t('sidebar.allProjects')
       : library.activeProjectPath
-        ? (library.projects.find((item) => item.path === library.activeProjectPath)?.name ?? 'Project')
-        : 'Local Markdown workspace'
+        ? (library.projects.find((item) => item.path === library.activeProjectPath)?.name ?? t('topbar.scope.fallbackProject'))
+        : t('topbar.scope.localWorkspace')
   );
 
   onMount(() => {
@@ -85,11 +86,11 @@
 
   function openNewPrompt(): void {
     if (!library.projects.length) {
-      notice('Add a prompt project first.');
+      notice(t('notice.addProjectFirst'));
       return;
     }
     if (!isAllProjects() && !library.activeProjectPath) {
-      notice('Add a prompt project first.');
+      notice(t('notice.addProjectFirst'));
       return;
     }
     if (!canNavigate()) return;
@@ -114,7 +115,7 @@
   ): Promise<PromptDocument> {
     const created = await createPrompt(projectPath, name, body, metadata);
     newPromptOpen = false;
-    notice('Prompt created.');
+    notice(t('notice.promptCreated'));
     return created;
   }
 
@@ -217,13 +218,13 @@
       const listed = prompts
         .map((prompt) => '• ' + projectDisplayName(prompt.projectPath) + ' — ' + prompt.name + '.md')
         .join('\n');
-      if (!window.confirm('Delete these Markdown files?\n\n' + listed + '\n\nThis cannot be undone.')) return false;
+      if (!window.confirm(t('dialog.batchDeleteFiles', { list: listed }))) return false;
       const failures = await batchDelete(prompts);
       reportBatchResult(failures, prompts.length - failures.length);
       return true;
     }
     if ((action === 'add-tag' || action === 'remove-tag') && !tag?.trim()) {
-      notice('Enter a tag first.');
+      notice(t('notice.enterTagFirst'));
       return false;
     }
     const failures = await batchUpdate(prompts, (metadata) => {
@@ -257,8 +258,8 @@
   }
 
   function reportBatchResult(failures: string[], succeeded: number): void {
-    if (failures.length) notice(succeeded + ' updated; failed: ' + failures.map(formatFailureKey).join(', '));
-    else notice(succeeded + ' prompt' + (succeeded === 1 ? '' : 's') + ' updated.');
+    if (failures.length) notice(t('notice.batchFailures', { count: succeeded, failures: failures.map(formatFailureKey).join(', ') }));
+    else notice(tPlural('notice.batchUpdated', succeeded));
   }
 
   function onGlobalKeydown(event: KeyboardEvent): void {
@@ -329,18 +330,18 @@
     <div class="library-topbar__title">
       <span class="app-mark">✦</span>
       <div>
-        <h1>Prompt Library</h1>
+        <h1>{t('topbar.title')}</h1>
         <span>{scopeTitle}</span>
       </div>
     </div>
     <label class="global-search">
       <span aria-hidden="true">⌕</span>
-      <input bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder="Search all prompts…" aria-label="Search all prompts" />
+      <input bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder={t('topbar.search.placeholder')} aria-label={t('topbar.search.aria')} />
       <kbd>⌘ F</kbd>
     </label>
     <div class="library-topbar__actions">
-      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ New prompt</button>
-      <button type="button" class="icon-button" title="Refresh library" aria-label="Refresh library" onclick={handleRefresh}>↻</button>
+      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ {t('sidebar.newPrompt')}</button>
+      <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}>↻</button>
     </div>
   </div>
 
@@ -350,7 +351,7 @@
 
   {#if !library.fsWatchAvailable && library.fsWatchMessage && !selectedProjectMissing}
     <div class="library-error" role="status">
-      Automatic refresh unavailable: {library.fsWatchMessage}. Focus or manual Refresh still works.
+      {t('notice.fsWatchUnavailable', { detail: library.fsWatchMessage })}
     </div>
   {/if}
 
@@ -359,9 +360,9 @@
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
   >
     <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
-    <button type="button" class="pane-resizer" aria-label="Resize project sidebar" onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
-    <button type="button" class="pane-resizer" aria-label="Resize prompt library" onpointerdown={(event) => startResize('library', event)}></button>
+    <button type="button" class="pane-resizer" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail
       bind:this={detail}
       document={library.selected}

@@ -62,6 +62,25 @@ function readMessage(catalog: Record<MessageKey, string>, key: MessageKey): stri
   return (catalog as Record<string, string | undefined>)[key];
 }
 
+/**
+ * Plural-aware translate. The catalog carries `base.one` / `base.other`
+ * entries and `Intl.PluralRules` for the resolved locale picks between them,
+ * so no component ever concatenates an English plural suffix by hand.
+ * Locales without the distinction (zh-CN is always `other`) repeat the same
+ * text for both entries — key parity stays type-checked. `count` is merged
+ * into the interpolation params automatically.
+ */
+export function tPlural(base: string, count: number, params?: MessageParams): string {
+  const lenient = (catalog: Record<MessageKey, string>, key: string): string | undefined =>
+    (catalog as Record<string, string | undefined>)[key];
+  const category = '.' + new Intl.PluralRules(locale.resolved).select(count);
+  const active = catalogs[locale.resolved];
+  let text = lenient(active, base + category) ?? lenient(active, base + '.other');
+  if (text === undefined) text = lenient(en, base + category) ?? lenient(en, base + '.other');
+  if (text === undefined) return base + category;
+  return interpolateMessage(text, { count, ...params });
+}
+
 /** Replace `{name}` placeholders with `params`. Exported so the interpolation
  *  behavior itself is unit-testable independently of catalog content. */
 export function interpolateMessage(text: string, params?: MessageParams): string {
