@@ -197,13 +197,20 @@ describe('status machine value vs display label (Issue #37)', () => {
 });
 
 describe('health: machine code → localized display (Issue #37)', () => {
-  const CODES = Object.keys(en).filter((key) => key.startsWith('health.'));
+  const CODES = Object.keys(en)
+    .filter((key) => key.startsWith('health.') && !key.endsWith('.detail'))
+    .map((key) => key.slice('health.'.length));
 
-  it('every health catalog entry is keyed by a health.<CODE> path in both locales', () => {
-    expect(CODES.length).toBeGreaterThan(0);
-    for (const key of CODES as MessageKey[]) {
-      expect(zhCN[key]).toBeTruthy();
-      expect(key.startsWith('health.')).toBe(true);
+  it('every health code has a summary and a detail message in both locales', () => {
+    expect(CODES.length).toBeGreaterThanOrEqual(12);
+    for (const code of CODES) {
+      const summary = `health.${code}` as MessageKey;
+      const detail = `health.${code}.detail` as MessageKey;
+      expect(en[summary]).toBeTruthy();
+      expect(en[detail]).toBeTruthy();
+      expect(zhCN[summary]).toBeTruthy();
+      expect(zhCN[detail]).toBeTruthy();
+      expect(zhCN[detail]).not.toBe(en[detail]);
     }
   });
 
@@ -235,6 +242,20 @@ describe('health: machine code → localized display (Issue #37)', () => {
     expect(broken?.severity).toBe('warning');
     // No authoritative English message leaks from the core.
     expect(JSON.stringify(first)).not.toContain('message');
+    expect(JSON.stringify(first)).not.toContain('detail');
+  });
+
+  it('the frontmatter raw diagnostic rides in params, untranslated', () => {
+    const issues = derivePromptHealth({
+      projectPath: '/p',
+      name: 'review',
+      frontmatterError: 'yaml: line 3: bad indentation',
+      related: [],
+      projectPromptNames: new Set(['review']),
+    });
+    const issue = issues.find((entry) => entry.code === 'INVALID_FRONTMATTER');
+    expect(issue?.params).toEqual({ raw: 'yaml: line 3: bad indentation' });
+    expect(JSON.stringify(issue)).not.toContain('message');
   });
 });
 

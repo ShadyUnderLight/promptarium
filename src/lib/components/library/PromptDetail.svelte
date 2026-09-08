@@ -337,7 +337,7 @@
           <div class="health-issue health-issue--{issue.severity}">
             <span class="health-issue__mark">⚠</span>
             <span class="health-issue__text">{t(`health.${issue.code}`, issue.params)}</span>
-            {#if issue.detail}<span class="health-issue__detail">{issue.detail}</span>{/if}
+            <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
           </div>
         {/each}
       </div>

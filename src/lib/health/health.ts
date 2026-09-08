@@ -38,18 +38,19 @@ export type PromptHealthCode =
 
 /**
  * Health is locale-agnostic (Issue #37): the core emits a stable machine code
- * plus interpolation params, and the UI renders the display message via
- * `t('health.' + code, params)`. `detail` is reserved for raw diagnostics
- * (e.g. the frontmatter parse error) that must never be translated.
+ * plus interpolation params, and the UI renders both a summary and an
+ * explanatory detail line via `t('health.' + code, params)` and
+ * `t('health.' + code + '.detail', params)`. Raw diagnostics (e.g. the
+ * frontmatter parse error) ride in `params` as user data and are interpolated
+ * verbatim — never translated.
  */
 export interface PromptHealthIssue {
   code: PromptHealthCode;
   severity: 'warning' | 'error';
-  /** Interpolation params for the localized display message. Values are user
-   *  data (variable names, relation paths) and stay untranslated. */
+  /** Interpolation params for the localized summary and detail messages.
+   *  Values are user data (variable names, relation paths, raw diagnostics)
+   *  and stay untranslated. */
   params?: Record<string, string>;
-  /** Raw diagnostic shown as-is, never translated. */
-  detail?: string;
 }
 
 /** Everything `derivePromptHealth` needs, pre-parsed so health can be computed
@@ -112,7 +113,7 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
     issues.push({
       code: 'INVALID_FRONTMATTER',
       severity: 'warning',
-      detail: input.frontmatterError,
+      params: { raw: input.frontmatterError },
     });
   }
 

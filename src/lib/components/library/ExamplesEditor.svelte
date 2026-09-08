@@ -123,7 +123,16 @@
   // reference; only a successful conversion is written into editor state. When
   // a replacement would drop existing inline text, the user is asked first —
   // never silently deleted.
-  let pickerError = $state('');
+  // The failure is stored as a machine reason (never a display string) so the
+  // message re-localizes when the locale changes while the editor is mounted.
+  type PickerFailure = { failure: 'no-reference' | 'failed'; detail?: string };
+  let pickerFailure = $state<PickerFailure | null>(null);
+  const pickerErrorText = $derived.by(() => {
+    if (!pickerFailure) return '';
+    return pickerFailure.failure === 'no-reference'
+      ? t('examples.picker.noReference')
+      : t('examples.picker.failed', { detail: pickerFailure.detail ?? '' });
+  });
 
   async function chooseInputFile(index: number): Promise<void> {
     const reference = await pickFor(index);
@@ -157,12 +166,11 @@
    *  cancel/rejection (an error is surfaced once, not per keystroke). */
   async function pickFor(index: number): Promise<string | null> {
     if (!projectPath) return null;
-    pickerError = '';
+    pickerFailure = null;
     const result = await pickAssetReference(projectPath, t('examples.picker.title'));
     if (result.reference) return result.reference;
-    if (result.failure === 'no-reference') pickerError = t('examples.picker.noReference');
-    else if (result.failure === 'failed') {
-      pickerError = t('examples.picker.failed', { detail: result.detail ?? '' });
+    if (result.failure === 'no-reference' || result.failure === 'failed') {
+      pickerFailure = { failure: result.failure, detail: result.detail };
     }
     return null;
   }
@@ -181,11 +189,11 @@
 
 <div class="examples-editor">
   <div class="examples-editor__heading-row">
-    <span class="variables-editor__heading">Examples</span>
+    <span class="variables-editor__heading">{t('examples.editor.heading')}</span>
     <span class="examples-editor__hint">{t('examples.editor.hint')}</span>
   </div>
-  {#if pickerError}
-    <div class="examples-editor__error">{pickerError}</div>
+  {#if pickerErrorText}
+    <div class="examples-editor__error">{pickerErrorText}</div>
   {/if}
 
   {#each examples as example, index (index)}

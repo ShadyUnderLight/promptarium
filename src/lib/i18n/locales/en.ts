@@ -253,6 +253,25 @@ export const en = {
   'health.INVALID_VARIANT_PARENT_TYPE': 'Variant parent is not a string',
   'health.SELF_VARIANT_PARENT': 'Prompt is its own variant parent',
   'health.VARIANT_CYCLE': 'Prompt is part of a variant cycle',
+  'health.INVALID_FRONTMATTER.detail': 'Frontmatter could not be parsed: {raw}',
+  'health.EMPTY_BODY.detail': 'The prompt has no body text after its frontmatter.',
+  'health.UNDOCUMENTED_VARIABLE.detail':
+    '{name} appears in the body but has no description or example annotation.',
+  'health.STALE_VARIABLE_DOCUMENTATION.detail':
+    '{name} is documented but no longer appears in the body.',
+  'health.BROKEN_RELATED_PROMPT.detail':
+    '{path} is listed in related but no such prompt exists in this project.',
+  'health.INVALID_RELATED_PROMPT.detail':
+    '{path} is not a project-relative prompt path without a .md suffix.',
+  'health.SELF_RELATED_PROMPT.detail': 'The related entry {path} references this prompt.',
+  'health.BROKEN_VARIANT_PARENT.detail':
+    '{path} is named as variantOf but no such prompt exists in this project.',
+  'health.INVALID_VARIANT_PARENT.detail':
+    '{path} is not a project-relative prompt path without a .md suffix.',
+  'health.INVALID_VARIANT_PARENT_TYPE.detail':
+    'variantOf must be a project-relative prompt path string, but its value is not a string.',
+  'health.SELF_VARIANT_PARENT.detail': 'variantOf {path} references this prompt.',
+  'health.VARIANT_CYCLE.detail': 'Following variantOf from this prompt loops back to itself.',
 
   // Prompt history / Git. Commit subjects, authors, hashes and diffs stay raw.
   'history.aria': 'Prompt git history',
@@ -277,6 +296,20 @@ export const en = {
   'compare.noBodyDiff': 'No body differences.',
   'compare.metadata': 'Metadata',
   'compare.noMetaDiff': 'No metadata differences.',
+  'compare.field.description': 'Description',
+  'compare.field.status': 'Status',
+  'compare.field.favorite': 'Favorite',
+  'compare.field.models': 'Models',
+  'compare.field.tags': 'Tags',
+  'compare.field.related': 'Related prompts',
+  'compare.field.variables': 'Variables',
+  'compare.field.variantOf': 'Variant of',
+  'compare.field.notes': 'Usage Notes',
+  'compare.field.examples': 'Examples',
+  'compare.field.extra': 'Custom fields',
+  'compare.value.none': '(none)',
+  'compare.value.desc': 'desc: {value}',
+  'compare.value.example': 'example: {value}',
   'diff.aria': 'File diff',
 
   // Metadata inspector / editor. Machine status values stay active/draft/archived.
@@ -357,6 +390,7 @@ export const en = {
   'examples.kind.binary': 'Binary',
   'examples.kind.file': 'File',
   'examples.editor.hint': 'File references are Project-relative; choose from inside the Project.',
+  'examples.editor.heading': 'Examples',
   'examples.editor.name.aria': 'Example name',
   'examples.editor.moveUp.aria': 'Move example up',
   'examples.editor.moveDown.aria': 'Move example down',

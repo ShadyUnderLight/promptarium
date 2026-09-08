@@ -1,9 +1,16 @@
 <script lang="ts">
   import { readPrompt } from '$lib/api';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
-  import { diffMetadata, diffTexts } from '$lib/prompts/compare';
+  import {
+    diffMetadata,
+    diffTexts,
+    type MetadataFieldDiff,
+    type MetadataFieldKey,
+    type MetadataFieldValue,
+  } from '$lib/prompts/compare';
   import DiffViewer from './DiffViewer.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
+  import type { MessageKey } from '$lib/i18n/locales/en';
 
   interface Props {
     /** Left side identity (project + path). Never used as the diff content. */
@@ -62,6 +69,53 @@
   const bodyPatch = $derived(target ? diffTexts(leftBody, target.body) : '');
   const metadataDiff = $derived(target ? diffMetadata(leftMetadata, target.metadata) : []);
 
+  const fieldKeys: Record<MetadataFieldKey, MessageKey> = {
+    description: 'compare.field.description',
+    status: 'compare.field.status',
+    favorite: 'compare.field.favorite',
+    models: 'compare.field.models',
+    tags: 'compare.field.tags',
+    related: 'compare.field.related',
+    variables: 'compare.field.variables',
+    variantOf: 'compare.field.variantOf',
+    notes: 'compare.field.notes',
+    examples: 'compare.field.examples',
+    extra: 'compare.field.extra',
+  };
+
+  const statusKeys: Record<string, MessageKey> = {
+    draft: 'newPrompt.status.draft',
+    active: 'newPrompt.status.active',
+    archived: 'newPrompt.status.archived',
+  };
+
+  /** Render a diff value: shell copy ((none) / desc: / example:) is localized,
+   *  user-owned content passes through verbatim. */
+  function renderValue(diff: MetadataFieldDiff, value: MetadataFieldValue): string {
+    switch (value.kind) {
+      case 'none':
+        return t('compare.value.none');
+      case 'text':
+        // Status is a machine enum; its display label localizes like everywhere
+        // else in the app.
+        if (diff.field === 'status') return t(statusKeys[value.text] ?? 'compare.value.none');
+        return value.text;
+      case 'list':
+        return value.items.join(', ');
+      case 'variables':
+        return value.entries
+          .map((entry) => {
+            let line = entry.name;
+            if (entry.description) line += ' ' + t('compare.value.desc', { value: entry.description });
+            if (entry.example) line += ' ' + t('compare.value.example', { value: entry.example });
+            return line;
+          })
+          .join(' | ');
+      case 'raw':
+        return value.text;
+    }
+  }
+
   function handleKeydown(event: KeyboardEvent): void {
     if (event.key === 'Escape') {
       event.preventDefault();
@@ -113,10 +167,10 @@
         {#if metadataDiff.length}
           {#each metadataDiff as diff (diff.field)}
             <div class="compare-meta-row">
-              <span class="compare-meta-row__field">{diff.field}</span>
-              <span class="compare-meta-row__left">{diff.left}</span>
+              <span class="compare-meta-row__field">{t(fieldKeys[diff.field])}</span>
+              <span class="compare-meta-row__left">{renderValue(diff, diff.left)}</span>
               <span class="compare-meta-row__arrow" aria-hidden="true">→</span>
-              <span class="compare-meta-row__right">{diff.right}</span>
+              <span class="compare-meta-row__right">{renderValue(diff, diff.right)}</span>
             </div>
           {/each}
         {:else}

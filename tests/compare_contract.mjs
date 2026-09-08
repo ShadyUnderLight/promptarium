@@ -137,8 +137,8 @@ console.log('diffMetadata — field differences');
   const diffs = diffMetadata(metadata({ tags: ['a'] }), metadata({ tags: ['a', 'b'] }));
   eq(diffs.length, 1, 'tag change produces one difference');
   eq(diffs[0].field, 'tags', 'tag difference names the tags field');
-  eq(diffs[0].left, 'a', 'left side renders the selected prompt tags');
-  eq(diffs[0].right, 'a, b', 'right side renders the compared prompt tags');
+  eq(diffs[0].left, { kind: 'list', items: ['a'] }, 'left side carries the selected prompt tags');
+  eq(diffs[0].right, { kind: 'list', items: ['a', 'b'] }, 'right side carries the compared prompt tags');
 }
 
 console.log('diffMetadata — variantOf and extra');
@@ -153,8 +153,8 @@ console.log('diffMetadata — variantOf and extra');
   const diffs = diffMetadata(metadata({ extra: { owner: 'lmz' } }), metadata({ extra: {} }));
   const extra = diffs.find((d) => d.field === 'extra');
   assert(extra, 'an unknown extra field difference is reported on the extra row');
-  eq(extra.left, 'owner: "lmz"', 'left extra renders deterministically');
-  eq(extra.right, '(none)', 'missing extra renders as (none)');
+  eq(extra.left, { kind: 'raw', text: 'owner: "lmz"' }, 'left extra renders deterministically');
+  eq(extra.right, { kind: 'none' }, 'missing extra renders as a none value');
 }
 
 console.log('diffMetadata — notes');
@@ -162,8 +162,8 @@ console.log('diffMetadata — notes');
   const diffs = diffMetadata(metadata({ notes: 'Works best on small PRs.' }), metadata({ notes: 'Works best on large PRs.' }));
   const notes = diffs.find((d) => d.field === 'notes');
   assert(notes, 'a notes difference is reported on its own row');
-  eq(notes.left, 'Works best on small PRs.', 'left side renders the selected prompt notes');
-  eq(notes.right, 'Works best on large PRs.', 'right side renders the compared prompt notes');
+  eq(notes.left, { kind: 'text', text: 'Works best on small PRs.' }, 'left side carries the selected prompt notes verbatim');
+  eq(notes.right, { kind: 'text', text: 'Works best on large PRs.' }, 'right side carries the compared prompt notes verbatim');
   assert(!diffs.find((d) => d.field === 'extra'), 'notes is excluded from the extra row to avoid double reporting');
 }
 
@@ -171,8 +171,8 @@ console.log('diffMetadata — notes');
   const diffs = diffMetadata(metadata(), metadata({ notes: 'added' }));
   const notes = diffs.find((d) => d.field === 'notes');
   assert(notes, 'a notes add is reported');
-  eq(notes.left, '(none)', 'missing notes renders as (none)');
-  eq(notes.right, 'added', 'added notes render on the right');
+  eq(notes.left, { kind: 'none' }, 'missing notes renders as a none value');
+  eq(notes.right, { kind: 'text', text: 'added' }, 'added notes render on the right');
 }
 
 {
@@ -184,8 +184,8 @@ console.log('diffMetadata — notes');
   const diffs = diffMetadata(metadata({ notes: '   ' }), metadata());
   const notes = diffs.find((d) => d.field === 'notes');
   assert(notes, 'whitespace-only notes are NOT normalized to (none)');
-  eq(notes.left, '   ', 'whitespace-only notes render as-is');
-  eq(notes.right, '(none)', 'missing notes renders as (none)');
+  eq(notes.left, { kind: 'text', text: '   ' }, 'whitespace-only notes render as-is');
+  eq(notes.right, { kind: 'none' }, 'missing notes renders as a none value');
 }
 
 console.log('diffMetadata — wrong-type variantOf renders honestly');
@@ -193,8 +193,8 @@ console.log('diffMetadata — wrong-type variantOf renders honestly');
   const diffs = diffMetadata(metadata({ extra: { variantOf: 123 } }), metadata({ extra: { variantOf: 'parent' } }));
   const variant = diffs.find((d) => d.field === 'variantOf');
   assert(variant, 'a wrong-type variantOf still produces a variantOf difference');
-  eq(variant.left, 'number: 123', 'left renders the wrong type instead of collapsing to (none)');
-  eq(variant.right, 'parent', 'right renders the string value');
+  eq(variant.left, { kind: 'raw', text: 'number: 123' }, 'left renders the wrong type instead of collapsing to none');
+  eq(variant.right, { kind: 'text', text: 'parent' }, 'right carries the string value');
 }
 
 console.log('diffMetadata — examples (Issue #24)');
@@ -210,15 +210,15 @@ console.log('diffMetadata — examples (Issue #24)');
   const examples = diffs.find((d) => d.field === 'examples');
   assert(examples, 'an examples semantic change is reported on its own row');
   assert(!diffs.find((d) => d.field === 'extra'), 'examples is excluded from the extra row to avoid double reporting');
-  eq(examples.left, JSON.stringify(left.examples[0]), 'left side renders the selected prompt examples');
-  eq(examples.right, JSON.stringify(right.examples[0]), 'right side renders the compared prompt examples');
+  eq(examples.left, { kind: 'raw', text: JSON.stringify(left.examples[0]) }, 'left side carries the selected prompt examples');
+  eq(examples.right, { kind: 'raw', text: JSON.stringify(right.examples[0]) }, 'right side carries the compared prompt examples');
 }
 
 {
   const diffs = diffMetadata(metadata(), metadata({ examples: [{ input: 'x', output: 'y' }] }));
   const examples = diffs.find((d) => d.field === 'examples');
   assert(examples, 'an examples add is reported');
-  eq(examples.left, '(none)', 'missing examples renders as (none)');
+  eq(examples.left, { kind: 'none' }, 'missing examples renders as a none value');
 }
 
 {
@@ -339,6 +339,26 @@ console.log('diffMetadata — examples (Issue #24)');
   assert(
     !diffs.find((d) => d.field === 'examples'),
     '64-bit integers carried as strings produce no spurious examples diff'
+  );
+}
+
+console.log('diffMetadata — variables carry structured entries (no shell copy)');
+{
+  const diffs = diffMetadata(
+    metadata({ variables: { focus: { description: 'Focus', example: 'x' } } }),
+    metadata({ variables: {} })
+  );
+  const vars = diffs.find((d) => d.field === 'variables');
+  assert(vars, 'a variables difference is reported on its own row');
+  eq(
+    vars.left,
+    { kind: 'variables', entries: [{ name: 'focus', description: 'Focus', example: 'x' }] },
+    'variable docs are carried as structured entries, not pre-rendered strings'
+  );
+  eq(vars.right, { kind: 'none' }, 'empty variables render as a none value');
+  assert(
+    !JSON.stringify(vars).includes('desc:') && !JSON.stringify(vars).includes('example:') && !JSON.stringify(vars).includes('(none)'),
+    'no shell copy leaks into the domain values'
   );
 }
 
