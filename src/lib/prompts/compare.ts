@@ -153,38 +153,75 @@ export function diffTexts(a: string, b: string): string {
   return renderHunks(ops, hunks);
 }
 
+export type MetadataFieldKey =
+  | 'description'
+  | 'status'
+  | 'favorite'
+  | 'models'
+  | 'tags'
+  | 'related'
+  | 'variables'
+  | 'variantOf'
+  | 'notes'
+  | 'examples'
+  | 'extra';
+
+/**
+ * Locale-agnostic value shape (Issue #37): shell copy like "(none)" / "desc:" /
+ * "example:" / "true" / "number:" never enters the domain — the Compare UI
+ * renders it from the catalog. User-owned content (descriptions, notes,
+ * serialized raw YAML) is carried verbatim and displayed as-is.
+ */
+export type MetadataFieldValue =
+  | { kind: 'none' }
+  | { kind: 'text'; text: string }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'list'; items: string[] }
+  | { kind: 'variables'; entries: { name: string; description?: string; example?: string }[] }
+  /** A value whose YAML type is wrong (e.g. `variantOf: 123`): the type token
+   *  and serialized value are machine data; the "not a string" framing is the
+   *  UI's localized shell copy. */
+  | { kind: 'invalid-type'; type: string; raw: string }
+  | { kind: 'raw'; text: string };
+
 export interface MetadataFieldDiff {
-  field: string;
-  /** Left-side (selected prompt) rendered value. */
-  left: string;
-  /** Right-side (compared prompt) rendered value. */
-  right: string;
+  field: MetadataFieldKey;
+  /** Left-side (selected prompt) value. */
+  left: MetadataFieldValue;
+  /** Right-side (compared prompt) value. */
+  right: MetadataFieldValue;
 }
 
-function renderList(value: string[]): string {
-  return value.length ? value.join(', ') : '(none)';
+function renderList(value: string[]): MetadataFieldValue {
+  return value.length ? { kind: 'list', items: value } : { kind: 'none' };
 }
 
-function renderVariables(value: Record<string, VariableDoc> | undefined): string {
-  if (!value || !Object.keys(value).length) return '(none)';
-  return Object.keys(value)
-    .sort()
-    .map((name) => {
-      const doc = value[name];
-      const parts = [name];
-      if (doc?.description) parts.push('desc: ' + doc.description);
-      if (doc?.example) parts.push('example: ' + doc.example);
-      return parts.join(' ');
-    })
-    .join(' | ');
+function renderVariables(value: Record<string, VariableDoc> | undefined): MetadataFieldValue {
+  if (!value || !Object.keys(value).length) return { kind: 'none' };
+  return {
+    kind: 'variables',
+    entries: Object.keys(value)
+      .sort()
+      .map((name) => {
+        const doc = value[name];
+        return {
+          name,
+          description: doc?.description,
+          example: doc?.example,
+        };
+      }),
+  };
 }
 
-function renderExtra(value: Record<string, unknown>): string {
+function renderExtra(value: Record<string, unknown>): MetadataFieldValue {
   const keys = Object.keys(value)
     .filter((key) => key !== 'variantOf' && key !== 'notes' && key !== 'examples')
     .sort();
-  if (!keys.length) return '(none)';
-  return keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | ');
+  if (!keys.length) return { kind: 'none' };
+  return {
+    kind: 'raw',
+    text: keys.map((key) => key + ': ' + JSON.stringify(value[key])).join(' | '),
+  };
 }
 
 /** Deterministic, order-insensitive normalization of a `RawYaml` node for the
@@ -232,41 +269,43 @@ function normalizeRawYaml(node: RawYaml): string {
  *  order does not produce a spurious diff. Falls back to the typed projection
  *  only when no raw exists (fresh create/duplicate). Compared on its own row;
  *  never reported through the generic `extra` diff as well. */
-function renderExamples(metadata: PromptMetadata): string {
+function renderExamples(metadata: PromptMetadata): MetadataFieldValue {
   if (metadata.examplesRaw !== undefined) {
-    return normalizeRawYaml(metadata.examplesRaw);
+    return { kind: 'raw', text: normalizeRawYaml(metadata.examplesRaw) };
   }
   const value = metadata.examples;
-  if (!value || !value.length) return '(none)';
-  return value.map((example) => JSON.stringify(example)).join('\n');
+  if (!value || !value.length) return { kind: 'none' };
+  return { kind: 'raw', text: value.map((example) => JSON.stringify(example)).join('\n') };
 }
 
-function renderVariantOf(metadata: PromptMetadata): string {
+function renderVariantOf(metadata: PromptMetadata): MetadataFieldValue {
   const raw = getVariantOfRaw(metadata);
-  if (raw === undefined) return '(none)';
-  if (typeof raw === 'string') return raw;
-  // Wrong YAML type (number / array / …): show the type so the diff is honest
-  // about the mismatch instead of collapsing it to "(none)".
-  return `${typeof raw}: ${JSON.stringify(raw)}`;
+  if (raw === undefined) return { kind: 'none' };
+  if (typeof raw === 'string') return { kind: 'text', text: raw };
+  // Wrong YAML type (number / array / …): carry the machine type and serialized
+  // value so the diff stays honest instead of collapsing to "none"; the type
+  // framing is localized by the UI.
+  return { kind: 'invalid-type', type: typeof raw, raw: JSON.stringify(raw) };
 }
 
 /** Normalize "no notes" and "empty notes" to a single value: the storage
  *  contract treats both as "no Usage Notes" (empty notes are removed from the
  *  frontmatter on the next metadata save). Only the exact empty string is
  *  normalized — whitespace-only values are preserved as real content. */
-function renderNotes(value: string | undefined): string {
-  return value === undefined || value === '' ? '(none)' : value;
+function renderNotes(value: string | undefined): MetadataFieldValue {
+  return value === undefined || value === '' ? { kind: 'none' } : { kind: 'text', text: value };
 }
 
 /** Deterministic list of metadata field differences between two prompts. The
  *  `variantOf`, `notes` and `examples` fields are compared on their own rows
  *  and excluded from `extra`, so a change is never reported twice. Order is
- *  fixed for stable output. */
+ *  fixed for stable output. Field names are machine keys; the UI localizes
+ *  both labels and shell copy. */
 export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFieldDiff[] {
-  const pairs: Array<[string, string, string]> = [
-    ['description', a.description, b.description],
-    ['status', a.status, b.status],
-    ['favorite', a.favorite ? 'true' : 'false', b.favorite ? 'true' : 'false'],
+  const pairs: Array<[MetadataFieldKey, MetadataFieldValue, MetadataFieldValue]> = [
+    ['description', { kind: 'text', text: a.description }, { kind: 'text', text: b.description }],
+    ['status', { kind: 'text', text: a.status }, { kind: 'text', text: b.status }],
+    ['favorite', { kind: 'boolean', value: a.favorite }, { kind: 'boolean', value: b.favorite }],
     ['models', renderList(a.models), renderList(b.models)],
     ['tags', renderList(a.tags), renderList(b.tags)],
     ['related', renderList(a.related), renderList(b.related)],
@@ -278,7 +317,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
   ];
   const diffs: MetadataFieldDiff[] = [];
   for (const [field, left, right] of pairs) {
-    if (left !== right) diffs.push({ field, left, right });
+    if (JSON.stringify(left) !== JSON.stringify(right)) diffs.push({ field, left, right });
   }
   return diffs;
 }

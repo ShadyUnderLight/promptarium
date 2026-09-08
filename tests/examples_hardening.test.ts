@@ -68,7 +68,7 @@ describe('P1 — Cmd+S input sync (Edit view, oninput not onchange)', () => {
     // The asset-state preview effect settles with an empty result so it never
     // touches the assertions below.
     resolveMock.mockResolvedValue([]);
-    pickMock.mockResolvedValue({ error: 'Selection cancelled.' });
+    pickMock.mockResolvedValue({ failure: 'cancelled' });
   });
 
   it('inputFile: the first typed character enters metadata immediately (no blur)', async () => {

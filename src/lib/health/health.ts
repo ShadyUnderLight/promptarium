@@ -32,14 +32,25 @@ export type PromptHealthCode =
   | 'SELF_RELATED_PROMPT'
   | 'BROKEN_VARIANT_PARENT'
   | 'INVALID_VARIANT_PARENT'
+  | 'INVALID_VARIANT_PARENT_TYPE'
   | 'SELF_VARIANT_PARENT'
   | 'VARIANT_CYCLE';
 
+/**
+ * Health is locale-agnostic (Issue #37): the core emits a stable machine code
+ * plus interpolation params, and the UI renders both a summary and an
+ * explanatory detail line via `t('health.' + code, params)` and
+ * `t('health.' + code + '.detail', params)`. Raw diagnostics (e.g. the
+ * frontmatter parse error) ride in `params` as user data and are interpolated
+ * verbatim — never translated.
+ */
 export interface PromptHealthIssue {
   code: PromptHealthCode;
   severity: 'warning' | 'error';
-  message: string;
-  detail?: string;
+  /** Interpolation params for the localized summary and detail messages.
+   *  Values are user data (variable names, relation paths, raw diagnostics)
+   *  and stay untranslated. */
+  params?: Record<string, string>;
 }
 
 /** Everything `derivePromptHealth` needs, pre-parsed so health can be computed
@@ -64,7 +75,7 @@ export interface PromptHealthInput {
   variantOf?: string;
   /** True when variantOf is present but is not a non-empty string (a YAML
    *  number / array / object written by hand). Such a value is invalid — it is
-   *  reported as an INVALID_VARIANT_PARENT instead of being treated as absent. */
+   *  reported as an INVALID_VARIANT_PARENT_TYPE instead of being treated as absent. */
   variantOfTypeInvalid?: boolean;
   /** Names participating in a variantOf cycle of length >= 2, derived once per
    *  project by the caller. When this prompt is a member, a cycle issue is
@@ -85,14 +96,15 @@ const CODE_ORDER: PromptHealthCode[] = [
   'SELF_RELATED_PROMPT',
   'BROKEN_VARIANT_PARENT',
   'INVALID_VARIANT_PARENT',
+  'INVALID_VARIANT_PARENT_TYPE',
   'SELF_VARIANT_PARENT',
   'VARIANT_CYCLE',
 ];
 
 /**
  * Derive a prompt's deterministic structural issues. The result is sorted by a
- * fixed code order and then by message, so equal inputs always produce the same
- * ordered output.
+ * fixed code order and then by a locale-independent params tie-break, so equal
+ * inputs always produce the same ordered output regardless of locale.
  */
 export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[] {
   const issues: PromptHealthIssue[] = [];
@@ -101,18 +113,12 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
     issues.push({
       code: 'INVALID_FRONTMATTER',
       severity: 'warning',
-      message: 'Frontmatter is malformed',
-      detail: input.frontmatterError,
+      params: { raw: input.frontmatterError },
     });
   }
 
   if (input.bodyEmpty) {
-    issues.push({
-      code: 'EMPTY_BODY',
-      severity: 'warning',
-      message: 'Prompt body is empty',
-      detail: 'The prompt has no body text after its frontmatter.',
-    });
+    issues.push({ code: 'EMPTY_BODY', severity: 'warning' });
   }
 
   // Variable health is only meaningful when the body was actually read. A
@@ -124,16 +130,14 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
       issues.push({
         code: 'UNDOCUMENTED_VARIABLE',
         severity: 'warning',
-        message: `Variable {${variable.name}} has no documentation`,
-        detail: `{${variable.name}} appears in the body but has no description or example annotation.`,
+        params: { name: variable.name },
       });
     }
     for (const variable of contract.stale) {
       issues.push({
         code: 'STALE_VARIABLE_DOCUMENTATION',
         severity: 'warning',
-        message: `Variable annotation {${variable.name}} is stale`,
-        detail: `{${variable.name}} is documented but no longer appears in the body.`,
+        params: { name: variable.name },
       });
     }
   }
@@ -148,30 +152,15 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
     if (seen.has(path)) continue;
     seen.add(path);
     if (path === input.name) {
-      issues.push({
-        code: 'SELF_RELATED_PROMPT',
-        severity: 'warning',
-        message: 'Prompt is related to itself',
-        detail: `The related entry ${path} references this prompt.`,
-      });
+      issues.push({ code: 'SELF_RELATED_PROMPT', severity: 'warning', params: { path } });
       continue;
     }
     if (!isCanonicalRelationPath(path)) {
-      issues.push({
-        code: 'INVALID_RELATED_PROMPT',
-        severity: 'error',
-        message: `Related prompt ${path} is invalid`,
-        detail: `${path} is not a project-relative prompt path without a .md suffix.`,
-      });
+      issues.push({ code: 'INVALID_RELATED_PROMPT', severity: 'error', params: { path } });
       continue;
     }
     if (!input.projectPromptNames.has(path)) {
-      issues.push({
-        code: 'BROKEN_RELATED_PROMPT',
-        severity: 'warning',
-        message: `Related prompt ${path} does not exist`,
-        detail: `${path} is listed in related but no such prompt exists in this project.`,
-      });
+      issues.push({ code: 'BROKEN_RELATED_PROMPT', severity: 'warning', params: { path } });
     }
   }
 
@@ -180,43 +169,30 @@ export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[
   // Cycle membership is a project-wide derived set, so a 2+ chain that loops
   // back is reported deterministically on every member without recursing here.
   if (input.variantOfTypeInvalid) {
-    issues.push({
-      code: 'INVALID_VARIANT_PARENT',
-      severity: 'error',
-      message: 'Variant parent is not a string',
-      detail: 'variantOf must be a project-relative prompt path string, but its value is not a string.',
-    });
+    issues.push({ code: 'INVALID_VARIANT_PARENT_TYPE', severity: 'error' });
   } else if (input.variantOf) {
     if (input.variantOf === input.name) {
       issues.push({
         code: 'SELF_VARIANT_PARENT',
         severity: 'warning',
-        message: 'Prompt is its own variant parent',
-        detail: `variantOf ${input.variantOf} references this prompt.`,
+        params: { path: input.variantOf },
       });
     } else if (!isCanonicalRelationPath(input.variantOf)) {
       issues.push({
         code: 'INVALID_VARIANT_PARENT',
         severity: 'error',
-        message: `Variant parent ${input.variantOf} is invalid`,
-        detail: `${input.variantOf} is not a project-relative prompt path without a .md suffix.`,
+        params: { path: input.variantOf },
       });
     } else if (!input.projectPromptNames.has(input.variantOf)) {
       issues.push({
         code: 'BROKEN_VARIANT_PARENT',
         severity: 'warning',
-        message: `Variant parent ${input.variantOf} does not exist`,
-        detail: `${input.variantOf} is named as variantOf but no such prompt exists in this project.`,
+        params: { path: input.variantOf },
       });
     }
   }
   if (input.projectVariantCycleNames?.has(input.name)) {
-    issues.push({
-      code: 'VARIANT_CYCLE',
-      severity: 'warning',
-      message: 'Prompt is part of a variant cycle',
-      detail: 'Following variantOf from this prompt loops back to itself.',
-    });
+    issues.push({ code: 'VARIANT_CYCLE', severity: 'warning' });
   }
 
   return sortIssues(issues);
@@ -227,6 +203,8 @@ function sortIssues(issues: PromptHealthIssue[]): PromptHealthIssue[] {
   return [...issues].sort((a, b) => {
     const byCode = (order.get(a.code) ?? 0) - (order.get(b.code) ?? 0);
     if (byCode !== 0) return byCode;
-    return (a.detail ?? a.message).localeCompare(b.detail ?? b.message);
+    // Locale-independent tie-break: params are stable user data, so the order
+    // never shifts when the active locale changes.
+    return JSON.stringify(a.params ?? {}).localeCompare(JSON.stringify(b.params ?? {}));
   });
 }

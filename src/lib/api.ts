@@ -250,30 +250,37 @@ export async function assetReferenceFromSelectedPath(
   return call<string>('asset_reference_from_selected_path', { project, absolutePath });
 }
 
+/** Machine failure reason for an asset pick. The UI maps it to localized
+ *  display copy; raw backend diagnostics travel separately in `detail`. */
+export type AssetPickFailure = 'cancelled' | 'no-reference' | 'failed';
+
 export interface AssetPickResult {
   reference?: string;
-  error?: string;
+  failure?: AssetPickFailure;
+  /** Raw diagnostic for `failed` — shown as-is, never translated. */
+  detail?: string;
 }
 
 /** Open the native file dialog and convert the selection into a canonical
- *  Project-relative asset reference. Returns `{ reference }` on success or
- *  `{ error }` on cancel/rejection; the UI only writes editor state after a
- *  successful result. In browser dev the dialog is replaced by a prompt that
- *  accepts a project-relative path (the browser fixture has no filesystem). */
-export async function pickAssetReference(project: string): Promise<AssetPickResult> {
+ *  Project-relative asset reference. Returns `{ reference }` on success or a
+ *  machine `failure` reason otherwise; the UI only writes editor state after a
+ *  successful result. `title` is the App-owned dialog title, localized by the
+ *  caller. In browser dev the dialog is replaced by a prompt that accepts a
+ *  project-relative path (the browser fixture has no filesystem). */
+export async function pickAssetReference(project: string, title: string): Promise<AssetPickResult> {
   if (!isTauri()) {
-    const typed = window.prompt('Asset reference (project-relative, browser-dev only):');
-    if (typed === null) return { error: 'Selection cancelled.' };
+    const typed = window.prompt(title);
+    if (typed === null) return { failure: 'cancelled' };
     const trimmed = typed.trim();
-    return trimmed ? { reference: trimmed } : { error: 'No asset reference given.' };
+    return trimmed ? { reference: trimmed } : { failure: 'no-reference' };
   }
   const { open } = await import('@tauri-apps/plugin-dialog');
-  const picked = await open({ multiple: false, title: 'Choose a file inside the current Project' });
-  if (typeof picked !== 'string' || !picked) return { error: 'Selection cancelled.' };
+  const picked = await open({ multiple: false, title });
+  if (typeof picked !== 'string' || !picked) return { failure: 'cancelled' };
   try {
     return { reference: await assetReferenceFromSelectedPath(project, picked) };
   } catch (error) {
-    return { error: errorDetail(error) };
+    return { failure: 'failed', detail: errorDetail(error) };
   }
 }
 

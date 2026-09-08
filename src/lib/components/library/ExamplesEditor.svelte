@@ -2,7 +2,6 @@
   import { resolvePromptAssets, pickAssetReference } from '$lib/api';
   import type { PromptExample, ResolvedPromptAsset } from '$lib/prompts/types';
   import {
-    exampleDisplayName,
     addExample,
     removeExample,
     moveExample,
@@ -16,6 +15,7 @@
     clearFileRef,
     assetResolutionKey,
   } from '$lib/examples/editor-helpers';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     examples: PromptExample[];
@@ -112,25 +112,34 @@
     return resolution[assetResolutionKey(projectPath, { index, role, sub, reference })];
   }
 
-  function stateLabel(state: ResolvedPromptAsset['state']): string {
-    return state === 'resolved' ? 'Ready' : state === 'missing' ? 'Missing' : 'Invalid';
-  }
+  const stateKeys: Record<ResolvedPromptAsset['state'], 'examples.state.ready' | 'examples.state.missing' | 'examples.state.invalid'> = {
+    resolved: 'examples.state.ready',
+    missing: 'examples.state.missing',
+    invalid: 'examples.state.invalid',
+  };
 
   // ── Picker flows (Issue #26 §8) ─────────────────────────────────────────
   // A picked file is converted by Rust into a canonical Project-relative
   // reference; only a successful conversion is written into editor state. When
   // a replacement would drop existing inline text, the user is asked first —
   // never silently deleted.
-  let pickerError = $state('');
+  // The failure is stored as a machine reason (never a display string) so the
+  // message re-localizes when the locale changes while the editor is mounted.
+  type PickerFailure = { failure: 'no-reference' | 'failed'; detail?: string };
+  let pickerFailure = $state<PickerFailure | null>(null);
+  const pickerErrorText = $derived.by(() => {
+    if (!pickerFailure) return '';
+    return pickerFailure.failure === 'no-reference'
+      ? t('examples.picker.noReference')
+      : t('examples.picker.failed', { detail: pickerFailure.detail ?? '' });
+  });
 
   async function chooseInputFile(index: number): Promise<void> {
     const reference = await pickFor(index);
     if (!reference) return;
     const example = examples[index];
     if (example.input) {
-      const ok = window.confirm(
-        'This example has inline input text. Replace it with the file reference?'
-      );
+      const ok = window.confirm(t('examples.confirm.replaceInput'));
       if (!ok) return;
     }
     onChange(replaceInputWithFile(examples, index, reference));
@@ -141,9 +150,7 @@
     if (!reference) return;
     const example = examples[index];
     if (example.output) {
-      const ok = window.confirm(
-        'This example has inline output text. Replace it with the file reference?'
-      );
+      const ok = window.confirm(t('examples.confirm.replaceOutput'));
       if (!ok) return;
     }
     onChange(replaceOutputWithFile(examples, index, reference));
@@ -159,11 +166,11 @@
    *  cancel/rejection (an error is surfaced once, not per keystroke). */
   async function pickFor(index: number): Promise<string | null> {
     if (!projectPath) return null;
-    pickerError = '';
-    const result = await pickAssetReference(projectPath);
+    pickerFailure = null;
+    const result = await pickAssetReference(projectPath, t('examples.picker.title'));
     if (result.reference) return result.reference;
-    if (result.error && result.error !== 'Selection cancelled.') {
-      pickerError = result.error;
+    if (result.failure === 'no-reference' || result.failure === 'failed') {
+      pickerFailure = { failure: result.failure, detail: result.detail };
     }
     return null;
   }
@@ -176,17 +183,17 @@
       class:example-chip--missing={resolved.state === 'missing'}
       class:example-chip--invalid={resolved.state === 'invalid'}
       class="example-chip"
-    >{stateLabel(resolved.state)}</span>
+    >{t(stateKeys[resolved.state])}</span>
   {/if}
 {/snippet}
 
 <div class="examples-editor">
   <div class="examples-editor__heading-row">
-    <span class="variables-editor__heading">Examples</span>
-    <span class="examples-editor__hint">File references are Project-relative; choose from inside the Project.</span>
+    <span class="variables-editor__heading">{t('examples.editor.heading')}</span>
+    <span class="examples-editor__hint">{t('examples.editor.hint')}</span>
   </div>
-  {#if pickerError}
-    <div class="examples-editor__error">{pickerError}</div>
+  {#if pickerErrorText}
+    <div class="examples-editor__error">{pickerErrorText}</div>
   {/if}
 
   {#each examples as example, index (index)}
@@ -195,100 +202,100 @@
         <input
           class="example-edit-card__name"
           value={example.name ?? ''}
-          placeholder={exampleDisplayName(example, index)}
-          aria-label="Example name"
+          placeholder={example.name || t('examples.fallbackName', { n: index + 1 })}
+          aria-label={t('examples.editor.name.aria')}
           oninput={(event) =>
             onChange(updateExampleField(examples, index, 'name', event.currentTarget.value || undefined))
           }
         />
-        <span class="example-edit-card__fallback">{exampleDisplayName(example, index)}</span>
+        <span class="example-edit-card__fallback">{example.name || t('examples.fallbackName', { n: index + 1 })}</span>
         <button
           type="button"
           class="example-edit-card__move"
           disabled={index === 0}
-          aria-label="Move example up"
+          aria-label={t('examples.editor.moveUp.aria')}
           onclick={() => onChange(moveExample(examples, index, -1))}
         >↑</button>
         <button
           type="button"
           class="example-edit-card__move"
           disabled={index === examples.length - 1}
-          aria-label="Move example down"
+          aria-label={t('examples.editor.moveDown.aria')}
           onclick={() => onChange(moveExample(examples, index, 1))}
         >↓</button>
         <button
           type="button"
           class="variable-doc-edit__remove"
           onclick={() => onChange(removeExample(examples, index))}
-        >Remove</button>
+        >{t('meta.remove')}</button>
       </div>
 
       <div class="example-edit-card__fields">
         {#if example.inputFile}
           <div class="example-file-edit">
-            <span class="example-field__label">Input file</span>
+            <span class="example-field__label">{t('examples.inputFile')}</span>
             <div class="example-file-edit__row">
               <input
                 value={example.inputFile}
-                aria-label="Input file reference"
+                aria-label={t('examples.editor.inputRef.aria')}
                 oninput={(event) =>
                   onChange(updateExampleField(examples, index, 'inputFile', event.currentTarget.value || undefined))
                 }
               />
               {@render stateChip(resolutionFor(index, 'inputFile', example.inputFile))}
-              <button type="button" class="link-btn" onclick={() => chooseInputFile(index)}>Choose file…</button>
-              <button type="button" class="link-btn" onclick={() => onChange(clearFileRef(examples, index, 'inputFile'))}>Use inline input</button>
+              <button type="button" class="link-btn" onclick={() => chooseInputFile(index)}>{t('examples.editor.chooseFile')}</button>
+              <button type="button" class="link-btn" onclick={() => onChange(clearFileRef(examples, index, 'inputFile'))}>{t('examples.editor.useInlineInput')}</button>
             </div>
           </div>
         {:else}
           <label class="example-inline-edit">
-            <span class="example-field__label">Input</span>
+            <span class="example-field__label">{t('examples.input')}</span>
             <textarea
               value={example.input ?? ''}
-              placeholder="Inline input…"
+              placeholder={t('examples.editor.inlineInput.placeholder')}
               oninput={(event) =>
                 onChange(updateExampleField(examples, index, 'input', event.currentTarget.value || undefined))
               }
             ></textarea>
-            <button type="button" class="link-btn" onclick={() => chooseInputFile(index)}>Choose file instead…</button>
+            <button type="button" class="link-btn" onclick={() => chooseInputFile(index)}>{t('examples.editor.chooseFileInstead')}</button>
           </label>
         {/if}
 
         {#if example.outputFile}
           <div class="example-file-edit">
-            <span class="example-field__label">Output file</span>
+            <span class="example-field__label">{t('examples.outputFile')}</span>
             <div class="example-file-edit__row">
               <input
                 value={example.outputFile}
-                aria-label="Output file reference"
+                aria-label={t('examples.editor.outputRef.aria')}
                 oninput={(event) =>
                   onChange(updateExampleField(examples, index, 'outputFile', event.currentTarget.value || undefined))
                 }
               />
               {@render stateChip(resolutionFor(index, 'outputFile', example.outputFile))}
-              <button type="button" class="link-btn" onclick={() => chooseOutputFile(index)}>Choose file…</button>
-              <button type="button" class="link-btn" onclick={() => onChange(clearFileRef(examples, index, 'outputFile'))}>Use inline output</button>
+              <button type="button" class="link-btn" onclick={() => chooseOutputFile(index)}>{t('examples.editor.chooseFile')}</button>
+              <button type="button" class="link-btn" onclick={() => onChange(clearFileRef(examples, index, 'outputFile'))}>{t('examples.editor.useInlineOutput')}</button>
             </div>
           </div>
         {:else}
           <label class="example-inline-edit">
-            <span class="example-field__label">Output</span>
+            <span class="example-field__label">{t('examples.output')}</span>
             <textarea
               value={example.output ?? ''}
-              placeholder="Inline output…"
+              placeholder={t('examples.editor.inlineOutput.placeholder')}
               oninput={(event) =>
                 onChange(updateExampleField(examples, index, 'output', event.currentTarget.value || undefined))
               }
             ></textarea>
-            <button type="button" class="link-btn" onclick={() => chooseOutputFile(index)}>Choose file instead…</button>
+            <button type="button" class="link-btn" onclick={() => chooseOutputFile(index)}>{t('examples.editor.chooseFileInstead')}</button>
           </label>
         {/if}
 
         <label class="example-inline-edit">
-          <span class="example-field__label">Notes</span>
+          <span class="example-field__label">{t('examples.notes')}</span>
           <textarea
             value={example.notes ?? ''}
-            placeholder="Optional notes…"
+            placeholder={t('examples.editor.notes.placeholder')}
             oninput={(event) =>
               onChange(updateExampleField(examples, index, 'notes', event.currentTarget.value || undefined))
             }
@@ -296,29 +303,29 @@
         </label>
 
         <div class="example-assets-edit">
-          <span class="example-field__label">Files</span>
+          <span class="example-field__label">{t('examples.files')}</span>
           {#each example.assets ?? [] as reference, assetIndex (assetIndex)}
             <div class="example-file-edit__row" class:example-file-edit__row--draft={!reference.trim()}>
               <input
                 value={reference}
-                placeholder={reference.trim() ? '' : 'Type a Project-relative path…'}
-                aria-label="Asset file reference"
+                placeholder={reference.trim() ? '' : t('examples.editor.asset.placeholder')}
+                aria-label={t('examples.editor.assetRef.aria')}
                 oninput={(event) =>
                   onChange(updateAsset(examples, index, assetIndex, event.currentTarget.value))
                 }
               />
               {@render stateChip(resolutionFor(index, 'asset', reference, assetIndex))}
-              <button type="button" class="link-btn" onclick={() => onChange(removeAsset(examples, index, assetIndex))}>Remove</button>
+              <button type="button" class="link-btn" onclick={() => onChange(removeAsset(examples, index, assetIndex))}>{t('meta.remove')}</button>
             </div>
           {/each}
           <div class="example-assets-edit__actions">
-            <button type="button" class="link-btn" onclick={() => chooseAsset(index)}>Choose file…</button>
-            <button type="button" class="link-btn" onclick={() => onChange(addBlankAsset(examples, index))}>Add blank</button>
+            <button type="button" class="link-btn" onclick={() => chooseAsset(index)}>{t('examples.editor.chooseFile')}</button>
+            <button type="button" class="link-btn" onclick={() => onChange(addBlankAsset(examples, index))}>{t('examples.editor.addBlank')}</button>
           </div>
         </div>
       </div>
     </div>
   {/each}
 
-  <button type="button" class="link-btn" onclick={() => onChange(addExample(examples))}>Add example</button>
+  <button type="button" class="link-btn" onclick={() => onChange(addExample(examples))}>{t('examples.editor.addExample')}</button>
 </div>

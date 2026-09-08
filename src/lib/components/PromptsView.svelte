@@ -72,7 +72,7 @@
 
   function canNavigate(): boolean {
     if (!detailDirty) return true;
-    return window.confirm('This prompt has unsaved changes. Discard them and continue?');
+    return window.confirm(t('dialog.confirmUnsaved'));
   }
 
   function isCurrentDocument(document: PromptDocument): boolean {
@@ -141,7 +141,7 @@
   }
 
   function handleCopy(body: string): void {
-    void copyToClipboard(body).then((ok) => notice(ok ? 'Prompt copied.' : 'Copy failed — select the text manually.'));
+    void copyToClipboard(body).then((ok) => notice(ok ? t('notice.promptCopied') : t('notice.copyFailed')));
   }
 
   function handleReveal(document: PromptDocument): void {
@@ -153,7 +153,7 @@
     void renamePrompt(document, newName)
       .then(() => {
         if (isCurrentDocument({ ...document, name: newName })) detailDirty = false;
-        notice('Prompt renamed.');
+        notice(t('notice.promptRenamed'));
       })
       .catch((error) => notice(errorDetail(error)));
   }
@@ -163,7 +163,7 @@
     void movePrompt(document, destination)
       .then(() => {
         if (isCurrentDocument({ ...document, name: destination })) detailDirty = false;
-        notice('Prompt moved.');
+        notice(t('notice.promptMoved'));
       })
       .catch((error) => notice(errorDetail(error)));
   }
@@ -173,7 +173,7 @@
     void duplicatePrompt(document, name)
       .then(() => {
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
-        notice('Prompt duplicated.');
+        notice(t('notice.promptDuplicated'));
       })
       .catch((error) => notice(errorDetail(error)));
   }
@@ -183,7 +183,7 @@
     void duplicateAsVariant(document, name)
       .then(() => {
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
-        notice('Prompt duplicated as variant.');
+        notice(t('notice.promptDuplicatedAsVariant'));
       })
       .catch((error) => notice(errorDetail(error)));
   }
@@ -204,7 +204,7 @@
     }
     deleteTarget = null;
     if (isCurrentDocument(document)) detailDirty = false;
-    notice('Deleted ' + document.name + '.md.');
+    notice(t('notice.promptDeleted', { name: document.name }));
   }
 
   async function handleBatch(
@@ -396,9 +396,13 @@
 
 {#if deleteTarget}
   <ConfirmDialog
-    title="Delete prompt file?"
-    message={'Delete “' + deleteTarget.name + '.md” from ' + projectDisplayName(deleteTarget.projectPath) + ' / ' + deleteTarget.relativePath + '? The Markdown file will be permanently deleted.'}
-    confirmLabel="Delete file"
+    title={t('confirm.deletePrompt.title')}
+    message={t('confirm.deletePrompt.message', {
+      name: deleteTarget.name,
+      project: projectDisplayName(deleteTarget.projectPath),
+      path: deleteTarget.relativePath,
+    })}
+    confirmLabel={t('confirm.deletePrompt.confirm')}
     destructive={true}
     onConfirm={confirmDelete}
     onCancel={() => (deleteTarget = null)}
@@ -407,10 +411,10 @@
 
 {#if refreshPending}
   <ConfirmDialog
-    title="Reload prompt from disk?"
-    message="This prompt has unsaved changes. Reloading will discard the local edits and read the current Markdown file again."
-    confirmLabel="Reload from disk"
-    cancelLabel="Keep editing"
+    title={t('confirm.reload.title')}
+    message={t('confirm.reload.message')}
+    confirmLabel={t('confirm.reload.confirm')}
+    cancelLabel={t('confirm.reload.cancel')}
     onConfirm={confirmRefresh}
     onCancel={() => (refreshPending = false)}
   />
