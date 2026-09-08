@@ -63,6 +63,19 @@ function readMessage(catalog: Record<MessageKey, string>, key: MessageKey): stri
 }
 
 /**
+ * Catalog bases that carry both a `.one` and a `.other` entry. Deriving this
+ * from `MessageKey` keeps typo'd plural bases a compile-time error, exactly
+ * like `t()` — a wrong base can never silently render as raw text.
+ */
+export type PluralBaseKey = {
+  [K in MessageKey]: K extends `${infer Base}.one`
+    ? `${Base}.other` extends MessageKey
+      ? Base
+      : never
+    : never;
+}[MessageKey];
+
+/**
  * Plural-aware translate. The catalog carries `base.one` / `base.other`
  * entries and `Intl.PluralRules` for the resolved locale picks between them,
  * so no component ever concatenates an English plural suffix by hand.
@@ -70,7 +83,7 @@ function readMessage(catalog: Record<MessageKey, string>, key: MessageKey): stri
  * text for both entries — key parity stays type-checked. `count` is merged
  * into the interpolation params automatically.
  */
-export function tPlural(base: string, count: number, params?: MessageParams): string {
+export function tPlural(base: PluralBaseKey, count: number, params?: MessageParams): string {
   const lenient = (catalog: Record<MessageKey, string>, key: string): string | undefined =>
     (catalog as Record<string, string | undefined>)[key];
   const category = '.' + new Intl.PluralRules(locale.resolved).select(count);

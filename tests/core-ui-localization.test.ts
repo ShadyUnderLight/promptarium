@@ -13,7 +13,7 @@
  *    representative aria-labels switch.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/svelte';
+import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/svelte';
 import ProjectSidebar from '../src/lib/components/library/ProjectSidebar.svelte';
 import PromptLibrary from '../src/lib/components/library/PromptLibrary.svelte';
 import PromptToolbar from '../src/lib/components/library/PromptToolbar.svelte';
@@ -227,6 +227,80 @@ describe('library states per locale (Issue #36)', () => {
       expect(container.textContent).toContain('1 个提示词');
     });
     expect(container.textContent).toContain('a');
+  });
+});
+
+describe('folder action protocol (Issue #36 review: P1)', () => {
+  function renderSidebarWithFolder(props: Record<string, unknown> = {}): HTMLElement {
+    library.folderPaths = ['notes'];
+    const { container } = render(ProjectSidebar, { props: { ...sidebarProps, ...props } });
+    return container;
+  }
+
+  it('zh-CN prompt copy names the exact machine tokens rename / delete', async () => {
+    setPreference('zh-CN');
+    const container = renderSidebarWithFolder();
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue(null);
+    const folder = screen.getByText('notes');
+
+    fireEvent.contextMenu(folder);
+    await waitFor(() => expect(promptSpy).toHaveBeenCalled());
+    expect(promptSpy.mock.calls[0]?.[0]).toBe('文件夹操作：输入 rename 或 delete');
+    expect(container.textContent).not.toContain('重命名或删除');
+  });
+
+  it('entering the machine token "delete" reaches the delete confirm', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.spyOn(window, 'prompt').mockReturnValue('delete');
+    const onNotice = vi.fn();
+    renderSidebarWithFolder({ onNotice });
+
+    fireEvent.contextMenu(screen.getByText('notes'));
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    expect(confirmSpy.mock.calls[0]?.[0]).toBe('Delete empty folder “notes”?');
+    // Confirm was declined, so nothing was deleted and no notice fired.
+    expect(onNotice).not.toHaveBeenCalled();
+  });
+
+  it('entering a translated word like "删除" is a no-op (tokens are machine values)', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    vi.spyOn(window, 'prompt').mockReturnValue('删除');
+    setPreference('zh-CN');
+    renderSidebarWithFolder();
+
+    fireEvent.contextMenu(screen.getByText('notes'));
+    // Let the async handler settle; the confirm must never fire.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('toolbar prompt count (Issue #36 review: P2)', () => {
+  function renderToolbar(): HTMLElement {
+    const { container } = render(PromptToolbar, {
+      props: { ...libraryProps, selectedCount: 0, onSelectAll: () => {}, onClearSelection: () => {}, onBatch: () => {} },
+    });
+    return container;
+  }
+
+  it('renders exactly "<n> prompts" — number not duplicated by the noun entry', () => {
+    const two = [summary(), summary()];
+    library.allPrompts = two;
+    library.prompts = two;
+    const container = renderToolbar();
+    const line = container.querySelector('.prompt-toolbar__count');
+    expect(line?.textContent?.trim()).toBe('2 prompts');
+  });
+
+  it('renders exactly "<n> 个提示词" in zh-CN', async () => {
+    const one = [summary()];
+    library.allPrompts = one;
+    library.prompts = one;
+    setPreference('zh-CN');
+    const container = renderToolbar();
+    const line = container.querySelector('.prompt-toolbar__count');
+    expect(line?.textContent?.trim()).toBe('1 个提示词');
+    expect(line?.textContent?.trim()).not.toContain('1 1');
   });
 });
 
