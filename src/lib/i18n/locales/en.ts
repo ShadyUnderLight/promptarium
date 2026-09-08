@@ -310,6 +310,9 @@ export const en = {
   'compare.value.none': '(none)',
   'compare.value.desc': 'desc: {value}',
   'compare.value.example': 'example: {value}',
+  'compare.value.yes': 'true',
+  'compare.value.no': 'false',
+  'compare.value.invalidType': 'not a string ({type}): {value}',
   'diff.aria': 'File diff',
 
   // Metadata inspector / editor. Machine status values stay active/draft/archived.

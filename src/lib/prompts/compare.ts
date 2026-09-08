@@ -168,15 +168,20 @@ export type MetadataFieldKey =
 
 /**
  * Locale-agnostic value shape (Issue #37): shell copy like "(none)" / "desc:" /
- * "example:" never enters the domain — the Compare UI renders it from the
- * catalog. User-owned content (descriptions, notes, serialized raw YAML) is
- * carried verbatim and displayed as-is.
+ * "example:" / "true" / "number:" never enters the domain — the Compare UI
+ * renders it from the catalog. User-owned content (descriptions, notes,
+ * serialized raw YAML) is carried verbatim and displayed as-is.
  */
 export type MetadataFieldValue =
   | { kind: 'none' }
   | { kind: 'text'; text: string }
+  | { kind: 'boolean'; value: boolean }
   | { kind: 'list'; items: string[] }
   | { kind: 'variables'; entries: { name: string; description?: string; example?: string }[] }
+  /** A value whose YAML type is wrong (e.g. `variantOf: 123`): the type token
+   *  and serialized value are machine data; the "not a string" framing is the
+   *  UI's localized shell copy. */
+  | { kind: 'invalid-type'; type: string; raw: string }
   | { kind: 'raw'; text: string };
 
 export interface MetadataFieldDiff {
@@ -277,9 +282,10 @@ function renderVariantOf(metadata: PromptMetadata): MetadataFieldValue {
   const raw = getVariantOfRaw(metadata);
   if (raw === undefined) return { kind: 'none' };
   if (typeof raw === 'string') return { kind: 'text', text: raw };
-  // Wrong YAML type (number / array / …): show the type so the diff is honest
-  // about the mismatch instead of collapsing it to "none".
-  return { kind: 'raw', text: `${typeof raw}: ${JSON.stringify(raw)}` };
+  // Wrong YAML type (number / array / …): carry the machine type and serialized
+  // value so the diff stays honest instead of collapsing to "none"; the type
+  // framing is localized by the UI.
+  return { kind: 'invalid-type', type: typeof raw, raw: JSON.stringify(raw) };
 }
 
 /** Normalize "no notes" and "empty notes" to a single value: the storage
@@ -299,11 +305,7 @@ export function diffMetadata(a: PromptMetadata, b: PromptMetadata): MetadataFiel
   const pairs: Array<[MetadataFieldKey, MetadataFieldValue, MetadataFieldValue]> = [
     ['description', { kind: 'text', text: a.description }, { kind: 'text', text: b.description }],
     ['status', { kind: 'text', text: a.status }, { kind: 'text', text: b.status }],
-    [
-      'favorite',
-      { kind: 'text', text: a.favorite ? 'true' : 'false' },
-      { kind: 'text', text: b.favorite ? 'true' : 'false' },
-    ],
+    ['favorite', { kind: 'boolean', value: a.favorite }, { kind: 'boolean', value: b.favorite }],
     ['models', renderList(a.models), renderList(b.models)],
     ['tags', renderList(a.tags), renderList(b.tags)],
     ['related', renderList(a.related), renderList(b.related)],

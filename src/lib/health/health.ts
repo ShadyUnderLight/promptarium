@@ -75,7 +75,7 @@ export interface PromptHealthInput {
   variantOf?: string;
   /** True when variantOf is present but is not a non-empty string (a YAML
    *  number / array / object written by hand). Such a value is invalid — it is
-   *  reported as an INVALID_VARIANT_PARENT instead of being treated as absent. */
+   *  reported as an INVALID_VARIANT_PARENT_TYPE instead of being treated as absent. */
   variantOfTypeInvalid?: boolean;
   /** Names participating in a variantOf cycle of length >= 2, derived once per
    *  project by the caller. When this prompt is a member, a cycle issue is
@@ -103,8 +103,8 @@ const CODE_ORDER: PromptHealthCode[] = [
 
 /**
  * Derive a prompt's deterministic structural issues. The result is sorted by a
- * fixed code order and then by message, so equal inputs always produce the same
- * ordered output.
+ * fixed code order and then by a locale-independent params tie-break, so equal
+ * inputs always produce the same ordered output regardless of locale.
  */
 export function derivePromptHealth(input: PromptHealthInput): PromptHealthIssue[] {
   const issues: PromptHealthIssue[] = [];

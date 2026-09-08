@@ -193,7 +193,7 @@ console.log('diffMetadata — wrong-type variantOf renders honestly');
   const diffs = diffMetadata(metadata({ extra: { variantOf: 123 } }), metadata({ extra: { variantOf: 'parent' } }));
   const variant = diffs.find((d) => d.field === 'variantOf');
   assert(variant, 'a wrong-type variantOf still produces a variantOf difference');
-  eq(variant.left, { kind: 'raw', text: 'number: 123' }, 'left renders the wrong type instead of collapsing to none');
+  eq(variant.left, { kind: 'invalid-type', type: 'number', raw: '123' }, 'left carries the machine type and serialized value');
   eq(variant.right, { kind: 'text', text: 'parent' }, 'right carries the string value');
 }
 
@@ -359,6 +359,19 @@ console.log('diffMetadata — variables carry structured entries (no shell copy)
   assert(
     !JSON.stringify(vars).includes('desc:') && !JSON.stringify(vars).includes('example:') && !JSON.stringify(vars).includes('(none)'),
     'no shell copy leaks into the domain values'
+  );
+}
+
+console.log('diffMetadata — favorite carries a structured boolean (no true/false copy)');
+{
+  const diffs = diffMetadata(metadata(), metadata({ favorite: true }));
+  const favorite = diffs.find((d) => d.field === 'favorite');
+  assert(favorite, 'a favorite difference is reported on its own row');
+  eq(favorite.left, { kind: 'boolean', value: false }, 'left carries the machine boolean');
+  eq(favorite.right, { kind: 'boolean', value: true }, 'right carries the machine boolean');
+  assert(
+    !JSON.stringify(favorite).includes('"true"') && !JSON.stringify(favorite).includes('"false"'),
+    'no true/false display copy leaks into the domain values'
   );
 }
 

@@ -299,6 +299,9 @@ export const zhCN = {
   'compare.value.none': '（无）',
   'compare.value.desc': '描述: {value}',
   'compare.value.example': '示例: {value}',
+  'compare.value.yes': '是',
+  'compare.value.no': '否',
+  'compare.value.invalidType': '非字符串（{type}）：{value}',
   'diff.aria': '文件差异',
 
   // 元数据检查器 / 编辑器。status 机器值保持 active/draft/archived 不变。

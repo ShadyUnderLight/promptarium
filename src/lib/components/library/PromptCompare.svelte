@@ -89,8 +89,8 @@
     archived: 'newPrompt.status.archived',
   };
 
-  /** Render a diff value: shell copy ((none) / desc: / example:) is localized,
-   *  user-owned content passes through verbatim. */
+  /** Render a diff value: shell copy ((none) / desc: / example: / true /
+   * not-a-string) is localized, user-owned content passes through verbatim. */
   function renderValue(diff: MetadataFieldDiff, value: MetadataFieldValue): string {
     switch (value.kind) {
       case 'none':
@@ -100,6 +100,10 @@
         // else in the app.
         if (diff.field === 'status') return t(statusKeys[value.text] ?? 'compare.value.none');
         return value.text;
+      case 'boolean':
+        return value.value ? t('compare.value.yes') : t('compare.value.no');
+      case 'invalid-type':
+        return t('compare.value.invalidType', { type: value.type, value: value.raw });
       case 'list':
         return value.items.join(', ');
       case 'variables':
