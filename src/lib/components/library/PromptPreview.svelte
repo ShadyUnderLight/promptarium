@@ -1,5 +1,6 @@
 <script lang="ts">
   import { renderMarkdown } from '$lib/library/markdown';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     body: string;
@@ -13,6 +14,6 @@
   {#if body.trim()}
     {@html html}
   {:else}
-    <p class="detail-placeholder">This prompt has an empty body.</p>
+    <p class="detail-placeholder">{t('detail.emptyBody')}</p>
   {/if}
 </article>

@@ -21,6 +21,7 @@
   import PromptCompare from './PromptCompare.svelte';
   import ExamplesSection from './ExamplesSection.svelte';
   import { parseError } from '$lib/library/errors';
+  import { t, tPlural } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     document: PromptDocument | null;
@@ -168,7 +169,7 @@
         metadata = effective;
         originalMetadata = cloneMetadata(effective);
         mode = 'preview';
-        onNotice('No changes to save.');
+        onNotice(t('notice.noChanges'));
         return;
       }
       const saved = await onSave(
@@ -186,7 +187,7 @@
       originalRaw = saved.raw;
       frontmatterPrefix = saved.frontmatterPrefix;
       mode = 'preview';
-      onNotice('Prompt saved.');
+      onNotice(t('notice.promptSaved'));
     } catch (error) {
       const parsed = parseError(error);
       saveError = parsed.detail;
@@ -210,7 +211,7 @@
     saveError = '';
     saveConflict = false;
     onDismissExternalChange();
-    onNotice('Reloaded the prompt from disk. Local edits were discarded.');
+    onNotice(t('notice.reloaded'));
   }
 
   function keepEditingExternalChange(): void {
@@ -219,25 +220,25 @@
 
   function actionRename(): void {
     if (!document) return;
-    const next = window.prompt('Rename prompt file', document.name);
+    const next = window.prompt(t('dialog.renamePrompt'), document.name);
     if (next?.trim() && next.trim() !== document.name) onRename(document, next.trim());
   }
 
   function actionMove(): void {
     if (!document) return;
-    const next = window.prompt('Move prompt to relative path', document.name);
+    const next = window.prompt(t('dialog.movePrompt'), document.name);
     if (next?.trim() && next.trim() !== document.name) onMove(document, next.trim());
   }
 
   function actionDuplicate(): void {
     if (!document) return;
-    const next = window.prompt('New filename for duplicate', document.name + '-copy');
+    const next = window.prompt(t('dialog.duplicateName'), document.name + '-copy');
     if (next?.trim()) onDuplicate(document, next.trim());
   }
 
   function actionDuplicateAsVariant(): void {
     if (!document) return;
-    const next = window.prompt('New filename for variant', document.name + '-variant');
+    const next = window.prompt(t('dialog.variantName'), document.name + '-variant');
     if (next?.trim()) onDuplicateAsVariant(document, next.trim());
   }
 
@@ -264,78 +265,78 @@
   }
 </script>
 
-<section class="prompt-detail" aria-label="Prompt detail">
+<section class="prompt-detail" aria-label={t('detail.aria')}>
   {#if loading}
     <div class="detail-loading"><span></span><span></span></div>
   {:else if !document || !metadata}
     <div class="detail-empty">
       <div class="detail-empty__icon">✦</div>
-      <h2>Select a prompt</h2>
-      <p>Browse the library to inspect metadata, read the Markdown and manage a prompt.</p>
+      <h2>{t('detail.select.title')}</h2>
+      <p>{t('detail.select.hint')}</p>
     </div>
   {:else}
     <div class="detail-header">
       <div class="detail-header__title">
         <div class="detail-title-line">
-          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? 'Remove favorite' : 'Add favorite'} onclick={toggleFavorite}>{metadata.favorite ? '★' : '☆'}</button>
+          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}>{metadata.favorite ? '★' : '☆'}</button>
           <h2>{promptTitle(document.name)}</h2>
-          {#if dirty}<span class="dirty-dot" title="Unsaved changes"></span>{/if}
+          {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
           {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}>!</span>{/if}
         </div>
         <span class="detail-path">{document.relativePath}</span>
-        <span class="detail-folder">{document.folder || 'Project root'} · {formatModifiedAt(document.modifiedAt)}</span>
+        <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
       </div>
       <div class="detail-header__actions">
-        <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>Copy Prompt</button>
-        <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>Reveal</button>
+        <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>{t('detail.copy')}</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>{t('detail.reveal')}</button>
       </div>
     </div>
 
     <div class="detail-toolbar">
-      <div class="detail-tabs" role="tablist" aria-label="Prompt content">
-        <button type="button" role="tab" aria-selected={mode === 'preview'} class:detail-tab--active={mode === 'preview'} class="detail-tab" onclick={() => setMode('preview')}>Preview</button>
-        <button type="button" role="tab" aria-selected={mode === 'edit'} class:detail-tab--active={mode === 'edit'} class="detail-tab" onclick={() => setMode('edit')}>Edit</button>
-        <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>History</button>
+      <div class="detail-tabs" role="tablist" aria-label={t('detail.tabs.aria')}>
+        <button type="button" role="tab" aria-selected={mode === 'preview'} class:detail-tab--active={mode === 'preview'} class="detail-tab" onclick={() => setMode('preview')}>{t('detail.tab.preview')}</button>
+        <button type="button" role="tab" aria-selected={mode === 'edit'} class:detail-tab--active={mode === 'edit'} class="detail-tab" onclick={() => setMode('edit')}>{t('detail.tab.edit')}</button>
+        <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>{t('detail.tab.history')}</button>
       </div>
       <div class="detail-actions">
         {#if mode === 'edit'}
-          <button type="button" class="btn btn--primary btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" class="btn btn--primary btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? t('detail.saving') : t('detail.save')}</button>
         {/if}
         <div class="detail-action-group">
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>Compare…</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>Duplicate</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicateAsVariant}>Duplicate as Variant</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionRename}>Rename</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionMove}>Move</button>
-          <button type="button" class="btn btn--ghost btn--sm btn--danger-text" onclick={() => onDeleteRequest(document)}>Delete</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>{t('detail.compare')}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>{t('detail.duplicate')}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicateAsVariant}>{t('detail.duplicateAsVariant')}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionRename}>{t('detail.rename')}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={actionMove}>{t('detail.move')}</button>
+          <button type="button" class="btn btn--ghost btn--sm btn--danger-text" onclick={() => onDeleteRequest(document)}>{t('detail.delete')}</button>
         </div>
       </div>
     </div>
 
     {#if library.externalChangeState === 'file_missing'}
       <div class="detail-error">
-        <span>This prompt was deleted or moved externally. Your local edits are still in the editor.</span>
+        <span>{t('detail.externalMissing')}</span>
         <span class="detail-error__actions">
-          <button type="button" class="btn btn--ghost btn--sm" onclick={keepEditingExternalChange}>Keep editing</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={keepEditingExternalChange}>{t('detail.keepEditing')}</button>
         </span>
       </div>
     {/if}
 
-    {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveConflict}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>Reload from disk</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '', saveConflict = false)}>Keep editing</button></span>{/if}</div>{/if}
+    {#if saveError}<div class="detail-error"><span>{saveError}</span>{#if saveConflict}<span class="detail-error__actions"><button type="button" class="btn btn--ghost btn--sm" onclick={reloadFromDisk}>{t('detail.reloadFromDisk')}</button><button type="button" class="btn btn--ghost btn--sm" onclick={() => (saveError = '', saveConflict = false)}>{t('detail.keepEditing')}</button></span>{/if}</div>{/if}
     {#if document.frontmatterError}
       <div class="frontmatter-warning">
-        <span>Frontmatter warning: {document.frontmatterError}</span>
-        <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? 'Hide raw file' : 'Show raw file'}</button>
+        <span>{t('detail.frontmatterWarning', { detail: document.frontmatterError })}</span>
+        <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? t('detail.hideRaw') : t('detail.showRaw')}</button>
       </div>
     {/if}
 
     {#if mode === 'preview' && healthIssues.length}
       <div class="health-section">
-        <div class="health-section__heading">Needs Attention</div>
-        {#each healthIssues as issue (issue.code + '\u0000' + issue.message)}
+        <div class="health-section__heading">{t('detail.healthHeading')}</div>
+        {#each healthIssues as issue (issue.code + '\u0000' + JSON.stringify(issue.params ?? {}))}
           <div class="health-issue health-issue--{issue.severity}">
             <span class="health-issue__mark">⚠</span>
-            <span class="health-issue__text">{issue.message}</span>
+            <span class="health-issue__text">{t(`health.${issue.code}`, issue.params)}</span>
             {#if issue.detail}<span class="health-issue__detail">{issue.detail}</span>{/if}
           </div>
         {/each}
@@ -363,9 +364,9 @@
     {:else}
       <div class="editor-layout">
         <div class="editor-main">
-          <label class="editor-label" for="prompt-body">Prompt Markdown</label>
+          <label class="editor-label" for="prompt-body">{t('detail.editor.label')}</label>
           <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
-          <span class="editor-hint">Markdown is stored as written. Cmd/Ctrl+S saves the file.</span>
+          <span class="editor-hint">{t('detail.editor.hint')}</span>
         </div>
         <div class="editor-inspector">
           <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
@@ -381,7 +382,7 @@
           <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
         {/if}
         <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
-        {#if Object.keys(metadata.extra).length}<span class="detail-muted">+ {Object.keys(metadata.extra).length} custom metadata field{Object.keys(metadata.extra).length === 1 ? '' : 's'} preserved</span>{/if}
+        {#if Object.keys(metadata.extra).length}<span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata.extra).length)}</span>{/if}
       {/if}
     </div>
   {/if}

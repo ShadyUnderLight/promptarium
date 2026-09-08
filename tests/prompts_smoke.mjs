@@ -145,10 +145,6 @@ eq(historyEmptyReason({ available: false, reason: 'git-unavailable' }, null), 'g
 eq(historyEmptyReason({ available: true }, { tracked: false, commits: [] }), 'untracked', 'untracked prompt');
 eq(historyEmptyReason({ available: true }, { tracked: true, commits: [] }), 'no-commits', 'tracked but empty');
 eq(historyEmptyReason({ available: true }, { tracked: true, commits: [{ hash: 'abc' }] }), null, 'history available');
-assert(
-  historyEmptyMessage('not-a-repository').includes('Git 仓库'),
-  'non-git empty message is user-facing'
-);
 
 console.log('history pagination merge');
 eq(

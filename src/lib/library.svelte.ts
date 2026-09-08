@@ -28,6 +28,8 @@ import {
   type ProjectWatcherStatus,
 } from './api';
 import { toasts } from './prompts/toasts.svelte';
+import { t, tPlural } from './i18n/i18n.svelte';
+import { formatDate } from './i18n/format';
 import type {
   FolderNode,
   Project,
@@ -417,7 +419,7 @@ function applyWatcherStatus(status: ProjectWatcherStatus): void {
 function notifyFsWatchUnavailable(message: string): void {
   if (message === lastFsWatchNotice) return;
   lastFsWatchNotice = message;
-  toasts.push('Automatic filesystem refresh is unavailable. Focus or Refresh still works.');
+  toasts.push(t('notice.fsWatchUnavailable', { detail: message }));
 }
 
 export async function startFilesystemWatch(): Promise<void> {
@@ -943,7 +945,7 @@ export async function selectHistoryCommit(
 
 export function formatAuthoredAt(timestamp: number): string {
   if (!timestamp) return '';
-  return new Date(timestamp * 1000).toLocaleString(undefined, {
+  return formatDate(timestamp * 1000, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
@@ -1250,14 +1252,20 @@ export function promptTitle(name: string): string {
 }
 
 export function formatModifiedAt(timestamp: number): string {
-  if (!timestamp) return 'modified unknown';
+  if (!timestamp) return t('modified.unknown');
   const delta = Math.max(0, Date.now() - timestamp);
   const minute = 60_000;
-  if (delta < minute) return 'modified just now';
-  if (delta < 60 * minute) return 'modified ' + Math.floor(delta / minute) + 'm ago';
-  if (delta < 24 * 60 * minute) return 'modified ' + Math.floor(delta / (60 * minute)) + 'h ago';
-  if (delta < 7 * 24 * 60 * minute) return 'modified ' + Math.floor(delta / (24 * 60 * minute)) + 'd ago';
-  return 'modified ' + new Date(timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (delta < minute) return t('modified.justNow');
+  if (delta < 60 * minute) return tPlural('modified.minutesAgo', Math.floor(delta / minute));
+  if (delta < 24 * 60 * minute) {
+    return tPlural('modified.hoursAgo', Math.floor(delta / (60 * minute)));
+  }
+  if (delta < 7 * 24 * 60 * minute) {
+    return tPlural('modified.daysAgo', Math.floor(delta / (24 * 60 * minute)));
+  }
+  return t('modified.date', {
+    date: formatDate(timestamp, { month: 'short', day: 'numeric' }),
+  });
 }
 
 export async function batchUpdate(

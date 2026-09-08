@@ -1,7 +1,8 @@
 <script lang="ts">
   import { resolvePromptAssets, revealAssetInFinder } from '$lib/api';
   import type { PromptExample, ResolvedPromptAsset } from '$lib/prompts/types';
-  import { exampleDisplayName, assetResolutionKey } from '$lib/examples/editor-helpers';
+  import { assetResolutionKey } from '$lib/examples/editor-helpers';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     examples: PromptExample[];
@@ -110,26 +111,31 @@
     }
   }
 
-  function stateLabel(state: ResolvedPromptAsset['state']): string {
-    return state === 'resolved' ? 'Ready' : state === 'missing' ? 'Missing' : 'Invalid';
-  }
+  const stateKeys: Record<ResolvedPromptAsset['state'], 'examples.state.ready' | 'examples.state.missing' | 'examples.state.invalid'> = {
+    resolved: 'examples.state.ready',
+    missing: 'examples.state.missing',
+    invalid: 'examples.state.invalid',
+  };
 
-  function kindLabel(kind: ResolvedPromptAsset['kind'] | undefined): string {
-    if (!kind) return 'File';
-    return kind.charAt(0).toUpperCase() + kind.slice(1);
-  }
+  const kindKeys: Record<NonNullable<ResolvedPromptAsset['kind']>, 'examples.kind.image' | 'examples.kind.pdf' | 'examples.kind.text' | 'examples.kind.json' | 'examples.kind.binary'> = {
+    image: 'examples.kind.image',
+    pdf: 'examples.kind.pdf',
+    text: 'examples.kind.text',
+    json: 'examples.kind.json',
+    binary: 'examples.kind.binary',
+  };
 </script>
 
 {#snippet fileRow(resolved: ResolvedPromptAsset | undefined, project: string, onReveal: (project: string, reference: string) => Promise<void>)}
   {#if resolved}
     <div class="example-file-row">
       <span class="example-file-row__ref">{resolved.reference}</span>
-      <span class="example-file-row__kind">{kindLabel(resolved.kind)}</span>
+      <span class="example-file-row__kind">{resolved.kind ? t(kindKeys[resolved.kind]) : t('examples.kind.file')}</span>
       <span class:example-file-row__state--ready={resolved.state === 'resolved'} class:example-file-row__state--missing={resolved.state === 'missing'} class:example-file-row__state--invalid={resolved.state === 'invalid'} class="example-file-row__state">
-        {stateLabel(resolved.state)}
+        {t(stateKeys[resolved.state])}
       </span>
       {#if resolved.state === 'resolved'}
-        <button type="button" class="example-file-row__reveal" onclick={() => onReveal(project, resolved.reference)}>Reveal</button>
+        <button type="button" class="example-file-row__reveal" onclick={() => onReveal(project, resolved.reference)}>{t('examples.reveal')}</button>
       {/if}
     </div>
   {/if}
@@ -137,7 +143,7 @@
 
 {#if examples.length}
   <div class="examples-section">
-    <div class="examples-section__heading">Examples ({examples.length})</div>
+    <div class="examples-section__heading">{t('examples.heading', { count: examples.length })}</div>
     <div class="examples-list">
       {#each examples as example, index (index)}
         <div class="example-card">
@@ -148,43 +154,43 @@
             onclick={() => toggle(index)}
           >
             <span class="example-card__chevron">{expanded[index] ? '▾' : '▸'}</span>
-            <span class="example-card__name">{exampleDisplayName(example, index)}</span>
+            <span class="example-card__name">{example.name || t('examples.fallbackName', { n: index + 1 })}</span>
           </button>
           {#if expanded[index]}
             <div class="example-card__body">
               {#if example.input}
                 <div class="example-field">
-                  <span class="example-field__label">Input</span>
+                  <span class="example-field__label">{t('examples.input')}</span>
                   <pre class="example-text">{example.input}</pre>
                 </div>
               {/if}
               {#if example.inputFile}
                 <div class="example-field">
-                  <span class="example-field__label">Input file</span>
+                  <span class="example-field__label">{t('examples.inputFile')}</span>
                   {@render fileRow(resolutionFor(index, 'inputFile', example.inputFile), projectPath, reveal)}
                 </div>
               {/if}
               {#if example.output}
                 <div class="example-field">
-                  <span class="example-field__label">Output</span>
+                  <span class="example-field__label">{t('examples.output')}</span>
                   <pre class="example-text">{example.output}</pre>
                 </div>
               {/if}
               {#if example.outputFile}
                 <div class="example-field">
-                  <span class="example-field__label">Output file</span>
+                  <span class="example-field__label">{t('examples.outputFile')}</span>
                   {@render fileRow(resolutionFor(index, 'outputFile', example.outputFile), projectPath, reveal)}
                 </div>
               {/if}
               {#if example.notes}
                 <div class="example-field">
-                  <span class="example-field__label">Notes</span>
+                  <span class="example-field__label">{t('examples.notes')}</span>
                   <div class="example-notes">{example.notes}</div>
                 </div>
               {/if}
               {#if example.assets?.length}
                 <div class="example-field">
-                  <span class="example-field__label">Files</span>
+                  <span class="example-field__label">{t('examples.files')}</span>
                   <div class="example-files">
                     {#each example.assets as reference, assetIndex (assetIndex)}
                       {@render fileRow(resolutionFor(index, 'asset', reference), projectPath, reveal)}

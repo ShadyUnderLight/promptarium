@@ -12,7 +12,6 @@ import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const {
-  exampleDisplayName,
   addExample,
   removeExample,
   moveExample,
@@ -44,14 +43,6 @@ function eq(actual, expected, message) {
 }
 function sameReference(actual, expected, message) {
   assert(actual === expected, message + ' (must not create a new array)');
-}
-
-console.log('exampleDisplayName — name wins, deterministic fallback otherwise');
-
-{
-  eq(exampleDisplayName({ name: 'Small PR' }, 0), 'Small PR', 'uses the name');
-  eq(exampleDisplayName({ name: '  ' }, 2), 'Example 3', 'blank name falls back');
-  eq(exampleDisplayName({}, 0), 'Example 1', 'missing name falls back');
 }
 
 console.log('addExample — appends one blank example without mutating source');

@@ -16,7 +16,9 @@
 
   let { prompt, projectLabel = null, selected, checked, variableCount, onSelect, onToggle }: Props = $props();
   const issues = $derived(promptHealth(prompt));
-  const healthTitle = $derived(issues.map((issue) => issue.message).join('\n'));
+  const healthTitle = $derived(
+    issues.map((issue) => t(`health.${issue.code}`, issue.params)).join('\n')
+  );
   // Display label per status; the machine enum in metadata never changes.
   const statusKey: Record<string, MessageKey> = {
     active: 'newPrompt.status.active',

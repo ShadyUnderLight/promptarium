@@ -3,6 +3,7 @@
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { diffMetadata, diffTexts } from '$lib/prompts/compare';
   import DiffViewer from './DiffViewer.svelte';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     /** Left side identity (project + path). Never used as the diff content. */
@@ -70,45 +71,45 @@
 </script>
 
 <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && onClose()}>
-  <dialog open class="modal compare-modal" aria-label="Compare prompts" onkeydown={handleKeydown} tabindex="-1">
+  <dialog open class="modal compare-modal" aria-label={t('compare.aria')} onkeydown={handleKeydown} tabindex="-1">
     <div class="compare-modal__head">
-      <h3>Compare with…</h3>
+      <h3>{t('compare.title')}</h3>
       <div class="compare-modal__controls">
-        <select class="compare-picker" aria-label="Prompt to compare with" value={targetName} onchange={(event) => (targetName = event.currentTarget.value)}>
-          <option value="" disabled>Choose a prompt…</option>
+        <select class="compare-picker" aria-label={t('compare.picker.aria')} value={targetName} onchange={(event) => (targetName = event.currentTarget.value)}>
+          <option value="" disabled>{t('compare.picker.placeholder')}</option>
           {#each others as other (other.name)}
             <option value={other.name}>{other.name}</option>
           {/each}
         </select>
-        <button type="button" class="btn btn--ghost btn--sm" onclick={onClose}>Close</button>
+        <button type="button" class="btn btn--ghost btn--sm" onclick={onClose}>{t('newPrompt.close')}</button>
       </div>
     </div>
 
     <div class="compare-paths">
       <span class="compare-paths__source">
-        {document.projectPath}/{document.name}.md{#if leftDirty} <span class="compare-paths__unsaved">(unsaved)</span>{/if}
+        {document.projectPath}/{document.name}.md{#if leftDirty} <span class="compare-paths__unsaved">{t('compare.unsaved')}</span>{/if}
       </span>
       <span class="compare-paths__arrow" aria-hidden="true">→</span>
       <span class="compare-paths__target">{target ? `${target.projectPath}/${target.name}.md` : '…'}</span>
     </div>
 
     {#if !others.length}
-      <p class="compare-empty">No other prompt in this project to compare with.</p>
+      <p class="compare-empty">{t('compare.noTargets')}</p>
     {:else if loading}
-      <p class="compare-empty">Loading the prompt to compare…</p>
+      <p class="compare-empty">{t('compare.loading')}</p>
     {:else if error}
       <p class="compare-empty">{error}</p>
     {:else if target}
       <section class="compare-section">
-        <div class="compare-section__heading">Body</div>
+        <div class="compare-section__heading">{t('compare.body')}</div>
         {#if bodyPatch}
           <DiffViewer patch={bodyPatch} />
         {:else}
-          <p class="compare-empty">No body differences.</p>
+          <p class="compare-empty">{t('compare.noBodyDiff')}</p>
         {/if}
       </section>
       <section class="compare-section">
-        <div class="compare-section__heading">Metadata</div>
+        <div class="compare-section__heading">{t('compare.metadata')}</div>
         {#if metadataDiff.length}
           {#each metadataDiff as diff (diff.field)}
             <div class="compare-meta-row">
@@ -119,7 +120,7 @@
             </div>
           {/each}
         {:else}
-          <p class="compare-empty">No metadata differences.</p>
+          <p class="compare-empty">{t('compare.noMetaDiff')}</p>
         {/if}
       </section>
     {/if}

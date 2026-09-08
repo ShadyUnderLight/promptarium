@@ -39,19 +39,6 @@ export function historyEmptyReason(
   return null;
 }
 
-export function historyEmptyMessage(reason: HistoryEmptyReason): string {
-  switch (reason) {
-    case 'git-unavailable':
-      return '本机 Git 不可用，无法在此查看 Prompt 版本历史。';
-    case 'not-a-repository':
-      return '此 Project 不在 Git 仓库中。将 Project 放入 Git 仓库后即可在这里查看 Prompt 版本历史。';
-    case 'untracked':
-      return '当前 Prompt 尚无 Git 历史。';
-    case 'no-commits':
-      return '当前 Prompt 尚无 Git 历史。';
-  }
-}
-
 export function appendHistoryPage(
   current: GitFileHistoryPage,
   next: GitFileHistoryPage

@@ -19,42 +19,43 @@
    * other. This is load-bearing, not taste: keep them apart if either moves.
    */
   import { update, installUpdate, dismiss } from '$lib/updater.svelte';
+  import { t } from '$lib/i18n/i18n.svelte';
 </script>
 
 {#if update.status === 'available'}
-  <div class="update-banner" role="dialog" aria-label="Update available">
+  <div class="update-banner" role="dialog" aria-label={t('update.banner.aria')}>
     <div class="update-banner__row">
-      <span class="update-banner__text">Update available — v{update.newVersion}</span>
+      <span class="update-banner__text">{t('update.banner.available', { version: update.newVersion })}</span>
       <button
         class="update-banner__close"
         onclick={dismiss}
         type="button"
-        aria-label="Dismiss update notice"
-        title="Dismiss"
+        aria-label={t('update.banner.dismiss.aria')}
+        title={t('update.banner.dismiss')}
       >
         ×
       </button>
     </div>
     <div class="update-banner__actions">
       <button class="btn btn--primary btn--sm" onclick={installUpdate} type="button">
-        Update &amp; restart
+        {t('update.banner.install')}
       </button>
     </div>
   </div>
 {:else if update.status === 'downloading'}
   <div class="update-banner" role="status">
-    <span class="update-banner__text">Downloading update… {update.progress}%</span>
+    <span class="update-banner__text">{t('update.banner.downloading', { progress: update.progress })}</span>
     <div class="update-progress" aria-hidden="true">
       <div class="update-progress__fill" style="width:{update.progress}%"></div>
     </div>
   </div>
 {:else if update.status === 'checking'}
-  <div class="update-banner update-banner--quiet" role="status">Checking for updates…</div>
+  <div class="update-banner update-banner--quiet" role="status">{t('update.banner.checking')}</div>
 {:else if update.status === 'uptodate'}
-  <div class="update-banner update-banner--quiet" role="status">You're on the latest version.</div>
+  <div class="update-banner update-banner--quiet" role="status">{t('update.banner.uptodate')}</div>
 {:else if update.status === 'error'}
   <div class="update-banner update-banner--quiet" role="status">
-    Update check failed: {update.error}
+    {t('update.banner.failed', { detail: update.error })}
   </div>
 {/if}
 

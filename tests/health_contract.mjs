@@ -168,13 +168,18 @@ eq(
 
 eq(
   codes(derivePromptHealth(base({ variantOfTypeInvalid: true }))),
-  ['INVALID_VARIANT_PARENT'],
-  'a non-string variantOf value is INVALID_VARIANT_PARENT, not absent'
+  ['INVALID_VARIANT_PARENT_TYPE'],
+  'a non-string variantOf value is INVALID_VARIANT_PARENT_TYPE, not absent'
 );
 
 {
   const issue = derivePromptHealth(base({ variantOfTypeInvalid: true }))[0];
   assert(issue && issue.severity === 'error', 'wrong-type variant parent is severity error');
+}
+
+{
+  const issue = derivePromptHealth(base({ variantOf: 'gone' }))[0];
+  assert(issue && issue.params && issue.params.path === 'gone', 'BROKEN_VARIANT_PARENT carries the user path as a param');
 }
 
 eq(

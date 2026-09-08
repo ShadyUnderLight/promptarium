@@ -1,8 +1,19 @@
 <script lang="ts">
   import type { GitFileCommit, GitFileDiff, GitFileHistoryPage, GitRepositoryInfo } from '$lib/prompts/git-types';
   import { formatAuthoredAt } from '$lib/library.svelte';
-  import { historyEmptyMessage, historyEmptyReason } from '$lib/prompts/history';
+  import { historyEmptyReason, type HistoryEmptyReason } from '$lib/prompts/history';
+  import { t } from '$lib/i18n/i18n.svelte';
+  import type { MessageKey } from '$lib/i18n/locales/en';
   import DiffViewer from './DiffViewer.svelte';
+
+  /** Empty-state copy is keyed by the stable reason enum; the domain helper
+   *  never renders locale-dependent text itself. */
+  const emptyKeys: Record<HistoryEmptyReason, MessageKey> = {
+    'git-unavailable': 'history.empty.git-unavailable',
+    'not-a-repository': 'history.empty.not-a-repository',
+    untracked: 'history.empty.untracked',
+    'no-commits': 'history.empty.no-commits',
+  };
 
   interface Props {
     loading: boolean;
@@ -33,7 +44,7 @@
   const emptyReason = $derived(historyEmptyReason(repo, page));
 </script>
 
-<section class="prompt-history" aria-label="Prompt git history">
+<section class="prompt-history" aria-label={t('history.aria')}>
   {#if loading}
     <div class="history-loading"><span></span><span></span></div>
   {:else if error}
@@ -42,11 +53,11 @@
     </div>
   {:else if emptyReason}
     <div class="history-empty">
-      <p>{historyEmptyMessage(emptyReason)}</p>
+      <p>{t(emptyKeys[emptyReason])}</p>
     </div>
   {:else if page}
     <div class="history-layout">
-      <div class="history-list" role="listbox" aria-label="Commit history">
+      <div class="history-list" role="listbox" aria-label={t('history.list.aria')}>
         {#each page.commits as commit (commit.hash)}
           <button
             type="button"
@@ -73,7 +84,7 @@
             onclick={onLoadMore}
             disabled={loadingMore}
           >
-            {loadingMore ? 'Loading…' : 'Load earlier commits'}
+            {loadingMore ? t('history.loading') : t('history.loadMore')}
           </button>
         {/if}
       </div>
@@ -84,7 +95,7 @@
           <DiffViewer patch={diff.patch} />
         {:else}
           <div class="history-empty history-empty--compact">
-            <p>Select a commit to view its diff.</p>
+            <p>{t('history.selectCommit')}</p>
           </div>
         {/if}
       </div>

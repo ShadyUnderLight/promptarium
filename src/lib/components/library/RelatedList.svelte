@@ -2,6 +2,8 @@
   import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
   import { promptTitle } from '$lib/library.svelte';
   import { resolveRelations, type RelationLink } from '$lib/relations/relations';
+  import { t } from '$lib/i18n/i18n.svelte';
+  import type { MessageKey } from '$lib/i18n/locales/en';
 
   interface Props {
     document: PromptDocument;
@@ -30,15 +32,20 @@
     return link.status === 'ok' && link.target ? link.target.name : link.path;
   }
 
-  function linkStatusText(link: RelationLink): string {
-    if (link.status === 'missing') return 'Missing';
-    if (link.status === 'invalid') return 'Invalid';
-    return 'Self';
+  const statusKeys: Record<Exclude<RelationLink['status'], 'ok'>, MessageKey> = {
+    missing: 'rel.status.missing',
+    invalid: 'rel.status.invalid',
+    self: 'rel.status.self',
+  };
+
+  function statusLabel(link: RelationLink): string {
+    // Non-ok rows only; narrowing keeps an 'ok' link out of the lookup.
+    return link.status === 'ok' ? '' : t(statusKeys[link.status]);
   }
 </script>
 
-<section class="related-inspector" aria-label="Related prompts">
-  <div class="detail-section__heading">Related <span>{resolution.related.length}</span></div>
+<section class="related-inspector" aria-label={t('rel.aria')}>
+  <div class="detail-section__heading">{t('rel.heading')} <span>{resolution.related.length}</span></div>
   {#if resolution.related.length}
     <div class="related-list">
       {#each resolution.related as link (link.path)}
@@ -50,16 +57,16 @@
         {:else}
           <div class="relation-row relation-row--{link.status}" title={linkPath(link)}>
             <span class="relation-name">{linkLabel(link)}</span>
-            <span class="relation-status">{linkStatusText(link)}</span>
+            <span class="relation-status">{statusLabel(link)}</span>
           </div>
         {/if}
       {/each}
     </div>
   {:else}
-    <p class="detail-muted">No related prompts.</p>
+    <p class="detail-muted">{t('rel.none')}</p>
   {/if}
 
-  <div class="detail-section__heading related-inspector__heading">Referenced by <span>{resolution.referencedBy.length}</span></div>
+  <div class="detail-section__heading related-inspector__heading">{t('rel.backlinks')} <span>{resolution.referencedBy.length}</span></div>
   {#if resolution.referencedBy.length}
     <div class="related-list">
       {#each resolution.referencedBy as source (source.projectPath + '\u0000' + source.name)}
@@ -70,6 +77,6 @@
       {/each}
     </div>
   {:else}
-    <p class="detail-muted">No prompts reference this one.</p>
+    <p class="detail-muted">{t('rel.noBacklinks')}</p>
   {/if}
 </section>

@@ -11,14 +11,6 @@
 import type { PromptExample, PromptMetadata } from '../prompts/types';
 import { cloneMetadata } from '../prompts/duplicate';
 
-/** A display label for an example: its name when non-blank, otherwise a
- *  deterministic `Example N` fallback. The fallback is display-only — it is
- *  never written back to the file (Issue #26 §Preview contract). */
-export function exampleDisplayName(example: PromptExample, index: number): string {
-  const name = example.name?.trim();
-  return name ? name : `Example ${index + 1}`;
-}
-
 /** One asset reference's position inside the examples editor: which example,
  *  which role (inputFile / outputFile / asset), and for `asset` the position
  *  within `assets[]`. There is no persistent example ID; array position is the
