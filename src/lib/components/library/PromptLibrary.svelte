@@ -63,11 +63,11 @@
   }
 </script>
 
-<section class="prompt-library" aria-label="Prompt library">
+<section class="prompt-library" aria-label={t('library.section.aria')}>
   <PromptToolbar selectedCount={selectedKeys.length} batchEnabled={true} onSelectAll={selectAll} onClearSelection={clearSelection} onBatch={handleBatch} />
 
   {#if library.refreshing}
-    <div class="library-refreshing" role="status">Refreshing…</div>
+    <div class="library-refreshing" role="status">{t('library.refreshing')}</div>
   {/if}
 
   {#if library.loading}
@@ -75,9 +75,9 @@
   {:else if !hasProjects}
     <div class="library-empty">
       <div class="empty-icon">⌘</div>
-      <h2>Choose a prompt project</h2>
-      <p>Add a folder from the sidebar. Every Markdown file inside becomes a prompt.</p>
-      <button type="button" class="btn btn--primary" onclick={onNewPrompt}>Add your first prompt</button>
+      <h2>{t('library.chooseProject')}</h2>
+      <p>{t('library.emptyNoProjects')}</p>
+      <button type="button" class="btn btn--primary" onclick={onNewPrompt}>{t('library.addFirstPrompt')}</button>
     </div>
   {:else if !allProjects && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'}
     <div class="library-empty library-empty--error">
@@ -88,12 +88,12 @@
   {:else if !prompts.length}
     <div class="library-empty">
       <div class="empty-icon">⌕</div>
-      <h2>{library.searchQuery || library.folderFilter || library.tagFilter ? 'No matching prompts' : 'No prompts yet'}</h2>
-      <p>{library.searchQuery || library.folderFilter || library.tagFilter ? 'Try another search or clear a filter.' : 'Create a Markdown prompt to start building this library.'}</p>
-      {#if !library.searchQuery && !library.folderFilter && !library.tagFilter}<button type="button" class="btn btn--primary" onclick={onNewPrompt}>＋ New prompt</button>{/if}
+      <h2>{library.searchQuery || library.folderFilter || library.tagFilter ? t('library.noMatching') : t('library.noPromptsYet')}</h2>
+      <p>{library.searchQuery || library.folderFilter || library.tagFilter ? t('library.tryAnotherSearch') : t('library.createFirstPrompt')}</p>
+      {#if !library.searchQuery && !library.folderFilter && !library.tagFilter}<button type="button" class="btn btn--primary" onclick={onNewPrompt}>＋ {t('sidebar.newPrompt')}</button>{/if}
     </div>
   {:else}
-    <div class={'prompt-list prompt-list--' + library.viewMode} role="listbox" aria-label="Prompts">
+    <div class={'prompt-list prompt-list--' + library.viewMode} role="listbox" aria-label={t('library.list.aria')}>
       {#each prompts as prompt (promptKey(prompt.projectPath, prompt.name))}
         <PromptListItem
           prompt={prompt}

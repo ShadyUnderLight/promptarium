@@ -11,6 +11,7 @@
   import { getTheme, toggleTheme } from '$lib/theme';
   import { isTauri } from '$lib/api';
   import { update, openUpdatePrompt } from '$lib/updater.svelte';
+  import { t } from '$lib/i18n/i18n.svelte';
   import LanguageSelector from '$lib/components/LanguageSelector.svelte';
   import PromptsView from '$lib/components/PromptsView.svelte';
 
@@ -60,7 +61,7 @@
   <div class="app-header__actions">
     <LanguageSelector />
     <button class="btn btn--ghost btn--sm" onclick={handleToggleTheme} type="button">
-      {theme === 'dark' ? 'Dark' : 'Light'}
+      {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
     </button>
   </div>
 </header>
@@ -71,7 +72,7 @@
 
 <footer class="app-footer">
   <a href="https://github.com/ShadyUnderLight/promptarium" target="_blank" rel="noopener noreferrer">
-    Prompt Library{appVersion ? ` v${appVersion}` : ''} — local-first Markdown prompts, organized by project
+    {t('shell.footer.tagline', { version: appVersion ? ` v${appVersion}` : '' })}
   </a>
   <!--
     The permanent quiet channel for updates. The banner shows a given version at
@@ -86,7 +87,7 @@
       type="button"
       onclick={openUpdatePrompt}
     >
-      {update.newVersion ? `Update to v${update.newVersion}` : 'Check for updates'}
+      {update.newVersion ? t('shell.updateTo', { version: update.newVersion }) : t('shell.checkForUpdates')}
     </button>
   {/if}
 </footer>

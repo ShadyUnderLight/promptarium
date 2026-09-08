@@ -5,6 +5,7 @@
   import type { Project } from '$lib/prompts/types';
   import { forgetProject, renameProjectLabel, setProjectColor } from '$lib/library.svelte';
   import { errorDetail } from '$lib/library/errors';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     project: Project;
@@ -22,11 +23,11 @@
   onMount(() => menuElement?.focus());
 
   async function rename(): Promise<void> {
-    const name = window.prompt('Project label', project.name);
+    const name = window.prompt(t('dialog.projectLabel'), project.name);
     if (!name?.trim() || name.trim() === project.name) return;
     try {
       await renameProjectLabel(name.trim(), project.path);
-      onNotice('Project label updated.');
+      onNotice(t('notice.projectLabelUpdated'));
       onClose();
     } catch (error) {
       onNotice(errorDetail(error));
@@ -43,11 +44,11 @@
   }
 
   async function forget(): Promise<void> {
-    if (!window.confirm('Forget “' + project.name + '”? The folder and all Markdown files will stay on disk.')) return;
+    if (!window.confirm(t('dialog.forgetProject', { name: project.name }))) return;
     if (!canNavigate()) return;
     try {
       await forgetProject(project.path);
-      onNotice('Project forgotten. Its files are still on disk.');
+      onNotice(t('notice.projectForgottenKept'));
       onClose();
     } catch (error) {
       onNotice(errorDetail(error));
@@ -74,15 +75,15 @@
 <div class="context-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && onClose()}></div>
 <section bind:this={menuElement} class="project-menu" style={'left:' + x + 'px; top:' + y + 'px'} role="menu" tabindex="-1" onkeydown={handleKeydown} {@attach focusTrap}>
   <div class="project-menu__heading">{project.name}</div>
-  <button type="button" role="menuitem" onclick={rename}>Rename label…</button>
-  <button type="button" role="menuitem" onclick={reveal}>Reveal in Finder</button>
-  <div class="project-menu__label">Project color</div>
+  <button type="button" role="menuitem" onclick={rename}>{t('menu.renameLabel')}</button>
+  <button type="button" role="menuitem" onclick={reveal}>{t('menu.revealInFinder')}</button>
+  <div class="project-menu__label">{t('menu.projectColor')}</div>
   <div class="project-menu__colors">
     {#each colors as color}
-      <button type="button" class="color-swatch" style={'--swatch:' + color} class:color-swatch--selected={project.color === color} aria-label={'Use ' + color} onclick={() => chooseColor(color)}></button>
+      <button type="button" class="color-swatch" style={'--swatch:' + color} class:color-swatch--selected={project.color === color} aria-label={t('menu.useColor', { color })} onclick={() => chooseColor(color)}></button>
     {/each}
-    <button type="button" class="color-clear" onclick={() => chooseColor(null)}>Clear</button>
+    <button type="button" class="color-clear" onclick={() => chooseColor(null)}>{t('menu.clearColor')}</button>
   </div>
   <div class="project-menu__rule"></div>
-  <button type="button" class="project-menu__danger" role="menuitem" onclick={forget}>Forget project…</button>
+  <button type="button" class="project-menu__danger" role="menuitem" onclick={forget}>{t('menu.forgetProject')}</button>
 </section>

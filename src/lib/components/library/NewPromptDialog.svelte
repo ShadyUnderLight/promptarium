@@ -3,6 +3,7 @@
   import { focusTrap } from '$lib/attachments/focusTrap';
   import type { Project, PromptDocument, PromptMetadata, PromptStatus } from '$lib/prompts/types';
   import { defaultPromptMetadata } from '$lib/prompts/types';
+  import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
     projects: Project[];
@@ -40,11 +41,11 @@
   async function submit(): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) {
-      error = 'Enter a filename for the prompt.';
+      error = t('newPrompt.error.filename');
       return;
     }
     if (!projectPath) {
-      error = 'Choose a project for this prompt.';
+      error = t('newPrompt.error.project');
       return;
     }
     busy = true;
@@ -78,17 +79,17 @@
   <dialog open class="modal new-prompt-dialog" aria-labelledby="new-prompt-title" onkeydown={handleKeydown} tabindex="-1" {@attach focusTrap}>
     <div class="dialog-heading">
       <div>
-        <span class="eyebrow">Prompt Library</span>
-        <h2 id="new-prompt-title">New prompt</h2>
+        <span class="eyebrow">{t('topbar.title')}</span>
+        <h2 id="new-prompt-title">{t('sidebar.newPrompt')}</h2>
       </div>
-      <button type="button" class="icon-button" aria-label="Close" onclick={onClose}>×</button>
+      <button type="button" class="icon-button" aria-label={t('newPrompt.close')} onclick={onClose}>×</button>
     </div>
 
     {#if error}<p class="form-error">{error}</p>{/if}
 
     {#if showProjectPicker}
       <label class="field">
-        <span>Project</span>
+        <span>{t('newPrompt.project')}</span>
         <select bind:value={projectPath}>
           {#each projects as project (project.path)}
             <option value={project.path}>{project.name}</option>
@@ -98,48 +99,48 @@
     {/if}
 
     <label class="field">
-      <span>Filename <small>relative path, without .md</small></span>
+      <span>{t('newPrompt.filename')} <small>{t('newPrompt.filenameHint')}</small></span>
       <input bind:this={nameInput} bind:value={name} placeholder="coding/review-pr" spellcheck="false" />
     </label>
     <label class="field">
-      <span>Prompt Markdown</span>
-      <textarea class="new-prompt-body" bind:value={body} placeholder="Write the prompt body…"></textarea>
+      <span>{t('newPrompt.body')}</span>
+      <textarea class="new-prompt-body" bind:value={body} placeholder={t('newPrompt.body.placeholder')}></textarea>
     </label>
 
     <div class="metadata-grid metadata-grid--dialog">
       <label class="field field--wide">
-        <span>Description</span>
-        <input bind:value={description} placeholder="What is this prompt for?" />
+        <span>{t('newPrompt.description')}</span>
+        <input bind:value={description} placeholder={t('newPrompt.description.placeholder')} />
       </label>
       <label class="field">
-        <span>Status</span>
+        <span>{t('newPrompt.status')}</span>
         <select bind:value={status}>
-          <option value="active">Active</option>
-          <option value="draft">Draft</option>
-          <option value="archived">Archived</option>
+          <option value="active">{t('newPrompt.status.active')}</option>
+          <option value="draft">{t('newPrompt.status.draft')}</option>
+          <option value="archived">{t('newPrompt.status.archived')}</option>
         </select>
       </label>
       <label class="field">
-        <span>Tags <small>comma separated</small></span>
+        <span>{t('newPrompt.tags')} <small>{t('newPrompt.commaSeparated')}</small></span>
         <input bind:value={tagsText} placeholder="coding, review" />
       </label>
       <label class="field">
-        <span>Models <small>comma separated</small></span>
+        <span>{t('newPrompt.models')} <small>{t('newPrompt.commaSeparated')}</small></span>
         <input bind:value={modelsText} placeholder="ChatGPT, Claude" />
       </label>
       <label class="field">
-        <span>Created</span>
+        <span>{t('newPrompt.created')}</span>
         <input type="date" bind:value={created} />
       </label>
       <label class="check-field">
         <input type="checkbox" bind:checked={favorite} />
-        <span>Favorite</span>
+        <span>{t('newPrompt.favorite')}</span>
       </label>
     </div>
 
     <div class="modal__actions">
-      <button type="button" class="btn btn--ghost" onclick={onClose} disabled={busy}>Cancel</button>
-      <button type="button" class="btn btn--primary" onclick={submit} disabled={busy}>{busy ? 'Creating…' : 'Create prompt'}</button>
+      <button type="button" class="btn btn--ghost" onclick={onClose} disabled={busy}>{t('newPrompt.cancel')}</button>
+      <button type="button" class="btn btn--primary" onclick={submit} disabled={busy}>{busy ? t('newPrompt.creating') : t('newPrompt.create')}</button>
     </div>
   </dialog>
 </div>

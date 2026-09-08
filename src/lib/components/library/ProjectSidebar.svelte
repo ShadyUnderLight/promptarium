@@ -19,7 +19,7 @@
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
   import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
-  import { t } from '$lib/i18n/i18n.svelte';
+  import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import { errorDetail } from '$lib/library/errors';
   import ProjectMenu from './ProjectMenu.svelte';
 
@@ -62,9 +62,9 @@
   }
 
   async function pickFolder(): Promise<string | null> {
-    if (!isTauri()) return window.prompt('Folder path (browser-dev only):', '/dev/mock/prompts');
+    if (!isTauri()) return window.prompt(t('dialog.folderPath.browserDev'), '/dev/mock/prompts');
     const { open } = await import('@tauri-apps/plugin-dialog');
-    const picked = await open({ directory: true, multiple: false, title: 'Choose a prompt project folder' });
+    const picked = await open({ directory: true, multiple: false, title: t('dialog.chooseProjectFolder') });
     return typeof picked === 'string' ? picked : null;
   }
 
@@ -85,10 +85,10 @@
     try {
       if (oldPath) {
         await replaceProjectPath(oldPath, path);
-        onNotice('Project folder located.');
+        onNotice(t('notice.projectLocated'));
       } else {
         await addProject(basename(path), path);
-        onNotice('Project added.');
+        onNotice(t('notice.projectAdded'));
       }
       addPath = null;
       relocateFrom = null;
@@ -135,7 +135,7 @@
   async function enterAllProjects(): Promise<void> {
     if (!canNavigate()) return;
     if (!library.projects.length) {
-      onNotice('Add a prompt project first.');
+      onNotice(t('notice.addProjectFirst'));
       return;
     }
     try {
@@ -169,7 +169,7 @@
 
   async function newFolder(): Promise<void> {
     if (!canNavigate()) return;
-    const name = window.prompt('Folder path inside this project', library.folderFilter || '');
+    const name = window.prompt(t('dialog.folderPathInsideProject'), library.folderFilter || '');
     if (!name?.trim()) return;
     try {
       await createFolder(name.trim());
@@ -181,9 +181,9 @@
 
   async function folderMenu(event: MouseEvent, folder: string): Promise<void> {
     event.preventDefault();
-    const action = window.prompt('Folder action: rename or delete', 'rename');
+    const action = window.prompt(t('dialog.folderAction'), 'rename');
     if (action === 'rename') {
-      const next = window.prompt('New folder path', folder);
+      const next = window.prompt(t('dialog.newFolderPath'), folder);
       if (!next?.trim()) return;
       if (!canNavigate()) return;
       try {
@@ -194,7 +194,7 @@
       } catch (error) {
         onNotice(errorDetail(error));
       }
-    } else if (action === 'delete' && window.confirm('Delete empty folder “' + folder + '”?')) {
+    } else if (action === 'delete' && window.confirm(t('dialog.deleteEmptyFolder', { folder }))) {
       if (!canNavigate()) return;
       try {
         await deleteFolder(folder);
@@ -207,30 +207,30 @@
 
   async function forgetMissingProject(): Promise<void> {
     if (!library.activeProjectPath) return;
-    if (!window.confirm('Forget this missing project? No files will be deleted.')) return;
+    if (!window.confirm(t('dialog.forgetMissingProject'))) return;
     if (!canNavigate()) return;
     try {
       await forgetProject(library.activeProjectPath);
-      onNotice('Project forgotten. Its files were not changed.');
+      onNotice(t('notice.projectForgottenMissing'));
     } catch (error) {
       onNotice(errorDetail(error));
     }
   }
 </script>
 
-<aside class="project-sidebar" aria-label="Prompt Library navigation">
+<aside class="project-sidebar" aria-label={t('sidebar.nav.aria')}>
   <div class="sidebar-section sidebar-section--projects">
     <div class="sidebar-section__heading">
-      <span>Projects</span>
-      <button type="button" class="sidebar-icon" aria-label="Add project" title="Add project" onclick={() => { addPath = ''; relocateFrom = null; }}>＋</button>
+      <span>{t('sidebar.projects')}</span>
+      <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}>＋</button>
     </div>
 
     {#if addPath !== null}
       <div class="add-project-row">
-        <input bind:this={pathInput} bind:value={addPath} placeholder="Paste a folder path…" spellcheck="false" onkeydown={onPathKeydown} />
+        <input bind:this={pathInput} bind:value={addPath} placeholder={t('sidebar.addProject.placeholder')} spellcheck="false" onkeydown={onPathKeydown} />
         <div class="add-project-row__actions">
-          <button type="button" class="btn btn--ghost btn--sm" onclick={browse} disabled={busy}>Browse</button>
-          <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>{relocateFrom ? 'Locate' : 'Add'}</button>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={browse} disabled={busy}>{t('sidebar.browse')}</button>
+          <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>{relocateFrom ? t('sidebar.locate') : t('sidebar.add')}</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={closeAddProject} disabled={busy}>×</button>
         </div>
       </div>
@@ -242,10 +242,10 @@
         class="project-row project-row--all"
         class:project-row--active={allProjectsActive}
         onclick={enterAllProjects}
-        title="Search prompts across every registered project"
+        title={t('sidebar.allProjects.title')}
       >
         <span class="project-row__dot project-row__dot--all"></span>
-        <span class="project-row__name">All Projects</span>
+        <span class="project-row__name">{t('sidebar.allProjects')}</span>
         {#if allProjectsActive}<span class="project-row__count">{library.allPrompts.length}</span>{/if}
       </button>
       {#each library.projects as item (item.path)}
@@ -262,14 +262,14 @@
           {#if !allProjectsActive && library.activeProjectPath === item.path}<span class="project-row__count">{library.allPrompts.length}</span>{/if}
         </button>
       {:else}
-        <p class="sidebar-empty">Add a folder to start your library.</p>
+        <p class="sidebar-empty">{t('sidebar.empty')}</p>
       {/each}
     </div>
   </div>
 
   {#if allProjectsActive && library.allProjectsWarnings.length}
     <div class="missing-project missing-project--warning">
-      <strong>{library.allProjectsWarnings.length} project{library.allProjectsWarnings.length === 1 ? '' : 's'} could not refresh</strong>
+      <strong>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</strong>
       {#each library.allProjectsWarnings as warning (warning.projectPath)}
         <span>{projectDisplayName(warning.projectPath)} — {warning.error}</span>
       {/each}
@@ -293,22 +293,22 @@
 
   {#if showNavigation}
     <div class="sidebar-section">
-      <div class="sidebar-section__heading"><span>Smart Views</span></div>
+      <div class="sidebar-section__heading"><span>{t('sidebar.smartViews')}</span></div>
       <nav class="sidebar-nav">
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'all' && !library.folderFilter && !library.tagFilter} class="sidebar-nav__item" onclick={() => selectView('all')}>
-          <span>All prompts</span><span>{viewCount('all')}</span>
+          <span>{t('sidebar.allPrompts')}</span><span>{viewCount('all')}</span>
         </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'needs-attention'} class="sidebar-nav__item" onclick={() => selectView('needs-attention')}>
-          <span>Needs Attention</span><span>{viewCount('needs-attention')}</span>
+          <span>{t('sidebar.needsAttention')}</span><span>{viewCount('needs-attention')}</span>
         </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'favorites'} class="sidebar-nav__item" onclick={() => selectView('favorites')}>
-          <span>Favorites</span><span>{viewCount('favorites')}</span>
+          <span>{t('sidebar.favorites')}</span><span>{viewCount('favorites')}</span>
         </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'draft'} class="sidebar-nav__item" onclick={() => selectView('draft')}>
-          <span>Draft</span><span>{viewCount('draft')}</span>
+          <span>{t('sidebar.draft')}</span><span>{viewCount('draft')}</span>
         </button>
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'archived'} class="sidebar-nav__item" onclick={() => selectView('archived')}>
-          <span>Archived</span><span>{viewCount('archived')}</span>
+          <span>{t('sidebar.archived')}</span><span>{viewCount('archived')}</span>
         </button>
       </nav>
     </div>
@@ -316,8 +316,8 @@
     {#if project && !allProjectsActive}
       <div class="sidebar-section sidebar-section--folders">
         <div class="sidebar-section__heading">
-          <span>Folders</span>
-          <button type="button" class="sidebar-icon" aria-label="New folder" title="New folder" onclick={newFolder}>＋</button>
+          <span>{t('sidebar.folders')}</span>
+          <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}>＋</button>
         </div>
         <nav class="sidebar-nav">
           {#each folders as folder (folder.path)}
@@ -328,31 +328,31 @@
               style={'--depth:' + folder.depth}
               onclick={() => applyNav({ kind: 'select-folder', folder: folder.path })}
               oncontextmenu={(event) => folderMenu(event, folder.path)}
-              title="Right-click to rename or delete an empty folder"
+              title={t('sidebar.folder.title')}
             >
               <span class="folder-glyph">⌄</span><span>{folder.name}</span><span>{folder.promptCount}</span>
             </button>
           {:else}
-            <p class="sidebar-empty">Folders appear from your project tree.</p>
+            <p class="sidebar-empty">{t('sidebar.folders.empty')}</p>
           {/each}
         </nav>
       </div>
     {/if}
 
     <div class="sidebar-section sidebar-section--tags">
-      <div class="sidebar-section__heading"><span>Tags</span></div>
+      <div class="sidebar-section__heading"><span>{t('sidebar.tags')}</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
           <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}
-          <p class="sidebar-empty">Tags come from prompt frontmatter.</p>
+          <p class="sidebar-empty">{t('sidebar.tags.empty')}</p>
         {/each}
       </nav>
     </div>
 
-    <button type="button" class="sidebar-new-prompt" onclick={onNewPrompt}>＋ New prompt</button>
+    <button type="button" class="sidebar-new-prompt" onclick={onNewPrompt}>＋ {t('sidebar.newPrompt')}</button>
   {/if}
 </aside>
 
