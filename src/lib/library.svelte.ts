@@ -1067,19 +1067,19 @@ export async function revealPrompt(source?: PromptDocument): Promise<void> {
 }
 
 export async function createFolder(folder: string): Promise<void> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
+  if (!library.activeProjectPath) throw new Error(t('notice.addProjectFirst'));
   await apiCreateFolder(library.activeProjectPath, folder);
   await refreshLibrary();
 }
 
 export async function renameFolder(folder: string, newFolder: string): Promise<void> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
+  if (!library.activeProjectPath) throw new Error(t('notice.addProjectFirst'));
   await apiRenameFolder(library.activeProjectPath, folder, newFolder);
   await refreshLibrary();
 }
 
 export async function deleteFolder(folder: string): Promise<void> {
-  if (!library.activeProjectPath) throw new Error('Add a prompt project first.');
+  if (!library.activeProjectPath) throw new Error(t('notice.addProjectFirst'));
   await apiDeleteEmptyFolder(library.activeProjectPath, folder);
   await refreshLibrary();
 }
