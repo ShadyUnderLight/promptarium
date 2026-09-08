@@ -5,6 +5,7 @@
   import { setVariableDoc } from '$lib/variables/contract';
   import { addRelatedEntry, removeRelatedEntry } from '$lib/relations/relations';
   import { wouldCreateVariantCycle } from '$lib/variants/variants';
+  import { cloneExample } from '$lib/prompts/duplicate';
   import ExamplesEditor from './ExamplesEditor.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
 
@@ -51,9 +52,7 @@
           Object.entries(metadata.variables).map(([name, doc]) => [name, { ...doc }])
         )
       : undefined;
-    const examples = metadata.examples
-      ? metadata.examples.map((example) => structuredClone(example))
-      : undefined;
+    const examples = metadata.examples ? metadata.examples.map(cloneExample) : undefined;
     return {
       ...metadata,
       tags: [...metadata.tags],

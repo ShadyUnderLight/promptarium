@@ -75,9 +75,31 @@ describe('normalizePreference', () => {
   });
 });
 
+/** Every `{...}` interpolation slot in a message, sorted for comparison. */
+function placeholders(message: string): string[] {
+  return [...message.matchAll(/\{([^{}]+)\}/g)].map((match) => match[1]).sort();
+}
+
 describe('catalog parity', () => {
   it('en and zh-CN expose exactly the same key set', () => {
     expect(Object.keys(en).sort()).toEqual(Object.keys(zhCN).sort());
+  });
+
+  it('every message has the same interpolation placeholders in both catalogs', () => {
+    // Key-set parity alone does not catch a translated message that silently
+    // drops `{version}` or renames `{count}` — that only shows up at runtime as
+    // a raw `{placeholder}` in the UI. Compare slot names per key.
+    const drifted = (Object.keys(en) as MessageKey[])
+      .map((key) => ({ key, en: placeholders(en[key]), zh: placeholders(zhCN[key]) }))
+      .filter((entry) => entry.en.join(',') !== entry.zh.join(','));
+    expect(drifted).toEqual([]);
+  });
+
+  it('covers messages that actually carry placeholders (guard against a vacuous pass)', () => {
+    const withPlaceholders = (Object.keys(en) as MessageKey[]).filter(
+      (key) => placeholders(en[key]).length > 0
+    );
+    expect(withPlaceholders.length).toBeGreaterThan(0);
   });
 
   it('language self-names are locale-independent', () => {

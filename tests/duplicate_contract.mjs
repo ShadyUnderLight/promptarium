@@ -133,6 +133,41 @@ console.log('cloneMetadata — examples deep copy (Issue #24)');
   eq(fresh.examplesRaw, undefined, 'cloning metadata without examplesRaw yields none');
 }
 
+console.log('cloneMetadata — survives a reactive proxy (Issue #38 follow-up)');
+
+{
+  // PromptDetail holds `metadata` as a Svelte `$state` proxy, and
+  // `structuredClone()` rejects proxies with DataCloneError — every save of a
+  // prompt carrying examples failed on that path. A transparent stand-in proxy
+  // reproduces it without pulling Svelte into this contract script.
+  let proxyIsUncloneable = false;
+  try {
+    structuredClone(new Proxy({ a: 1 }, {}));
+  } catch {
+    proxyIsUncloneable = true;
+  }
+  assert(proxyIsUncloneable, 'precondition: structuredClone rejects a Proxy');
+
+  const source = new Proxy(
+    metadata({
+      examples: [{ name: 'proxied', assets: ['a.png'], extra: { nested: { list: ['x'] } } }],
+      examplesRaw: { kind: 'sequence', items: [{ kind: 'string', value: 'raw' }] },
+    }),
+    {}
+  );
+  let copy = null;
+  let thrown = null;
+  try {
+    copy = cloneMetadata(source);
+  } catch (error) {
+    thrown = error;
+  }
+  assert(thrown === null, `cloneMetadata does not throw on a proxy (${thrown?.name})`);
+  eq(copy?.examples, source.examples, 'cloneMetadata preserves examples held by a proxy');
+  eq(copy?.examplesRaw, source.examplesRaw, 'cloneMetadata preserves examplesRaw held by a proxy');
+  assert(copy?.examples?.[0] !== source.examples[0], 'cloneMetadata still returns fresh examples');
+}
+
 if (failures) {
   console.error(`\n${failures} assertion(s) failed.`);
   process.exit(1);

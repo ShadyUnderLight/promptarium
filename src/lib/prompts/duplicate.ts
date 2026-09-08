@@ -1,15 +1,32 @@
-import type { PromptMetadata } from './types';
+import type { PromptExample, PromptMetadata, RawYaml } from './types';
 import { withVariantOf } from './types';
+
+/** Deep copy of one example.
+ *
+ *  `structuredClone()` throws DataCloneError on a Proxy, and this module is on
+ *  the editor save path, where `metadata` is a Svelte `$state` proxy — so any
+ *  save of a prompt carrying examples used to fail. `PromptExample` and
+ *  `RawYaml` mirror Rust DTOs (strings, numbers, booleans, arrays, plain
+ *  objects), so a JSON round trip is lossless and unwraps the proxy for free. */
+function jsonClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/** One example, deep-copied so `assets` and nested `extra` (unknown YAML) never
+ *  stay shared with the source document. */
+export function cloneExample(example: PromptExample): PromptExample {
+  return jsonClone(example);
+}
 
 /** Deep-copy the supported metadata fields for a new prompt file. The generic
  *  spread copies `notes` (Issue #15) along with every other supported field;
  *  Duplicate / Duplicate as Variant both route through this, so a future
  *  explicit-field-list refactor cannot silently drop a field. `examples`
- *  (Issue #24) is deep-copied with `structuredClone` so the new prompt never
- *  shares a mutable array/object — including `examples[].extra` nested
- *  structures — with the source; the raw `examplesRaw` AST is cloned too so a
- *  malformed source example is duplicated as-is. An `undefined` source yields a
- *  fresh default metadata object (used by the dev fixture). */
+ *  (Issue #24) is deep-copied so the new prompt never shares a mutable
+ *  array/object — including `examples[].extra` nested structures — with the
+ *  source; the raw `examplesRaw` AST is cloned too so a malformed source example
+ *  is duplicated as-is. An `undefined` source yields a fresh default metadata
+ *  object (used by the dev fixture). */
 export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetadata {
   const value = metadata ?? {
     description: '',
@@ -23,9 +40,7 @@ export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetad
   const variables = value.variables
     ? Object.fromEntries(Object.entries(value.variables).map(([name, doc]) => [name, { ...doc }]))
     : undefined;
-  const examples = value.examples
-    ? value.examples.map((example) => structuredClone(example))
-    : undefined;
+  const examples = value.examples ? value.examples.map(cloneExample) : undefined;
   return {
     ...value,
     tags: [...value.tags],
@@ -35,7 +50,7 @@ export function cloneMetadata(metadata: PromptMetadata | undefined): PromptMetad
     ...(variables ? { variables } : {}),
     ...(examples ? { examples } : {}),
     ...(value.examplesRaw !== undefined
-      ? { examplesRaw: structuredClone(value.examplesRaw) }
+      ? { examplesRaw: jsonClone<RawYaml>(value.examplesRaw) }
       : {}),
   };
 }
