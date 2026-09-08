@@ -12,13 +12,26 @@
  * one real metadata edit, one locale switch, one save — then every user field
  * and machine enum is asserted field by field so a failure names the offender
  * instead of printing one giant object diff.
+ *
+ * The fixture carries the full §10 surface: tags, models, variables, related,
+ * notes, unknown YAML (`extra`), examples with asset refs and unknown nested
+ * example keys, and the `examplesRaw` preservation AST.
+ *
+ * Queries go through the accessibility seam (role + accessible name) rather
+ * than styling classes: #42/#43 will rewrite these components, and this test
+ * must keep protecting the locale/data contract across a pure markup change.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, waitFor, fireEvent } from '@testing-library/svelte';
 import PromptDetail from '../src/lib/components/library/PromptDetail.svelte';
 import { library } from '../src/lib/library.svelte';
-import { setPreference } from '../src/lib/i18n/i18n.svelte';
-import type { PromptDocument, PromptMetadata } from '../src/lib/prompts/types';
+import { setPreference, t } from '../src/lib/i18n/i18n.svelte';
+import type {
+  PromptDocument,
+  PromptMetadata,
+  PromptExample,
+  RawYaml,
+} from '../src/lib/prompts/types';
 
 vi.mock('$lib/api', () => ({
   isTauri: vi.fn(() => false),
@@ -28,6 +41,22 @@ vi.mock('$lib/api', () => ({
 }));
 
 /** Multilingual, emoji-bearing, user-owned metadata — none of it is App copy. */
+const EXAMPLES: PromptExample[] = [
+  {
+    name: '示例 A',
+    input: '请检查 this code.',
+    outputFile: 'assets/结果.txt',
+    assets: ['assets/图.png', 'assets/report.pdf'],
+    extra: { 'custom-键': '自定义值', nested: { preserved: true } },
+  },
+];
+
+/** The `examples` AST read from disk; an unrelated save must pass it through. */
+const EXAMPLES_RAW: RawYaml = {
+  kind: 'sequence',
+  items: [{ kind: 'string', value: 'hand-written node' }],
+};
+
 function richMetadata(): PromptMetadata {
   return {
     description: 'Review 中文 PR 🚀',
@@ -39,11 +68,8 @@ function richMetadata(): PromptMetadata {
     variables: { repository: { description: '仓库地址', example: 'git@github.com:me/repo.git' } },
     related: ['coding/代码审查'],
     notes: '用户自己写的说明。\nSecond line with 🚀 emoji.',
-    // `examples` is deliberately absent: PromptMetadata.clone() deep-clones each
-    // example with `structuredClone()`, which throws DataCloneError on the
-    // Svelte `$state` proxy PromptDetail holds — a pre-existing, non-localization
-    // bug that is tracked separately. Examples have their own suite
-    // (examples_hardening.test.ts); this file is about locale isolation.
+    examples: EXAMPLES.map((example) => ({ ...example })),
+    examplesRaw: EXAMPLES_RAW,
     extra: { variantOf: 'base-prompt', 'custom-field': '自定义值' },
   };
 }
@@ -73,6 +99,8 @@ interface SaveCall {
 }
 
 let saveCalls: SaveCall[] = [];
+/** `onDirtyChange` is the component's own dirty contract — no DOM needed. */
+let dirtyCalls: boolean[] = [];
 
 const detailProps = {
   loading: false,
@@ -90,7 +118,9 @@ const detailProps = {
   onDuplicate: () => {},
   onDuplicateAsVariant: () => {},
   onDeleteRequest: () => {},
-  onDirtyChange: () => {},
+  onDirtyChange: (dirty: boolean) => {
+    dirtyCalls.push(dirty);
+  },
   onDismissExternalChange: () => {},
   onNotice: () => {},
   onNavigate: () => {},
@@ -107,12 +137,33 @@ function resetLibrary(): void {
   library.externalChangeState = null;
 }
 
+/** Accessible-name query for the two metadata textareas. */
+function escapeForRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function descriptionBox(): HTMLTextAreaElement {
+  return screen.getByRole('textbox', { name: t('meta.description') }) as HTMLTextAreaElement;
+}
+
+function notesBox(): HTMLTextAreaElement {
+  // The notes label also carries a hint span, so match the leading text.
+  return screen.getByRole('textbox', {
+    name: new RegExp(`^${escapeForRegExp(t('meta.usageNotes'))}`),
+  }) as HTMLTextAreaElement;
+}
+
+function bodyBox(): HTMLTextAreaElement {
+  return screen.getByLabelText(t('detail.editor.label')) as HTMLTextAreaElement;
+}
+
 beforeEach(() => {
   localStorage.clear();
   // jsdom exposes no real system language, so `system` resolves to English.
   setPreference('system');
   resetLibrary();
   saveCalls = [];
+  dirtyCalls = [];
   detailProps.onSave.mockClear();
 });
 
@@ -123,38 +174,30 @@ afterEach(() => {
 
 describe('user-owned data survives a locale switch (Issue #38 §10)', () => {
   it('keeps the metadata draft intact and saves canonical machine values under zh-CN', async () => {
-    const { container } = render(PromptDetail, { props: detailProps });
+    render(PromptDetail, { props: detailProps });
 
-    await fireEvent.click(screen.getByText('Edit'));
-    const description = container.querySelector(
-      '.metadata-editor textarea:not(.notes-editor)'
-    ) as HTMLTextAreaElement;
-    const notes = container.querySelector('.notes-editor') as HTMLTextAreaElement;
-    expect(description.value).toBe('Review 中文 PR 🚀');
-    expect(notes.value).toBe(richMetadata().notes);
+    await fireEvent.click(screen.getByRole('tab', { name: t('detail.tab.edit') }));
+    expect(descriptionBox().value).toBe('Review 中文 PR 🚀');
+    expect(notesBox().value).toBe(richMetadata().notes);
+    expect(bodyBox().value).toBe(BODY);
 
     // One real metadata edit — this is the only field allowed to change.
     const editedDescription = 'Review 中文 PR 🚀 (edited)';
-    await fireEvent.input(description, { target: { value: editedDescription } });
-    expect(container.querySelector('.dirty-dot')).toBeTruthy();
+    await fireEvent.input(descriptionBox(), { target: { value: editedDescription } });
+    await waitFor(() => expect(dirtyCalls.at(-1)).toBe(true));
 
     // en → zh-CN on an already-mounted, already-dirty detail.
     setPreference('zh-CN');
-    await waitFor(() => {
-      expect(container.querySelector('.dirty-dot')?.getAttribute('title')).toBe('有未保存的更改');
-    });
-    const afterSwitch = container.querySelector(
-      '.metadata-editor textarea:not(.notes-editor)'
-    ) as HTMLTextAreaElement;
-    expect(afterSwitch.value).toBe(editedDescription);
-    expect((container.querySelector('.notes-editor') as HTMLTextAreaElement).value).toBe(
-      richMetadata().notes
-    );
+    await waitFor(() => expect(t('detail.dirty.title')).toBe('有未保存的更改'));
+    expect(descriptionBox().value).toBe(editedDescription);
+    expect(notesBox().value).toBe(richMetadata().notes);
     // The body editor buffer is untouched by the locale switch.
-    expect((container.querySelector('.prompt-editor') as HTMLTextAreaElement).value).toBe(BODY);
+    expect(bodyBox().value).toBe(BODY);
+    // A locale switch is not an edit: the dirty flag never flips back.
+    expect(dirtyCalls.at(-1)).toBe(true);
 
     // Save while the UI is in zh-CN.
-    await fireEvent.click(container.querySelector('.detail-actions .btn--primary') as HTMLElement);
+    await fireEvent.click(screen.getByRole('button', { name: t('detail.save') }));
     await waitFor(() => expect(saveCalls.length).toBe(1));
 
     const saved = saveCalls[0];
@@ -173,6 +216,15 @@ describe('user-owned data survives a locale switch (Issue #38 §10)', () => {
     });
     expect(saved.metadata.related).toEqual(['coding/代码审查']);
     expect(saved.metadata.notes).toBe(richMetadata().notes);
+
+    // §10 examples / asset refs / raw examples preservation / unknown YAML.
+    expect(saved.metadata.examples).toEqual(EXAMPLES);
+    expect(saved.metadata.examples?.[0].assets).toEqual(['assets/图.png', 'assets/report.pdf']);
+    expect(saved.metadata.examples?.[0].extra).toEqual({
+      'custom-键': '自定义值',
+      nested: { preserved: true },
+    });
+    expect(saved.metadata.examplesRaw).toEqual(EXAMPLES_RAW);
     expect(saved.metadata.extra).toEqual({
       variantOf: 'base-prompt',
       'custom-field': '自定义值',
@@ -180,15 +232,30 @@ describe('user-owned data survives a locale switch (Issue #38 §10)', () => {
   });
 
   it('a locale switch alone never produces a save', async () => {
-    const { container } = render(PromptDetail, { props: detailProps });
-    await fireEvent.click(screen.getByText('Edit'));
+    render(PromptDetail, { props: detailProps });
+    await fireEvent.click(screen.getByRole('tab', { name: t('detail.tab.edit') }));
 
     setPreference('zh-CN');
-    await waitFor(() => expect(screen.getByText('编辑')).toBeTruthy());
+    await waitFor(() => expect(t('detail.tab.edit')).toBe('编辑'));
     setPreference('en');
-    await waitFor(() => expect(screen.getByText('Edit')).toBeTruthy());
+    await waitFor(() => expect(t('detail.tab.edit')).toBe('Edit'));
 
     expect(saveCalls).toEqual([]);
-    expect(container.querySelector('.dirty-dot')).toBeNull();
+    expect(dirtyCalls.some(Boolean)).toBe(false);
+  });
+
+  it('editing an unrelated field on a prompt that carries examples does not crash', async () => {
+    // Regression: `PromptMetadata.clone()` used `structuredClone(example)`, which
+    // throws DataCloneError on the `$state` proxy PromptDetail holds, so any
+    // metadata edit on a prompt with examples took the whole editor down.
+    render(PromptDetail, { props: detailProps });
+    await fireEvent.click(screen.getByRole('tab', { name: t('detail.tab.edit') }));
+
+    await fireEvent.input(descriptionBox(), { target: { value: 'edited with examples present' } });
+    await waitFor(() => expect(dirtyCalls.at(-1)).toBe(true));
+
+    await fireEvent.click(screen.getByRole('button', { name: t('detail.save') }));
+    await waitFor(() => expect(saveCalls.length).toBe(1));
+    expect(saveCalls[0].metadata.examples).toEqual(EXAMPLES);
   });
 });
