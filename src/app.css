@@ -187,19 +187,34 @@ a { color: var(--accent-user); }
    the button's own colours, so one rule covers every variant. */
 .btn:active:not(:disabled) { box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.18); }
 /* Disabled: never opacity alone — the label drops back too. Border is left
-   alone so ghost buttons stay borderless. */
+   alone so ghost buttons stay borderless. Filled variants override this below:
+   compositing their label away with the fill is exactly what breaks the busy
+   state. */
 .btn:disabled { opacity: 0.55; cursor: not-allowed; color: var(--text-faint); }
 .btn--primary { background: var(--surface-prominent); color: var(--bg); border-color: var(--surface-prominent); }
 .btn--primary:hover:not(:disabled) { opacity: 0.9; }
 .btn--danger { background: var(--error-fill); border-color: var(--error-fill); color: #fff; }
 .btn--danger:hover:not(:disabled) { opacity: 0.9; }
-/* Filled variants keep the foreground they were designed for when disabled.
-   Same specificity as .btn:disabled but later, so without these the faint
-   label lands grey-on-red. ConfirmDialog disables its confirm button while it
-   reads "Working…" (NewPromptDialog: "Creating…"), and that label has to stay
-   legible on the fill. */
-.btn--primary:disabled { color: var(--bg); }
-.btn--danger:disabled { color: #fff; }
+/* Filled variants must not inherit .btn:disabled's whole-element opacity:
+   opacity composites label and fill together, so the busy label on the
+   destructive confirm (ConfirmDialog: disabled={busy}, "Working…"; likewise
+   NewPromptDialog "Creating…", PromptDetail "Saving…", the sidebar add form)
+   measured 2.49:1 in light — washed out exactly when it is the only feedback
+   for the click the user just made. Instead the fill drops to a tint and the
+   label stays fully opaque. Measured on the modal surface, worst case:
+   danger 5.37:1 light / 6.38:1 dark, primary 11.61:1 / 7.29:1. */
+.btn--primary:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--surface-prominent) 12%, transparent);
+  border-color: var(--border);
+  color: var(--text);
+}
+.btn--danger:disabled {
+  opacity: 1;
+  background: color-mix(in srgb, var(--error-fill) 12%, transparent);
+  border-color: var(--border);
+  color: var(--error-strong);
+}
 /* Dense rows (detail actions, sidebar add form) opt out of the control height
    on purpose — raising these would cost more than the hit area is worth. */
 .btn--sm { font-size: 0.7rem; padding: 0.25rem 0.6rem; min-height: 0; }
