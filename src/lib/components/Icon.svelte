@@ -25,6 +25,8 @@
     | 'grid'
     | 'arrow-right'
     | 'arrow-left'
+    | 'arrow-up'
+    | 'arrow-down'
     | 'sparkle'
     | 'command';
 
@@ -51,6 +53,8 @@
     grid: '<rect x="3" y="3" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1"/>',
     'arrow-right': '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
     'arrow-left': '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
+    'arrow-up': '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/>',
+    'arrow-down': '<path d="M12 5v14"/><path d="m18 13-6 6-6-6"/>',
     sparkle: '<path fill="currentColor" stroke="none" d="m12 2 2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/>',
     command: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>'
   };

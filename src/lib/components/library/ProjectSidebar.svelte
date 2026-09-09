@@ -232,7 +232,7 @@
         <div class="add-project-row__actions">
           <button type="button" class="btn btn--ghost btn--sm" onclick={browse} disabled={busy}>{t('sidebar.browse')}</button>
           <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>{relocateFrom ? t('sidebar.locate') : t('sidebar.add')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" aria-label={t('newPrompt.close')} onclick={closeAddProject} disabled={busy}><Icon name="close" /></button>
+          <button type="button" class="btn btn--ghost btn--sm" aria-label={t('newPrompt.close')} title={t('newPrompt.close')} onclick={closeAddProject} disabled={busy}><Icon name="close" /></button>
         </div>
       </div>
     {/if}
@@ -331,7 +331,7 @@
               oncontextmenu={(event) => folderMenu(event, folder.path)}
               title={t('sidebar.folder.title')}
             >
-              <span class="folder-glyph">⌄</span><span>{folder.name}</span><span>{folder.promptCount}</span>
+              <span class="folder-glyph"><Icon name="chevron-right" /></span><span>{folder.name}</span><span>{folder.promptCount}</span>
             </button>
           {:else}
             <p class="sidebar-empty">{t('sidebar.folders.empty')}</p>

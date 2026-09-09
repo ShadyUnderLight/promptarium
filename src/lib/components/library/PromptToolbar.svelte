@@ -34,7 +34,7 @@
       <button type="button" class="toolbar-button" onclick={() => onBatch('unfavorite')}>{t('toolbar.unfavorite')}</button>
       <button type="button" class="toolbar-button" onclick={() => onBatch('archive')}>{t('toolbar.archive')}</button>
       <button type="button" class="toolbar-button" onclick={() => onBatch('active')}>{t('toolbar.active')}</button>
-      <label class="batch-tag-input"><input bind:value={batchTag} placeholder={t('toolbar.tagPlaceholder')} onkeydown={(event) => event.key === 'Enter' && applyTag('add-tag')} /><button type="button" aria-label={t('toolbar.addTag')} onclick={() => applyTag('add-tag')}><Icon name="plus" /></button><button type="button" aria-label={t('toolbar.removeTag')} onclick={() => applyTag('remove-tag')}><Icon name="minus" /></button></label>
+      <label class="batch-tag-input"><input bind:value={batchTag} placeholder={t('toolbar.tagPlaceholder')} onkeydown={(event) => event.key === 'Enter' && applyTag('add-tag')} /><button type="button" aria-label={t('toolbar.addTag')} title={t('toolbar.addTag')} onclick={() => applyTag('add-tag')}><Icon name="plus" /></button><button type="button" aria-label={t('toolbar.removeTag')} title={t('toolbar.removeTag')} onclick={() => applyTag('remove-tag')}><Icon name="minus" /></button></label>
       <button type="button" class="toolbar-button toolbar-button--danger" onclick={() => onBatch('delete')}>{t('toolbar.delete')}</button>
       <button type="button" class="toolbar-button" onclick={onClearSelection}>{t('toolbar.cancel')}</button>
     </div>
@@ -58,8 +58,8 @@
         </select>
       {/if}
       <div class="view-toggle" aria-label={t('toolbar.viewMode.aria')}>
-        <button type="button" class:toggle-button--active={library.viewMode === 'list'} class="toggle-button" aria-label={t('toolbar.listView')} onclick={() => setViewMode('list' as PromptViewMode)}><Icon name="list" /></button>
-        <button type="button" class:toggle-button--active={library.viewMode === 'grid'} class="toggle-button" aria-label={t('toolbar.gridView')} onclick={() => setViewMode('grid' as PromptViewMode)}><Icon name="grid" /></button>
+        <button type="button" class:toggle-button--active={library.viewMode === 'list'} class="toggle-button" aria-label={t('toolbar.listView')} title={t('toolbar.listView')} onclick={() => setViewMode('list' as PromptViewMode)}><Icon name="list" /></button>
+        <button type="button" class:toggle-button--active={library.viewMode === 'grid'} class="toggle-button" aria-label={t('toolbar.gridView')} title={t('toolbar.gridView')} onclick={() => setViewMode('grid' as PromptViewMode)}><Icon name="grid" /></button>
       </div>
     </div>
   {/if}

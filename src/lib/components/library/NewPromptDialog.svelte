@@ -83,7 +83,7 @@
         <span class="eyebrow">{t('topbar.title')}</span>
         <h2 id="new-prompt-title">{t('sidebar.newPrompt')}</h2>
       </div>
-      <button type="button" class="icon-button" aria-label={t('newPrompt.close')} onclick={onClose}><Icon name="close" /></button>
+      <button type="button" class="icon-button" aria-label={t('newPrompt.close')} title={t('newPrompt.close')} onclick={onClose}><Icon name="close" /></button>
     </div>
 
     {#if error}<p class="form-error">{error}</p>{/if}

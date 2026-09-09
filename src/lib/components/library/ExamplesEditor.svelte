@@ -16,6 +16,7 @@
     assetResolutionKey,
   } from '$lib/examples/editor-helpers';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   interface Props {
     examples: PromptExample[];
@@ -214,15 +215,17 @@
           class="example-edit-card__move"
           disabled={index === 0}
           aria-label={t('examples.editor.moveUp.aria')}
+          title={t('examples.editor.moveUp.aria')}
           onclick={() => onChange(moveExample(examples, index, -1))}
-        >↑</button>
+        ><Icon name="arrow-up" /></button>
         <button
           type="button"
           class="example-edit-card__move"
           disabled={index === examples.length - 1}
           aria-label={t('examples.editor.moveDown.aria')}
+          title={t('examples.editor.moveDown.aria')}
           onclick={() => onChange(moveExample(examples, index, 1))}
-        >↓</button>
+        ><Icon name="arrow-down" /></button>
         <button
           type="button"
           class="variable-doc-edit__remove"

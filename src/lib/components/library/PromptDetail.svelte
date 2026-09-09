@@ -279,7 +279,7 @@
     <div class="detail-header">
       <div class="detail-header__title">
         <div class="detail-title-line">
-          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}><Icon name={metadata.favorite ? 'star' : 'star-outline'} /></button>
+          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} title={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}><Icon name={metadata.favorite ? 'star' : 'star-outline'} /></button>
           <h2>{promptTitle(document.name)}</h2>
           {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
           {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}><Icon name="warning" /></span>{/if}
