@@ -29,6 +29,8 @@
   import { toasts } from '$lib/prompts/toasts.svelte';
   import { errorDetail } from '$lib/library/errors';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
+  import { getTheme, toggleTheme } from '$lib/theme';
+  import LanguageSelector from '$lib/components/LanguageSelector.svelte';
   import ProjectSidebar from './library/ProjectSidebar.svelte';
   import PromptLibrary from './library/PromptLibrary.svelte';
   import PromptDetail from './library/PromptDetail.svelte';
@@ -36,6 +38,7 @@
   import ConfirmDialog from './library/ConfirmDialog.svelte';
 
   let searchInput: HTMLInputElement | undefined = $state(undefined);
+  let theme = $state(getTheme());
   let detail: { save: () => Promise<void>; discardChanges: () => void } | undefined = $state(undefined);
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
@@ -308,6 +311,10 @@
     else await refreshLibrary();
   }
 
+  function handleToggleTheme(): void {
+    theme = toggleTheme();
+  }
+
   function startResize(which: 'sidebar' | 'library', event: PointerEvent): void {
     event.preventDefault();
     const startX = event.clientX;
@@ -330,7 +337,7 @@
     <div class="library-topbar__title">
       <span class="app-mark">✦</span>
       <div>
-        <h1>{t('topbar.title')}</h1>
+        <h1>Promptarium</h1>
         <span>{scopeTitle}</span>
       </div>
     </div>
@@ -340,6 +347,10 @@
       <kbd>⌘ F</kbd>
     </label>
     <div class="library-topbar__actions">
+      <LanguageSelector />
+      <button type="button" class="btn btn--ghost btn--sm" onclick={handleToggleTheme}>
+        {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
+      </button>
       <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ {t('sidebar.newPrompt')}</button>
       <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}>↻</button>
     </div>
