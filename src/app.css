@@ -19,8 +19,6 @@
 
   /* The footer link. */
   --accent-user: #5b8def;
-  /* Error/warning surfaces (the load-error banner, the modal warning). */
-  --accent-result-err: #ef4444;
 
   /* Prompt library accents: one for links/selection and one for variables.
      Tints are color-mix'd over theme surfaces, so one value serves both themes. */
@@ -44,6 +42,11 @@
   --surface-overlay: var(--bg-card);
   /* Only ever reached from inside @supports — see the glass block below. */
   --surface-regular-glass: color-mix(in srgb, var(--surface-regular) 72%, transparent);
+  /* Prominent and overlay have no glass consumer yet: #43 owns dialogs and
+     menus. They are specified here so #43 binds a role instead of inventing a
+     material. */
+  --surface-prominent-glass: color-mix(in srgb, var(--surface-prominent) 86%, transparent);
+  --surface-overlay-glass: color-mix(in srgb, var(--surface-overlay) 76%, transparent);
   --glass-blur: 18px;
   --glass-highlight: inset 0 1px 0 color-mix(in srgb, white 18%, transparent);
 
@@ -59,13 +62,20 @@
 
   /* Semantic status. These were hard-coded literals that never adapted to
      dark, where the old values fell below contrast — both themes redefine
-     them. */
+     them. The old --accent-result-err was #ef4444 in both: 3.89:1 on the dark
+     content surface and 3.64:1 on the 8% tint the error banners sit on, for
+     0.7rem text.
+     --error-fill is the one exception, and deliberately single-valued: it only
+     ever backs white text (the danger button, the count badge), and white on
+     it is theme-independent. */
   --warning: #c98222;
   --warning-strong: #d97706;
   --favorite: #e1a93b;
   --success: #159570;
   --success-strong: #15803d;
+  --error: #c62828;
   --error-strong: #b91c1c;
+  --error-fill: #dc2626;
 
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
@@ -96,6 +106,7 @@
   --favorite: #ecc168;
   --success: #3ecf9a;
   --success-strong: #6ee7b7;
+  --error: #ff8a80;
   --error-strong: #fca5a5;
 }
 
@@ -177,7 +188,7 @@ a { color: var(--accent-user); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; color: var(--text-faint); }
 .btn--primary { background: var(--surface-prominent); color: var(--bg); border-color: var(--surface-prominent); }
 .btn--primary:hover { opacity: 0.9; }
-.btn--danger { background: var(--accent-result-err); border-color: var(--accent-result-err); color: #fff; }
+.btn--danger { background: var(--error-fill); border-color: var(--error-fill); color: #fff; }
 .btn--danger:hover { opacity: 0.9; }
 /* Dense rows (detail actions, sidebar add form) opt out of the control height
    on purpose — raising these would cost more than the hit area is worth. */
@@ -190,7 +201,7 @@ a { color: var(--accent-user); }
 .modal { background: var(--surface-overlay); border: 1px solid var(--border); border-radius: var(--radius-lg); max-width: 460px; width: 100%; padding: 1.5rem; box-shadow: var(--shadow-overlay); }
 .modal h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .modal p { font-size: 0.85rem; color: var(--text-muted); margin: 0.5rem 0; }
-.modal__warning { background: color-mix(in srgb, var(--accent-result-err) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent-result-err) 25%, transparent); border-radius: 0.4rem; padding: 0.6rem 0.8rem; font-size: 0.8rem; color: var(--accent-result-err); margin: 0.75rem 0; }
+.modal__warning { background: color-mix(in srgb, var(--error) 8%, transparent); border: 1px solid color-mix(in srgb, var(--error) 25%, transparent); border-radius: 0.4rem; padding: 0.6rem 0.8rem; font-size: 0.8rem; color: var(--error); margin: 0.75rem 0; }
 .modal__actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem; }
 
 @media (max-width: 640px) {
@@ -238,7 +249,11 @@ body {
   align-items: center;
   gap: 1rem;
   border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--bg-card) 86%, transparent);
+  /* Solid, not the old 86% --bg-card: this is the one bar that is still in
+     flow (no position), so nothing ever scrolls under it — a translucent
+     value here only ever composited against .library-shell's flat --bg. Being
+     opaque also means Reduce Transparency needs no override for it. */
+  background: var(--surface-regular);
 }
 
 .library-topbar__title {
@@ -349,9 +364,9 @@ body {
 
 .library-error {
   padding: 0.55rem 1.25rem;
-  color: var(--accent-result-err);
-  background: color-mix(in srgb, var(--accent-result-err) 8%, transparent);
-  border-bottom: 1px solid color-mix(in srgb, var(--accent-result-err) 24%, var(--border));
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--error) 24%, var(--border));
   font-size: 0.74rem;
 }
 
@@ -560,9 +575,9 @@ body {
   gap: 0.35rem;
   margin: 0.3rem 0.25rem 1rem;
   padding: 0.65rem;
-  border: 1px solid color-mix(in srgb, var(--accent-result-err) 30%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--error) 30%, var(--border));
   border-radius: 0.45rem;
-  color: var(--accent-result-err);
+  color: var(--error);
   font-size: 0.7rem;
 }
 
@@ -675,7 +690,7 @@ body {
 
 .toolbar-button--danger,
 .btn--danger-text {
-  color: var(--accent-result-err);
+  color: var(--error);
 }
 
 .batch-tag-input {
@@ -853,7 +868,7 @@ body {
   height: 0.95rem;
   border-radius: 50%;
   color: #fff;
-  background: var(--accent-result-err);
+  background: var(--error-fill);
   font-size: 0.62rem;
   font-weight: 700;
 }
@@ -901,8 +916,8 @@ body {
 }
 
 .library-empty--error .empty-icon {
-  color: var(--accent-result-err);
-  border-color: color-mix(in srgb, var(--accent-result-err) 30%, var(--border));
+  color: var(--error);
+  border-color: color-mix(in srgb, var(--error) 30%, var(--border));
 }
 
 .library-loading,
@@ -1162,7 +1177,7 @@ body {
 }
 
 .diff-line--remove {
-  background: color-mix(in srgb, var(--accent-result-err) 12%, transparent);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
   color: var(--error-strong);
 }
 
@@ -1195,9 +1210,9 @@ body {
 }
 
 .detail-error {
-  border-color: color-mix(in srgb, var(--accent-result-err) 35%, var(--border));
-  background: color-mix(in srgb, var(--accent-result-err) 8%, transparent);
-  color: var(--accent-result-err);
+  border-color: color-mix(in srgb, var(--error) 35%, var(--border));
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
 }
 
 .detail-error__actions {
@@ -1248,7 +1263,7 @@ body {
 }
 
 .health-issue--error {
-  color: var(--accent-result-err);
+  color: var(--error);
 }
 
 .health-issue__mark {
@@ -1653,7 +1668,7 @@ body {
 }
 
 .variable-doc-edit__remove:hover {
-  color: var(--accent-result-err);
+  color: var(--error);
 }
 
 .related-inspector {
@@ -1784,9 +1799,9 @@ body {
 
 .examples-editor__error {
   padding: 0.4rem 0.5rem;
-  border: 1px solid var(--accent-result-err);
+  border: 1px solid var(--error);
   border-radius: 0.4rem;
-  color: var(--accent-result-err);
+  color: var(--error);
   font-size: 0.72rem;
 }
 
@@ -1920,7 +1935,7 @@ body {
 .example-file-row__state--missing,
 .example-chip--missing { color: var(--warning); }
 .example-file-row__state--invalid,
-.example-chip--invalid { color: var(--accent-result-err); }
+.example-chip--invalid { color: var(--error); }
 
 .example-file-edit__row--draft {
   border: 1px dashed var(--border-strong);
@@ -2109,7 +2124,7 @@ body {
 }
 
 .compare-paths__unsaved {
-  color: var(--accent-result-err);
+  color: var(--error);
   font-style: italic;
 }
 
@@ -2159,7 +2174,7 @@ body {
 }
 
 .compare-meta-row__left {
-  color: var(--accent-result-err);
+  color: var(--error);
   text-decoration: line-through;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -2223,8 +2238,8 @@ body {
   margin: 0 0 0.75rem;
   padding: 0.45rem 0.55rem;
   border-radius: 0.3rem;
-  background: color-mix(in srgb, var(--accent-result-err) 8%, transparent);
-  color: var(--accent-result-err);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  color: var(--error);
   font-size: 0.7rem;
 }
 
@@ -2322,7 +2337,7 @@ body {
 }
 
 .project-menu .project-menu__danger {
-  color: var(--accent-result-err);
+  color: var(--error);
 }
 
 .prompts-toasts {
