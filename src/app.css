@@ -108,6 +108,18 @@
 
 * { box-sizing: border-box; }
 
+/* Inline SVG icons (Issue #43). 1em keeps the surrounding context's existing
+   font-size in charge; currentColor keeps them theme- and state-aware.
+   flex:none stops flex rows from squashing them; the negative vertical offset
+   aligns them on text baselines the way the old glyph icons sat. */
+.icon {
+  width: 1em;
+  height: 1em;
+  flex: none;
+  display: inline-block;
+  vertical-align: -0.125em;
+}
+
 /* The app is a full-viewport flex shell: html is the definite-height root,
    body lays out footer + main, and .container-main (workspace section below)
    pins the three-pane grid with overflow hidden — nothing in the shell ever
@@ -205,6 +217,24 @@ a { color: var(--accent-user); }
 .btn--sm { font-size: 0.7rem; padding: 0.25rem 0.6rem; min-height: 0; }
 .btn--ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
 .btn--ghost:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
+
+/* One control height across the app chrome (Issue #43): toolbar selects, the
+   compare picker, the language picker and the global search all sit at
+   --control-h now, next to .btn and .icon-button which already did.
+   Font sizes stay per-context — dense rows keep their smaller type. */
+.prompt-toolbar select,
+.compare-picker,
+.language-select__control,
+.global-search input {
+  height: var(--control-h);
+}
+
+/* Dialog form controls match too; textarea is multiline and keeps its own
+   min-height. */
+.field input,
+.field select {
+  min-height: var(--control-h);
+}
 
 /* Modal */
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
@@ -656,8 +686,11 @@ body {
 }
 
 .toggle-button {
-  width: 1.8rem;
-  height: 1.8rem;
+  width: var(--control-h);
+  height: var(--control-h);
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.95rem;
 }
 
 .toggle-button:hover,
@@ -704,7 +737,11 @@ body {
 }
 
 .batch-tag-input button {
-  height: 1.55rem;
+  width: 1.55rem;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-size: 0.75rem;
   border: 1px solid var(--border);
   border-left: 0;
   border-radius: 0 0.3rem 0.3rem 0;
@@ -1267,7 +1304,7 @@ body {
 
 .health-issue__mark {
   flex-shrink: 0;
-  font-size: 0.66rem;
+  font-size: 0.8rem;
 }
 
 .health-issue__text {
@@ -1833,7 +1870,7 @@ body {
 
 .example-card__chevron {
   color: var(--text-faint);
-  font-size: 0.68rem;
+  font-size: 0.8rem;
 }
 
 .example-card__name {
@@ -2423,6 +2460,17 @@ body {
     backdrop-filter: blur(var(--glass-blur));
     box-shadow: var(--glass-highlight);
   }
+
+  /* Overlay surfaces (Issue #43): dialogs and the project menu float above
+     real page content, so their blur composites against actual content and
+     reads as depth. The dark scrim behind the dialogs stays as-is. */
+  .modal,
+  .project-menu {
+    background: var(--surface-overlay-glass);
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--glass-highlight), var(--shadow-overlay);
+  }
 }
 
 /* Reduce Transparency: fall back to the solid surface. Declared after the
@@ -2434,6 +2482,20 @@ body {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: none;
+  }
+
+  .modal {
+    background: var(--surface-overlay);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .project-menu {
+    background: var(--bg-card);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
   }
 }
 

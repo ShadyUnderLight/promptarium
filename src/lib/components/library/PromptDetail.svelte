@@ -12,6 +12,7 @@
     loadMorePromptHistory,
   } from '$lib/library.svelte';
   import type { GitFileCommit } from '$lib/prompts/git-types';
+  import Icon from '$lib/components/Icon.svelte';
   import PromptMetadataEditor from './PromptMetadata.svelte';
   import PromptPreview from './PromptPreview.svelte';
   import PromptHistory from './PromptHistory.svelte';
@@ -270,7 +271,7 @@
     <div class="detail-loading"><span></span><span></span></div>
   {:else if !document || !metadata}
     <div class="detail-empty">
-      <div class="detail-empty__icon">✦</div>
+      <div class="detail-empty__icon"><Icon name="sparkle" /></div>
       <h2>{t('detail.select.title')}</h2>
       <p>{t('detail.select.hint')}</p>
     </div>
@@ -278,10 +279,10 @@
     <div class="detail-header">
       <div class="detail-header__title">
         <div class="detail-title-line">
-          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}>{metadata.favorite ? '★' : '☆'}</button>
+          <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}><Icon name={metadata.favorite ? 'star' : 'star-outline'} /></button>
           <h2>{promptTitle(document.name)}</h2>
           {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
-          {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}>!</span>{/if}
+          {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}><Icon name="warning" /></span>{/if}
         </div>
         <span class="detail-path">{document.relativePath}</span>
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
@@ -335,7 +336,7 @@
         <div class="health-section__heading">{t('detail.healthHeading')}</div>
         {#each healthIssues as issue (issue.code + '\u0000' + JSON.stringify(issue.params ?? {}))}
           <div class="health-issue health-issue--{issue.severity}">
-            <span class="health-issue__mark">⚠</span>
+            <span class="health-issue__mark"><Icon name="warning" /></span>
             <span class="health-issue__text">{t(`health.${issue.code}`, issue.params)}</span>
             <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
           </div>

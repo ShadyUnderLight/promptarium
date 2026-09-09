@@ -3,6 +3,7 @@
   import type { PromptSummary } from '$lib/prompts/types';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import type { MessageKey } from '$lib/i18n/locales/en';
+  import Icon from '$lib/components/Icon.svelte';
 
   interface Props {
     prompt: PromptSummary;
@@ -42,9 +43,9 @@
   </button>
   <div class="prompt-list-item__body">
     <div class="prompt-list-item__title-row">
-      <span class:prompt-list-item__favorite={prompt.metadata.favorite} class="prompt-list-item__star">{prompt.metadata.favorite ? '★' : '☆'}</span>
+      <span class:prompt-list-item__favorite={prompt.metadata.favorite} class="prompt-list-item__star"><Icon name={prompt.metadata.favorite ? 'star' : 'star-outline'} /></span>
       <span class="prompt-list-item__title">{promptTitle(prompt.name)}</span>
-      {#if issues.length}<span class="health-badge" title={healthTitle}>{'⚠ ' + issues.length}</span>{/if}
+      {#if issues.length}<span class="health-badge" title={healthTitle}><Icon name="warning" /> {issues.length}</span>{/if}
     </div>
     <p class="prompt-list-item__description">{prompt.metadata.description || t('library.noDescription')}</p>
     <div class="prompt-list-item__meta">
