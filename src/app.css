@@ -2377,11 +2377,26 @@ body {
   }
   .library-workspace > .prompt-detail,
   .library-workspace > .pane-resizer:nth-of-type(2) { display: none; }
-  .library-topbar { padding-inline: 0.7rem; }
+  /* The merged topbar carries more controls than the old header+topbar pair,
+     and html/body never scroll — without wrapping, a narrow window would clip
+     the right-side actions outright. Search drops to its own full-width row
+     below title + actions; the Language text label goes (the select keeps its
+     aria-label), everything else stays reachable. */
+  .library-topbar {
+    padding-inline: 0.7rem;
+    flex-wrap: wrap;
+    row-gap: 0.55rem;
+  }
   .library-topbar__title { min-width: auto; }
   /* Keep the App name visible; only the scope line drops on narrow screens. */
   .library-topbar__title span:not(.app-mark) { display: none; }
-  .global-search { margin: 0; }
+  .global-search {
+    order: 3;
+    flex-basis: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+  .language-select__label { display: none; }
   .editor-layout { grid-template-columns: 1fr; }
 }
 
