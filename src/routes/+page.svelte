@@ -2,20 +2,17 @@
   /**
    * +page.svelte — top-level SPA shell for Promptarium.
    *
-   * There is exactly one view: the Prompt Library (PromptsView). The shell owns
-   * only the app chrome — title, theme toggle and footer. The library workspace
-   * owns navigation, search and prompt management.
+   * There is exactly one view: the Prompt Library (PromptsView), whose topbar
+   * owns the app chrome — title, scope, search, language, theme, new and
+   * refresh. The shell owns only the footer: the version tagline and the
+   * quiet update entry.
    */
   import { onMount } from 'svelte';
   import { getVersion } from '@tauri-apps/api/app';
-  import { getTheme, toggleTheme } from '$lib/theme';
   import { isTauri } from '$lib/api';
   import { update, openUpdatePrompt } from '$lib/updater.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
-  import LanguageSelector from '$lib/components/LanguageSelector.svelte';
   import PromptsView from '$lib/components/PromptsView.svelte';
-
-  let theme = $state(getTheme());
 
   // The footer's update affordance is desktop-only: there is nothing to update
   // in a browser, and `check()` would just throw across an absent IPC bridge.
@@ -24,10 +21,6 @@
 
   // App version for the footer — only available in the packaged desktop app.
   let appVersion = $state('');
-
-  // The header height feeds the --header-h CSS var that app.css uses to size the
-  // scroll region, so we measure it live rather than hardcode it.
-  let headerEl: HTMLElement | undefined = $state(undefined);
 
   onMount(async () => {
     if (isTauri()) {
@@ -38,33 +31,7 @@
       }
     }
   });
-
-  onMount(() => {
-    if (!headerEl) return;
-    const setVar = () =>
-      document.documentElement.style.setProperty('--header-h', `${headerEl!.offsetHeight}px`);
-    setVar();
-    const ro = new ResizeObserver(setVar);
-    ro.observe(headerEl);
-    return () => ro.disconnect();
-  });
-
-  function handleToggleTheme(): void {
-    theme = toggleTheme();
-  }
 </script>
-
-<header class="app-header" bind:this={headerEl}>
-  <div>
-    <h1>Promptarium</h1>
-  </div>
-  <div class="app-header__actions">
-    <LanguageSelector />
-    <button class="btn btn--ghost btn--sm" onclick={handleToggleTheme} type="button">
-      {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
-    </button>
-  </div>
-</header>
 
 <main class="container-main">
   <PromptsView />
