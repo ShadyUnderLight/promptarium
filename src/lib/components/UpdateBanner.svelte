@@ -20,6 +20,7 @@
    */
   import { update, installUpdate, dismiss } from '$lib/updater.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 </script>
 
 {#if update.status === 'available'}
@@ -33,7 +34,7 @@
         aria-label={t('update.banner.dismiss.aria')}
         title={t('update.banner.dismiss')}
       >
-        ×
+        <Icon name="close" />
       </button>
     </div>
     <div class="update-banner__actions">
@@ -79,6 +80,25 @@
     border: 1px solid var(--border-strong);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
     font-size: 0.8rem;
+  }
+  /* Overlay glass (Issue #43). The banner floats above real content, so the
+     blur is visible; solid --bg-card above stays the fallback, and Reduce
+     Transparency restores it after the @supports block. */
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .update-banner {
+      background: var(--surface-overlay-glass);
+      -webkit-backdrop-filter: blur(var(--glass-blur));
+      backdrop-filter: blur(var(--glass-blur));
+      box-shadow: var(--glass-highlight), 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .update-banner {
+      background: var(--bg-card);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    }
   }
   .update-banner--quiet {
     color: var(--text-muted);

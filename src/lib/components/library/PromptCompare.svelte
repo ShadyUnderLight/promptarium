@@ -9,6 +9,7 @@
     type MetadataFieldValue,
   } from '$lib/prompts/compare';
   import DiffViewer from './DiffViewer.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
   import type { MessageKey } from '$lib/i18n/locales/en';
 
@@ -147,7 +148,7 @@
       <span class="compare-paths__source">
         {document.projectPath}/{document.name}.md{#if leftDirty} <span class="compare-paths__unsaved">{t('compare.unsaved')}</span>{/if}
       </span>
-      <span class="compare-paths__arrow" aria-hidden="true">→</span>
+      <span class="compare-paths__arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
       <span class="compare-paths__target">{target ? `${target.projectPath}/${target.name}.md` : '…'}</span>
     </div>
 
@@ -173,7 +174,7 @@
             <div class="compare-meta-row">
               <span class="compare-meta-row__field">{t(fieldKeys[diff.field])}</span>
               <span class="compare-meta-row__left">{renderValue(diff, diff.left)}</span>
-              <span class="compare-meta-row__arrow" aria-hidden="true">→</span>
+              <span class="compare-meta-row__arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
               <span class="compare-meta-row__right">{renderValue(diff, diff.right)}</span>
             </div>
           {/each}

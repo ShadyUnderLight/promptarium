@@ -3,6 +3,7 @@
   import { promptTitle } from '$lib/library.svelte';
   import { resolveRelations, type RelationLink } from '$lib/relations/relations';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import type { MessageKey } from '$lib/i18n/locales/en';
 
   interface Props {
@@ -52,7 +53,7 @@
         {#if link.status === 'ok' && link.target}
           <button type="button" class="relation-row relation-row--ok" title={linkPath(link)} onclick={() => onNavigate(link.target!.projectPath, link.target!.name)}>
             <span class="relation-name">{linkLabel(link)}</span>
-            <span class="relation-arrow" aria-hidden="true">→</span>
+            <span class="relation-arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
           </button>
         {:else}
           <div class="relation-row relation-row--{link.status}" title={linkPath(link)}>
@@ -72,7 +73,7 @@
       {#each resolution.referencedBy as source (source.projectPath + '\u0000' + source.name)}
         <button type="button" class="relation-row relation-row--backlink" title={source.name} onclick={() => onNavigate(source.projectPath, source.name)}>
           <span class="relation-name">{promptTitle(source.name)}</span>
-          <span class="relation-arrow" aria-hidden="true">←</span>
+          <span class="relation-arrow" aria-hidden="true"><Icon name="arrow-left" /></span>
         </button>
       {/each}
     </div>

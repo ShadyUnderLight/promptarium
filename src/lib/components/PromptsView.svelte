@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import {
     batchDelete,
     batchUpdate,
@@ -335,14 +336,14 @@
 <div class="library-shell" class:library-shell--missing={selectedProjectMissing}>
   <div class="library-topbar">
     <div class="library-topbar__title">
-      <span class="app-mark">✦</span>
+      <span class="app-mark"><Icon name="sparkle" /></span>
       <div>
         <h1>Promptarium</h1>
         <span>{scopeTitle}</span>
       </div>
     </div>
     <label class="global-search">
-      <span aria-hidden="true">⌕</span>
+      <span aria-hidden="true"><Icon name="search" /></span>
       <input bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder={t('topbar.search.placeholder')} aria-label={t('topbar.search.aria')} />
       <kbd>⌘ F</kbd>
     </label>
@@ -351,8 +352,8 @@
       <button type="button" class="btn btn--ghost btn--sm" onclick={handleToggleTheme}>
         {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
       </button>
-      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}>＋ {t('sidebar.newPrompt')}</button>
-      <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}>↻</button>
+      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
+      <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}><Icon name="refresh" /></button>
     </div>
   </div>
 

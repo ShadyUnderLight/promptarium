@@ -3,6 +3,7 @@
   import { promptKey } from '$lib/library/scope';
   import type { PromptSummary } from '$lib/prompts/types';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import PromptListItem from './PromptListItem.svelte';
   import PromptToolbar from './PromptToolbar.svelte';
 
@@ -74,23 +75,23 @@
     <div class="library-loading"><span></span><span></span><span></span><span></span></div>
   {:else if !hasProjects}
     <div class="library-empty">
-      <div class="empty-icon">⌘</div>
+      <div class="empty-icon"><Icon name="command" /></div>
       <h2>{t('library.chooseProject')}</h2>
       <p>{t('library.emptyNoProjects')}</p>
       <button type="button" class="btn btn--primary" onclick={onNewPrompt}>{t('library.addFirstPrompt')}</button>
     </div>
   {:else if !allProjects && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'}
     <div class="library-empty library-empty--error">
-      <div class="empty-icon">!</div>
+      <div class="empty-icon"><Icon name="warning" /></div>
       <h2>{t('error.projectFolderNotFound')}</h2>
       <p>{t('project.missing.hint')}</p>
     </div>
   {:else if !prompts.length}
     <div class="library-empty">
-      <div class="empty-icon">⌕</div>
+      <div class="empty-icon"><Icon name="search" /></div>
       <h2>{library.searchQuery || library.folderFilter || library.tagFilter ? t('library.noMatching') : t('library.noPromptsYet')}</h2>
       <p>{library.searchQuery || library.folderFilter || library.tagFilter ? t('library.tryAnotherSearch') : t('library.createFirstPrompt')}</p>
-      {#if !library.searchQuery && !library.folderFilter && !library.tagFilter}<button type="button" class="btn btn--primary" onclick={onNewPrompt}>＋ {t('sidebar.newPrompt')}</button>{/if}
+      {#if !library.searchQuery && !library.folderFilter && !library.tagFilter}<button type="button" class="btn btn--primary" onclick={onNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>{/if}
     </div>
   {:else}
     <div class={'prompt-list prompt-list--' + library.viewMode} role="listbox" aria-label={t('library.list.aria')}>

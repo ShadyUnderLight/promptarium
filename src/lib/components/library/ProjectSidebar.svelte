@@ -21,6 +21,7 @@
   import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import { errorDetail } from '$lib/library/errors';
+  import Icon from '$lib/components/Icon.svelte';
   import ProjectMenu from './ProjectMenu.svelte';
 
   interface Props {
@@ -222,7 +223,7 @@
   <div class="sidebar-section sidebar-section--projects">
     <div class="sidebar-section__heading">
       <span>{t('sidebar.projects')}</span>
-      <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}>＋</button>
+      <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}><Icon name="plus" /></button>
     </div>
 
     {#if addPath !== null}
@@ -231,7 +232,7 @@
         <div class="add-project-row__actions">
           <button type="button" class="btn btn--ghost btn--sm" onclick={browse} disabled={busy}>{t('sidebar.browse')}</button>
           <button type="button" class="btn btn--primary btn--sm" onclick={submitProject} disabled={busy || !addPath.trim()}>{relocateFrom ? t('sidebar.locate') : t('sidebar.add')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={closeAddProject} disabled={busy}>×</button>
+          <button type="button" class="btn btn--ghost btn--sm" aria-label={t('newPrompt.close')} title={t('newPrompt.close')} onclick={closeAddProject} disabled={busy}><Icon name="close" /></button>
         </div>
       </div>
     {/if}
@@ -317,7 +318,7 @@
       <div class="sidebar-section sidebar-section--folders">
         <div class="sidebar-section__heading">
           <span>{t('sidebar.folders')}</span>
-          <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}>＋</button>
+          <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}><Icon name="plus" /></button>
         </div>
         <nav class="sidebar-nav">
           {#each folders as folder (folder.path)}
@@ -330,7 +331,7 @@
               oncontextmenu={(event) => folderMenu(event, folder.path)}
               title={t('sidebar.folder.title')}
             >
-              <span class="folder-glyph">⌄</span><span>{folder.name}</span><span>{folder.promptCount}</span>
+              <span class="folder-glyph"><Icon name="chevron-right" /></span><span>{folder.name}</span><span>{folder.promptCount}</span>
             </button>
           {:else}
             <p class="sidebar-empty">{t('sidebar.folders.empty')}</p>
@@ -352,7 +353,7 @@
       </nav>
     </div>
 
-    <button type="button" class="sidebar-new-prompt" onclick={onNewPrompt}>＋ {t('sidebar.newPrompt')}</button>
+    <button type="button" class="sidebar-new-prompt" onclick={onNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
   {/if}
 </aside>
 

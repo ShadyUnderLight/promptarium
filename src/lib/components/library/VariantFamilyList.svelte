@@ -3,6 +3,7 @@
   import { promptTitle } from '$lib/library.svelte';
   import { resolveVariantFamily, type VariantLink } from '$lib/variants/variants';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
   import type { MessageKey } from '$lib/i18n/locales/en';
 
   interface Props {
@@ -50,7 +51,7 @@
           onclick={() => onNavigate(family.parent!.target!.projectPath, family.parent!.target!.name)}
         >
           <span class="relation-name">{linkLabel(family.parent)}</span>
-          <span class="relation-arrow" aria-hidden="true">→</span>
+          <span class="relation-arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
         </button>
       {:else}
         <div class="relation-row relation-row--{family.parent.status}" title={linkPath(family.parent)}>
@@ -72,7 +73,7 @@
           onclick={() => onNavigate(child.projectPath, child.name)}
         >
           <span class="relation-name">{promptTitle(child.name)}</span>
-          <span class="relation-arrow" aria-hidden="true">→</span>
+          <span class="relation-arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
         </button>
       {/each}
     </div>
@@ -89,7 +90,7 @@
           onclick={() => onNavigate(sibling.projectPath, sibling.name)}
         >
           <span class="relation-name">{promptTitle(sibling.name)}</span>
-          <span class="relation-arrow" aria-hidden="true">→</span>
+          <span class="relation-arrow" aria-hidden="true"><Icon name="arrow-right" /></span>
         </button>
       {/each}
     </div>

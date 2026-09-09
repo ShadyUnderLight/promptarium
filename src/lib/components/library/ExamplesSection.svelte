@@ -3,6 +3,7 @@
   import type { PromptExample, ResolvedPromptAsset } from '$lib/prompts/types';
   import { assetResolutionKey } from '$lib/examples/editor-helpers';
   import { t } from '$lib/i18n/i18n.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   interface Props {
     examples: PromptExample[];
@@ -153,7 +154,7 @@
             aria-expanded={expanded[index] === true}
             onclick={() => toggle(index)}
           >
-            <span class="example-card__chevron">{expanded[index] ? '▾' : '▸'}</span>
+            <span class="example-card__chevron"><Icon name={expanded[index] ? 'chevron-down' : 'chevron-right'} /></span>
             <span class="example-card__name">{example.name || t('examples.fallbackName', { n: index + 1 })}</span>
           </button>
           {#if expanded[index]}
