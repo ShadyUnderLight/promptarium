@@ -282,6 +282,14 @@ body {
   background: var(--surface-regular);
 }
 
+/* macOS Overlay title bar (tauri.conf.json): the system traffic lights are
+   drawn over this bar's leading edge, so the title block must start clear of
+   them. Platforms with a native title bar keep the default padding. The flag
+   is set in +layout.svelte, Tauri + macOS only. */
+[data-platform='macos'] .library-topbar {
+  padding-left: 5.25rem;
+}
+
 .library-topbar__title {
   display: flex;
   align-items: center;

@@ -10,6 +10,12 @@
     // Only in the packaged desktop app — skip in browser preview/dev.
     if (!isTauri()) return;
 
+    // The macOS title bar is overlaid on the webview (tauri.conf.json
+    // titleBarStyle: Overlay), so the system traffic lights sit on top of the
+    // topbar. Flag the platform so CSS can reserve space for them. Other
+    // platforms keep a native title bar outside the webview.
+    if (navigator.userAgent.includes('Mac')) document.documentElement.dataset.platform = 'macos';
+
     // Silent launch check: it surfaces the banner only for an update the user
     // has never been shown, and swallows every failure. There is deliberately no
     // Keep launch checks quiet unless actionable. The footer's manual check is
