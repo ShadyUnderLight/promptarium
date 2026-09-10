@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
 /**
- * Issue #44 window-chrome contract — conditional on adoption.
+ * Issue #44 resolved: Adopt.
  *
- * Overlay removes the native title bar as a drag surface, so whenever the
- * config keeps `titleBarStyle: "Overlay"` the app MUST expose a working drag
- * surface: at least one data-tauri-drag-region in the DOM plus the
- * `core:window:allow-start-dragging` ACL (core:default does NOT include it —
+ * The merged product contract is:
+ * Overlay + drag surface + start-dragging ACL.
+ *
+ * Overlay removes the native title bar as a drag surface, so the topbar title
+ * block must keep its data-tauri-drag-region and the main capability must
+ * keep `core:window:allow-start-dragging` (core:default does NOT include it —
  * cargo test / generate_context! stay green without it because the gap only
- * shows up when the window is dragged). Rejecting Overlay and rolling the
- * config back is a legal outcome of #44 and makes this test vacuously pass.
+ * shows up when the window is dragged). A future deliberate rollback of the
+ * adopted Overlay must update this contract together with the implementation.
  */
 
 const configs = import.meta.glob('../src-tauri/{tauri.conf.json,capabilities/default.json}', {
@@ -32,12 +34,17 @@ const capability = JSON.parse(configs['../src-tauri/capabilities/default.json'])
 };
 
 const overlayOn = (tauriConf.app?.windows ?? []).some((w) => w.titleBarStyle === 'Overlay');
-const dragRegionUsed = Object.values(sources).some((s) => s.includes('data-tauri-drag-region'));
+// Scoped to the topbar title block on purpose: a drag region elsewhere in the
+// app must not stand in for the title bar's drag surface.
+const promptsView = sources['../src/lib/components/PromptsView.svelte'] ?? '';
+const titleBlockDraggable =
+  /class="library-topbar__title"[^>]*data-tauri-drag-region/.test(promptsView) ||
+  /data-tauri-drag-region[^>]*class="library-topbar__title"/.test(promptsView);
 
-describe('titlebar drag contract (Issue #44)', () => {
-  it('provides a working drag surface whenever Overlay is enabled', () => {
-    if (!overlayOn) return;
-    expect(dragRegionUsed).toBe(true);
+describe('titlebar adoption contract (Issue #44)', () => {
+  it('keeps the adopted Overlay titlebar wired for dragging', () => {
+    expect(overlayOn).toBe(true);
+    expect(titleBlockDraggable).toBe(true);
     expect(capability.permissions).toContain('core:window:allow-start-dragging');
   });
 });
