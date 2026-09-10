@@ -196,6 +196,50 @@ describe('status machine value vs display label (Issue #37)', () => {
   });
 });
 
+describe('stale variable-doc placeholders localize (Issue #38 §1)', () => {
+  // A body with no live `{variables}` makes every doc row render from the
+  // stale block — exactly the rows whose placeholders regressed to hardcoded
+  // English in the stale-documentation editor.
+  const staleDocMetadata = {
+    ...documentFixture().metadata,
+    variables: {
+      oldVar: { description: 'old description', example: 'old example' },
+    },
+  };
+
+  it('stale doc rows render localized placeholders and follow a runtime locale switch', async () => {
+    setPreference('en');
+    const { container } = render(PromptMetadataEditor, {
+      props: { metadata: staleDocMetadata, body: 'no live vars here', editing: true, onChange: () => {} },
+    });
+    // Guard: the stale block is actually mounted.
+    expect(screen.getByText('Stale documentation')).toBeTruthy();
+    const inputs = [
+      ...container.querySelectorAll('.variable-doc-edit__fields input'),
+    ] as HTMLInputElement[];
+    expect(inputs).toHaveLength(2);
+    expect(inputs.map((input) => input.placeholder)).toEqual(['Description', 'Example']);
+
+    setPreference('zh-CN');
+    await waitFor(() => {
+      expect(inputs.map((input) => input.placeholder)).toEqual(['描述', '示例']);
+    });
+    setPreference('en');
+    await waitFor(() => {
+      expect(inputs.map((input) => input.placeholder)).toEqual(['Description', 'Example']);
+    });
+  });
+
+  it('the stale heading localizes too', () => {
+    setPreference('zh-CN');
+    render(PromptMetadataEditor, {
+      props: { metadata: staleDocMetadata, body: 'no live vars here', editing: true, onChange: () => {} },
+    });
+    expect(screen.getByText('失效的文档')).toBeTruthy();
+    expect(screen.queryByText('Stale documentation')).toBeNull();
+  });
+});
+
 describe('health: machine code → localized display (Issue #37)', () => {
   const CODES = Object.keys(en)
     .filter((key) => key.startsWith('health.') && !key.endsWith('.detail'))
