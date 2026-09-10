@@ -235,12 +235,12 @@
               <input
                 value={docFor(name)?.description ?? ''}
                 oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
-                placeholder="Description"
+                placeholder={t('meta.variableDescription')}
               />
               <input
                 value={docFor(name)?.example ?? ''}
                 oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
-                placeholder="Example"
+                placeholder={t('meta.variableExample')}
               />
             </div>
           </div>
