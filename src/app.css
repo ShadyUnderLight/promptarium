@@ -321,6 +321,13 @@ body {
   font-size: 0.92rem;
 }
 
+/* The drag region attribute only matches the element it is set on, so the
+   sparkle svg inside the draggable .app-mark must not swallow mousedown —
+   pointer-events: none drops the event target back onto .app-mark itself. */
+.app-mark .icon {
+  pointer-events: none;
+}
+
 .global-search {
   flex: 1;
   max-width: 46rem;
