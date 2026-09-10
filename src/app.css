@@ -282,6 +282,14 @@ body {
   background: var(--surface-regular);
 }
 
+/* macOS Overlay title bar (tauri.conf.json): the system traffic lights are
+   drawn over this bar's leading edge, so the title block must start clear of
+   them. Platforms with a native title bar keep the default padding. The flag
+   is set in +layout.svelte, Tauri + macOS only. */
+[data-platform='macos'] .library-topbar {
+  padding-left: 5.25rem;
+}
+
 .library-topbar__title {
   display: flex;
   align-items: center;
@@ -311,6 +319,13 @@ body {
   color: #fff;
   background: linear-gradient(135deg, #4f7cff, #8b5cf6);
   font-size: 0.92rem;
+}
+
+/* The drag region attribute only matches the element it is set on, so the
+   sparkle svg inside the draggable .app-mark must not swallow mousedown —
+   pointer-events: none drops the event target back onto .app-mark itself. */
+.app-mark .icon {
+  pointer-events: none;
 }
 
 .global-search {

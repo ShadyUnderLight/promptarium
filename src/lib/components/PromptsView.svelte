@@ -335,11 +335,11 @@
 
 <div class="library-shell" class:library-shell--missing={selectedProjectMissing}>
   <div class="library-topbar">
-    <div class="library-topbar__title">
-      <span class="app-mark"><Icon name="sparkle" /></span>
-      <div>
-        <h1>Promptarium</h1>
-        <span>{scopeTitle}</span>
+    <div class="library-topbar__title" data-tauri-drag-region>
+      <span class="app-mark" data-tauri-drag-region><Icon name="sparkle" /></span>
+      <div data-tauri-drag-region>
+        <h1 data-tauri-drag-region>Promptarium</h1>
+        <span data-tauri-drag-region>{scopeTitle}</span>
       </div>
     </div>
     <label class="global-search">
