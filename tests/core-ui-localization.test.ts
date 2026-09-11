@@ -27,7 +27,7 @@ vi.mock('$lib/api', () => ({
 
 const sidebarProps = {
   onNewPrompt: () => {},
-  canNavigate: () => true,
+  canNavigate: async () => true,
   onNotice: () => {},
 };
 

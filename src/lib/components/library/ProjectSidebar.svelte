@@ -26,7 +26,7 @@
 
   interface Props {
     onNewPrompt: () => void;
-    canNavigate: () => boolean;
+    canNavigate: () => Promise<boolean>;
     onNotice: (message: string) => void;
   }
 
@@ -80,7 +80,7 @@
   async function submitProject(): Promise<void> {
     const path = addPath?.trim();
     if (!path) return;
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     const oldPath = relocateFrom;
     busy = true;
     try {
@@ -125,7 +125,7 @@
   }
 
   async function switchProject(path: string): Promise<void> {
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     try {
       await setActiveProject(path);
     } catch (error) {
@@ -134,7 +134,7 @@
   }
 
   async function enterAllProjects(): Promise<void> {
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     if (!library.projects.length) {
       onNotice(t('notice.addProjectFirst'));
       return;
@@ -169,7 +169,7 @@
   }
 
   async function newFolder(): Promise<void> {
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     const name = window.prompt(t('dialog.folderPathInsideProject'), library.folderFilter || '');
     if (!name?.trim()) return;
     try {
@@ -186,7 +186,7 @@
     if (action === 'rename') {
       const next = window.prompt(t('dialog.newFolderPath'), folder);
       if (!next?.trim()) return;
-      if (!canNavigate()) return;
+      if (!(await canNavigate())) return;
       try {
         await renameFolder(folder, next.trim());
         if (library.folderFilter === folder || library.folderFilter.startsWith(folder + '/')) {
@@ -196,7 +196,7 @@
         onNotice(errorDetail(error));
       }
     } else if (action === 'delete' && window.confirm(t('dialog.deleteEmptyFolder', { folder }))) {
-      if (!canNavigate()) return;
+      if (!(await canNavigate())) return;
       try {
         await deleteFolder(folder);
         if (library.folderFilter === folder) library.folderFilter = '';
@@ -209,7 +209,7 @@
   async function forgetMissingProject(): Promise<void> {
     if (!library.activeProjectPath) return;
     if (!window.confirm(t('dialog.forgetMissingProject'))) return;
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     try {
       await forgetProject(library.activeProjectPath);
       onNotice(t('notice.projectForgottenMissing'));

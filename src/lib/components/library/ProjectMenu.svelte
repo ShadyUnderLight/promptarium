@@ -13,7 +13,7 @@
     y: number;
     onClose: () => void;
     onNotice: (message: string) => void;
-    canNavigate: () => boolean;
+    canNavigate: () => Promise<boolean>;
   }
 
   let { project, x, y, onClose, onNotice, canNavigate }: Props = $props();
@@ -45,7 +45,7 @@
 
   async function forget(): Promise<void> {
     if (!window.confirm(t('dialog.forgetProject', { name: project.name }))) return;
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     try {
       await forgetProject(project.path);
       onNotice(t('notice.projectForgottenKept'));

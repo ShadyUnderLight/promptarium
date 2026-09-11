@@ -20,7 +20,7 @@ vi.mock('$lib/api', () => ({
 
 const noopProps = {
   onNewPrompt: () => {},
-  canNavigate: () => true,
+  canNavigate: async () => true,
   onNotice: () => {},
 };
 

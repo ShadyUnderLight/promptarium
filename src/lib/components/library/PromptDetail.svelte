@@ -21,6 +21,7 @@
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
   import ExamplesSection from './ExamplesSection.svelte';
+  import NamePromptDialog from './NamePromptDialog.svelte';
   import { parseError } from '$lib/library/errors';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
 
@@ -219,28 +220,53 @@
     onDismissExternalChange();
   }
 
-  function actionRename(): void {
-    if (!document) return;
-    const next = window.prompt(t('dialog.renamePrompt'), document.name);
-    if (next?.trim() && next.trim() !== document.name) onRename(document, next.trim());
+  /** Pending naming step, while the in-app dialog is open. macOS WKWebView
+   *  shows no native `window.prompt` at all (it resolves to `null`), so the
+   *  name has to come from our own dialog; the actions await this promise. */
+  let nameRequest = $state<{
+    title: string;
+    initial: string;
+    resolve: (value: string | null) => void;
+  } | null>(null);
+
+  function askName(title: string, initial: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      nameRequest = { title, initial, resolve };
+    });
   }
 
-  function actionMove(): void {
-    if (!document) return;
-    const next = window.prompt(t('dialog.movePrompt'), document.name);
-    if (next?.trim() && next.trim() !== document.name) onMove(document, next.trim());
+  function settleName(value: string | null): void {
+    const request = nameRequest;
+    nameRequest = null;
+    request?.resolve(value);
   }
 
-  function actionDuplicate(): void {
-    if (!document) return;
-    const next = window.prompt(t('dialog.duplicateName'), document.name + '-copy');
-    if (next?.trim()) onDuplicate(document, next.trim());
+  async function actionRename(): Promise<void> {
+    const current = document;
+    if (!current) return;
+    const next = (await askName(t('dialog.renamePrompt'), current.name))?.trim();
+    if (next && next !== current.name) onRename(current, next);
   }
 
-  function actionDuplicateAsVariant(): void {
-    if (!document) return;
-    const next = window.prompt(t('dialog.variantName'), document.name + '-variant');
-    if (next?.trim()) onDuplicateAsVariant(document, next.trim());
+  async function actionMove(): Promise<void> {
+    const current = document;
+    if (!current) return;
+    const next = (await askName(t('dialog.movePrompt'), current.name))?.trim();
+    if (next && next !== current.name) onMove(current, next);
+  }
+
+  async function actionDuplicate(): Promise<void> {
+    const current = document;
+    if (!current) return;
+    const next = (await askName(t('dialog.duplicateName'), current.name + '-copy'))?.trim();
+    if (next) onDuplicate(current, next);
+  }
+
+  async function actionDuplicateAsVariant(): Promise<void> {
+    const current = document;
+    if (!current) return;
+    const next = (await askName(t('dialog.variantName'), current.name + '-variant'))?.trim();
+    if (next) onDuplicateAsVariant(current, next);
   }
 
   function actionCompare(): void {
@@ -388,6 +414,15 @@
     </div>
   {/if}
 </section>
+
+{#if nameRequest}
+  <NamePromptDialog
+    title={nameRequest.title}
+    initialValue={nameRequest.initial}
+    onConfirm={settleName}
+    onCancel={() => settleName(null)}
+  />
+{/if}
 
 {#if compareOpen && document && metadata}
   <PromptCompare
