@@ -84,6 +84,44 @@ describe('VariableFillDialog', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it('变量路径保留 escaped literal 的原始 source text', async () => {
+    const onCopy = vi.fn(async () => true);
+
+    render(VariableFillDialog, {
+      props: {
+        body: '{{literal}} + {x}',
+        onCopy,
+        onClose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText('Value for x'), {
+      target: { value: 'value' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy final Prompt' }));
+
+    await waitFor(() => expect(onCopy).toHaveBeenCalledWith('{{literal}} + value'));
+  });
+
+  it('变量路径保留 nested brace 的原始 source text', async () => {
+    const onCopy = vi.fn(async () => true);
+
+    render(VariableFillDialog, {
+      props: {
+        body: '{{{x}}}',
+        onCopy,
+        onClose: vi.fn(),
+      },
+    });
+
+    await fireEvent.input(screen.getByLabelText('Value for x'), {
+      target: { value: 'value' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Copy final Prompt' }));
+
+    await waitFor(() => expect(onCopy).toHaveBeenCalledWith('{{value}}'));
+  });
+
   it('变量填写 Dialog 支持运行时切换英文和简体中文', async () => {
     render(VariableFillDialog, {
       props: {
@@ -94,11 +132,14 @@ describe('VariableFillDialog', () => {
     });
 
     expect(screen.getByText('Fill template variables')).toBeTruthy();
+    const repoInput = screen.getByLabelText('Value for repo') as HTMLTextAreaElement;
+    await fireEvent.input(repoInput, { target: { value: 'org/repo' } });
     setPreference('zh-CN');
     await waitFor(() => {
       expect(screen.getByText('填写模板变量')).toBeTruthy();
       expect(screen.getByRole('button', { name: '复制最终 Prompt' })).toBeTruthy();
     });
+    expect(repoInput.value).toBe('org/repo');
   });
 
   it('Dialog 可以安全填写名为 __proto__ 的变量', async () => {
@@ -209,8 +250,8 @@ describe('PromptDetail variable copy flow', () => {
     const onCopy = vi.fn(async () => true);
     const props = {
       document: documentFixture({
-        body: 'No variables here.',
-        raw: '---\nstatus: active\n---\nNo variables here.',
+        body: 'Show {{repo}}',
+        raw: '---\nstatus: active\n---\nShow {{repo}}',
       }),
       loading: false,
       onSave: vi.fn(async (_document: PromptDocument, body: string) => ({
@@ -234,7 +275,7 @@ describe('PromptDetail variable copy flow', () => {
     render(PromptDetail, { props });
     await fireEvent.click(screen.getByRole('button', { name: 'Copy Prompt' }));
 
-    await waitFor(() => expect(onCopy).toHaveBeenCalledWith('No variables here.'));
+    await waitFor(() => expect(onCopy).toHaveBeenCalledWith('Show {{repo}}'));
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });
