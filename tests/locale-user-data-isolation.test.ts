@@ -124,6 +124,7 @@ const detailProps = {
   onDismissExternalChange: () => {},
   onNotice: () => {},
   onNavigate: () => {},
+  onNameDialogChange: () => {},
 };
 
 function resetLibrary(): void {

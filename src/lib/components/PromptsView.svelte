@@ -44,6 +44,9 @@
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
+  // Prompt Detail owns the naming dialog; it reports its open/closed state up
+  // so the global-shortcut guard below yields to it like it does to our modals.
+  let nameDialogOpen = $state(false);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
     !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
@@ -289,7 +292,7 @@
   }
 
   function onGlobalKeydown(event: KeyboardEvent): void {
-    if (newPromptOpen || deleteTarget || confirmRequest) return;
+    if (newPromptOpen || deleteTarget || confirmRequest || nameDialogOpen) return;
     const modifier = event.metaKey || event.ctrlKey;
     if (!modifier || event.altKey) return;
     const key = event.key.toLowerCase();
@@ -414,6 +417,7 @@
       onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
       onNavigate={handleNavigateRelation}
+      onNameDialogChange={(open) => (nameDialogOpen = open)}
     />
   </div>
 </div>

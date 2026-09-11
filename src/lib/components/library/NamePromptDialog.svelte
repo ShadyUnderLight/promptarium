@@ -32,7 +32,15 @@
 
   function submit(): void {
     const raw = input?.value;
-    if (raw?.trim()) onConfirm(raw);
+    if (raw?.trim()) {
+      onConfirm(raw);
+      return;
+    }
+    // An empty answer behaves like the native prompt it replaces: it closed and
+    // the caller's `if (next)` treated '' as a no-op. Closing here keeps that
+    // contract — a blank submit must not leave an inert dialog on screen that
+    // looks like the button is broken.
+    onCancel();
   }
 
   function handleKeydown(event: KeyboardEvent): void {

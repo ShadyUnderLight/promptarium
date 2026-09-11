@@ -48,6 +48,11 @@
     onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
     onNavigate: (projectPath: string, name: string) => void;
+    /** Reports the naming dialog opening/closing so the shell can make its
+     *  global shortcuts (⌘N/⌘F/⌘S) yield, exactly as it already does for its
+     *  own modals. Without this a modal was open while ⌘N could still stack a
+     *  second one on top and ⌘S could save the editor behind it. */
+    onNameDialogChange: (open: boolean) => void;
   }
 
   let {
@@ -66,6 +71,7 @@
     onDismissExternalChange,
     onNotice,
     onNavigate,
+    onNameDialogChange,
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
@@ -232,12 +238,14 @@
   function askName(title: string, initial: string): Promise<string | null> {
     return new Promise((resolve) => {
       nameRequest = { title, initial, resolve };
+      onNameDialogChange(true);
     });
   }
 
   function settleName(value: string | null): void {
     const request = nameRequest;
     nameRequest = null;
+    onNameDialogChange(false);
     request?.resolve(value);
   }
 

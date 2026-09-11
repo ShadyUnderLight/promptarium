@@ -8,6 +8,10 @@
  * nothing. These tests drive the dialog itself — if a naming step is ever
  * routed back through the native call there is no dialog to type into, so the
  * tests fail instead of quietly regressing again.
+ *
+ * All four actions are covered, plus the two contracts the dialog owes its
+ * caller: it reports open/closed state up (so the shell's global shortcuts can
+ * yield) and a blank submit closes without acting (the native prompt did too).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
@@ -62,6 +66,7 @@ const detailProps = {
   onDismissExternalChange: () => {},
   onNotice: () => {},
   onNavigate: () => {},
+  onNameDialogChange: vi.fn(),
 };
 
 interface DialogParts {
@@ -137,7 +142,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     expect(detailProps.onDuplicateAsVariant).toHaveBeenCalledWith(document, 'a-variant');
   });
 
-  it('重命名 keeps its no-op when the name is unchanged, and moves on change', async () => {
+  it('重命名 keeps its no-op when the name is unchanged, and renames on change', async () => {
     const document = documentFixture();
     const { container } = render(PromptDetail, { props: { ...detailProps, document } });
 
@@ -151,6 +156,58 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     await fireEvent.click(openDialog(container)!.confirm);
 
     await waitFor(() => expect(detailProps.onRename).toHaveBeenCalledWith(document, 'codes/review'));
+  });
+
+  it('移动 asks for the relative path in-app and hands it to onMove', async () => {
+    const document = documentFixture();
+    const { container } = render(PromptDetail, { props: { ...detailProps, document } });
+
+    await fireEvent.click(screen.getByText('移动'));
+
+    const dialog = openDialog(container);
+    expect(dialog).not.toBeNull();
+    expect(screen.getByText('移动提示词到相对路径')).toBeTruthy();
+    expect(dialog!.input.value).toBe('a');
+
+    // Same-name move stays a no-op, like it did before the dialog swap.
+    await fireEvent.click(dialog!.confirm);
+    await flush();
+    expect(detailProps.onMove).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByText('移动'));
+    await fireEvent.input(openDialog(container)!.input, { target: { value: 'codes/review' } });
+    await fireEvent.click(openDialog(container)!.confirm);
+
+    await waitFor(() => expect(detailProps.onMove).toHaveBeenCalledWith(document, 'codes/review'));
+    expect(openDialog(container)).toBeNull();
+  });
+
+  it('reports open/close so the shell can make its global shortcuts yield', async () => {
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+
+    await fireEvent.click(screen.getByText('创建副本'));
+    expect(detailProps.onNameDialogChange).toHaveBeenLastCalledWith(true);
+
+    await fireEvent.click(openDialog(container)!.cancel);
+    await flush();
+    expect(detailProps.onNameDialogChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it('a blank submit closes without acting, matching the native prompt it replaced', async () => {
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+
+    await fireEvent.click(screen.getByText('创建副本'));
+    await fireEvent.input(openDialog(container)!.input, { target: { value: '   ' } });
+    await fireEvent.click(openDialog(container)!.confirm);
+    await flush();
+
+    // The dialog must not sit there looking broken on an empty answer.
+    expect(openDialog(container)).toBeNull();
+    expect(detailProps.onDuplicate).not.toHaveBeenCalled();
   });
 
   it('取消 closes the dialog without acting', async () => {
