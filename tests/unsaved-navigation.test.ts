@@ -10,10 +10,11 @@
  *
  * These tests drive the real shell so that swapping the guard back to a native
  * call fails here instead of regressing quietly, and they pin the modal
- * contracts the review called out: while any modal is open the global
- * shortcuts (⌘N/⌘F/⌘S) must not reach the page behind it — including the
- * naming dialog Prompt Detail owns, which the shell only learned about once it
- * reported its state up.
+ * contract: while **any** overlay is open the global shortcuts (⌘N/⌘F/⌘S) are
+ * swallowed, never reaching the page behind it. That is every overlay the
+ * shell renders itself — New Prompt, delete, unsaved confirm, reload confirm —
+ * plus the two Prompt Detail owns and reports up from inside the detail pane:
+ * the naming dialog and Compare.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
@@ -148,6 +149,9 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  // Restore spied globals even when an assertion threw mid-test, so one
+  // failure cannot leak a stubbed `window.confirm` into the next case.
+  vi.restoreAllMocks();
 });
 
 describe('unsaved-changes guard (window.confirm is unusable on macOS)', () => {
@@ -163,7 +167,6 @@ describe('unsaved-changes guard (window.confirm is unusable on macOS)', () => {
     // The guard asked in-app; it never touched the native confirm.
     expect(confirmSpy).not.toHaveBeenCalled();
     expect(selectPromptMock).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it('Cancel keeps editing: no navigation, dialog closes', async () => {
@@ -209,6 +212,22 @@ describe('global shortcuts yield while a modal is open', () => {
     return dialog.querySelector('input') as HTMLInputElement;
   }
 
+  /**
+   * Dispatch a real chord from `target` and report whether the shell swallowed
+   * it. Bubble is on so the event reaches the window listener, and cancelable
+   * is on so `preventDefault()` is observable.
+   */
+  function pressChord(target: EventTarget, key: string): boolean {
+    const event = new KeyboardEvent('keydown', {
+      key,
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    target.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
   it('control: with no modal open the shortcuts are still live', async () => {
     const { container } = render(PromptsView);
 
@@ -224,13 +243,19 @@ describe('global shortcuts yield while a modal is open', () => {
 
     await fireEvent.click(screen.getByText('重命名'));
     const field = openNamingDialog(container);
+    // ⌘N opens the New Prompt dialog asynchronously, so absent-today is only
+    // meaningful once the handler has had a chance to run.
+    const focusSpy = vi.spyOn(searchInput(container), 'focus');
 
-    fireEvent.keyDown(field, { key: 'n', metaKey: true });
-    fireEvent.keyDown(field, { key: 'f', metaKey: true });
+    // The dialog swallowed both chords rather than merely ignoring them.
+    expect(pressChord(field, 'n')).toBe(true);
+    expect(pressChord(field, 'f')).toBe(true);
+    await flush();
 
-    // No second modal stacked on top, and the search box behind did not grab
+    // No second modal stacked on top, and the search box behind never grabbed
     // focus away from the dialog.
     expect(container.querySelector('.new-prompt-dialog')).toBeNull();
+    expect(focusSpy).not.toHaveBeenCalled();
     expect(document.activeElement).not.toBe(searchInput(container));
     expect(field.isConnected).toBe(true);
   });
@@ -240,7 +265,7 @@ describe('global shortcuts yield while a modal is open', () => {
     await makeEditorDirty(container);
 
     await fireEvent.click(screen.getByText('重命名'));
-    fireEvent.keyDown(openNamingDialog(container), { key: 's', metaKey: true });
+    expect(pressChord(openNamingDialog(container), 's')).toBe(true);
     await flush();
 
     expect(saveDocumentMock).not.toHaveBeenCalled();
@@ -253,9 +278,46 @@ describe('global shortcuts yield while a modal is open', () => {
     await fireEvent.click(rowFor(container, 'b'));
     const dialog = (await screen.findByText(unsavedTitle)).closest('dialog')!;
 
-    fireEvent.keyDown(dialog, { key: 'f', metaKey: true });
+    expect(pressChord(dialog, 'f')).toBe(true);
 
     expect(document.activeElement).not.toBe(searchInput(container));
     expect(container.querySelector('.new-prompt-dialog')).toBeNull();
+  });
+
+  it('⌘N and ⌘F yield to the reload ConfirmDialog as well', async () => {
+    const { container } = render(PromptsView);
+    await makeEditorDirty(container);
+
+    await fireEvent.click(screen.getByRole('button', { name: '刷新提示词库' }));
+    const reloadTitle = '从磁盘重新加载提示词？';
+    const dialog = (await screen.findByText(reloadTitle)).closest('dialog')!;
+    const focusSpy = vi.spyOn(searchInput(container), 'focus');
+
+    // Before the guard counted every overlay, the reload dialog was invisible
+    // to it: ⌘N ran the unsaved guard and stacked a second modal on top of
+    // this one, and ⌘F pulled focus out to the search box behind it. Both
+    // consequences land asynchronously, so they need the flush to be caught.
+    expect(pressChord(dialog, 'n')).toBe(true);
+    expect(pressChord(dialog, 'f')).toBe(true);
+    await flush();
+
+    expect(screen.queryByText(unsavedTitle)).toBeNull();
+    expect(container.querySelector('.new-prompt-dialog')).toBeNull();
+    expect(focusSpy).not.toHaveBeenCalled();
+    expect(screen.getByText(reloadTitle)).toBeTruthy();
+  });
+
+  it('⌘N does not open a second modal over Compare', async () => {
+    const { container } = render(PromptsView);
+
+    await fireEvent.click(screen.getByRole('button', { name: '比较…' }));
+    const compare = container.querySelector('.compare-modal');
+    expect(compare).not.toBeNull();
+
+    expect(pressChord(compare!, 'n')).toBe(true);
+    await flush();
+
+    expect(container.querySelector('.new-prompt-dialog')).toBeNull();
+    expect(container.querySelector('.compare-modal')).not.toBeNull();
   });
 });

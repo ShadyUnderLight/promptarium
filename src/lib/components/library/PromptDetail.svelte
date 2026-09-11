@@ -48,11 +48,11 @@
     onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
     onNavigate: (projectPath: string, name: string) => void;
-    /** Reports the naming dialog opening/closing so the shell can make its
-     *  global shortcuts (⌘N/⌘F/⌘S) yield, exactly as it already does for its
-     *  own modals. Without this a modal was open while ⌘N could still stack a
-     *  second one on top and ⌘S could save the editor behind it. */
-    onNameDialogChange: (open: boolean) => void;
+    /** Reports whether any overlay owned by this pane is open, so the shell
+     *  can make its global shortcuts (⌘N/⌘F/⌘S) yield, exactly as it already
+     *  does for its own modals. Without this a modal was open while ⌘N could
+     *  still stack a second one on top and ⌘S could save the editor behind it. */
+    onModalChange: (open: boolean) => void;
   }
 
   let {
@@ -71,7 +71,7 @@
     onDismissExternalChange,
     onNotice,
     onNavigate,
-    onNameDialogChange,
+    onModalChange,
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
@@ -235,17 +235,27 @@
     resolve: (value: string | null) => void;
   } | null>(null);
 
+  // Everything this pane puts on top of the shell: the naming dialog and the
+  // Compare modal, mirroring the conditions they are rendered under. A third
+  // overlay only has to join this expression — the shell never learns about it
+  // separately, so it cannot forget to yield to one.
+  const modalOpen = $derived(
+    Boolean(nameRequest) || (compareOpen && Boolean(document) && Boolean(metadata))
+  );
+
+  $effect(() => {
+    onModalChange(modalOpen);
+  });
+
   function askName(title: string, initial: string): Promise<string | null> {
     return new Promise((resolve) => {
       nameRequest = { title, initial, resolve };
-      onNameDialogChange(true);
     });
   }
 
   function settleName(value: string | null): void {
     const request = nameRequest;
     nameRequest = null;
-    onNameDialogChange(false);
     request?.resolve(value);
   }
 

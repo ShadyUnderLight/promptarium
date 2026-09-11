@@ -44,9 +44,10 @@
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
-  // Prompt Detail owns the naming dialog; it reports its open/closed state up
-  // so the global-shortcut guard below yields to it like it does to our modals.
-  let nameDialogOpen = $state(false);
+  // Prompt Detail owns overlays this shell cannot see (the naming dialog, the
+  // Compare modal); it reports whether any of them is open so the global-
+  // shortcut guard below yields to it like it does to our own modals.
+  let detailModalOpen = $state(false);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
     !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
@@ -98,6 +99,19 @@
     confirmRequest = null;
     request?.resolve(ok);
   }
+
+  // Every overlay on screen at once — the four rendered here plus whatever
+  // Prompt Detail reports. Each one takes over the keyboard context, so the
+  // global shortcuts have to yield to all of them: an overlay this expression
+  // forgets is one where ⌘N stacks a second modal, ⌘F steals focus out of it
+  // and ⌘S saves the editor hidden behind it.
+  const shellModalOpen = $derived(
+    newPromptOpen ||
+      refreshPending ||
+      Boolean(deleteTarget) ||
+      Boolean(confirmRequest) ||
+      detailModalOpen
+  );
 
   async function canNavigate(): Promise<boolean> {
     if (!detailDirty) return true;
@@ -292,13 +306,22 @@
   }
 
   function onGlobalKeydown(event: KeyboardEvent): void {
-    if (newPromptOpen || deleteTarget || confirmRequest || nameDialogOpen) return;
     const modifier = event.metaKey || event.ctrlKey;
     if (!modifier || event.altKey) return;
     const key = event.key.toLowerCase();
+    if (key !== 'n' && key !== 'f' && key !== 's') return;
+
+    // An open modal owns the keyboard: swallow the chord rather than acting on
+    // the page behind it, so it cannot stack a second modal on top, pull focus
+    // out, or save a hidden editor.
+    if (shellModalOpen) {
+      event.preventDefault();
+      return;
+    }
+
     if (key === 'n') {
       event.preventDefault();
-      openNewPrompt();
+      void openNewPrompt();
     } else if (key === 'f') {
       event.preventDefault();
       searchInput?.focus();
@@ -417,7 +440,7 @@
       onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
       onNavigate={handleNavigateRelation}
-      onNameDialogChange={(open) => (nameDialogOpen = open)}
+      onModalChange={(open) => (detailModalOpen = open)}
     />
   </div>
 </div>

@@ -73,7 +73,7 @@ const detailProps = {
   onDismissExternalChange: () => {},
   onNotice: () => {},
   onNavigate: () => {},
-  onNameDialogChange: () => {},
+  onModalChange: () => {},
 };
 
 beforeEach(() => {
