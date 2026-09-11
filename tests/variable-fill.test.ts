@@ -126,7 +126,10 @@ describe('VariableFillDialog', () => {
   });
 
   it('剪贴板失败时保留已填写内容和 Dialog', async () => {
-    const onCopy = vi.fn(async () => false);
+    const onCopy = vi.fn(async () => {
+      document.body.focus();
+      return false;
+    });
     const onClose = vi.fn();
 
     render(VariableFillDialog, {
@@ -140,12 +143,16 @@ describe('VariableFillDialog', () => {
     await fireEvent.input(screen.getByLabelText('Value for repo'), {
       target: { value: 'org/repo' },
     });
-    await fireEvent.click(screen.getByRole('button', { name: 'Copy final Prompt' }));
+    const copyButton = screen.getByRole('button', { name: 'Copy final Prompt' });
+    copyButton.focus();
+    await fireEvent.click(copyButton);
 
     await waitFor(() => expect(onCopy).toHaveBeenCalledWith('Review org/repo.'));
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog')).toBeTruthy();
     expect((screen.getByLabelText('Value for repo') as HTMLTextAreaElement).value).toBe('org/repo');
+    expect(document.activeElement).toBe(copyButton);
+    expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true);
   });
 });
 
@@ -174,6 +181,10 @@ describe('PromptDetail variable copy flow', () => {
     };
 
     render(PromptDetail, { props });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    await fireEvent.input(screen.getByLabelText('Prompt Markdown'), {
+      target: { value: 'Review {repo} for {goal} in {scope}.' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Copy Prompt' }));
     expect(screen.getByRole('dialog')).toBeTruthy();
 
@@ -183,9 +194,14 @@ describe('PromptDetail variable copy flow', () => {
     await fireEvent.input(screen.getByLabelText('Value for goal'), {
       target: { value: 'security' },
     });
+    await fireEvent.input(screen.getByLabelText('Value for scope'), {
+      target: { value: 'focused scope' },
+    });
     await fireEvent.click(screen.getByRole('button', { name: 'Copy final Prompt' }));
 
-    await waitFor(() => expect(onCopy).toHaveBeenCalledWith('Review org/repo for security.'));
+    await waitFor(() =>
+      expect(onCopy).toHaveBeenCalledWith('Review org/repo for security in focused scope.')
+    );
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 

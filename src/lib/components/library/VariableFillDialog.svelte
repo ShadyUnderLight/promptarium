@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { focusTrap } from '$lib/attachments/focusTrap';
   import type { VariableDoc } from '$lib/prompts/types';
   import { parseVariables, renderFilledPrompt } from '$lib/variables/variables';
@@ -13,6 +14,7 @@
   }
 
   let { body, annotations, onCopy, onClose }: Props = $props();
+  let dialog: HTMLDialogElement | undefined = $state(undefined);
   let fills = $state<Record<string, string>>({});
   let busy = $state(false);
   const variables = $derived(parseVariables(body));
@@ -31,12 +33,22 @@
 
   async function copy(): Promise<void> {
     if (busy) return;
+    const focusBeforeCopy =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
     busy = true;
+    let copied = false;
     try {
-      const copied = await onCopy(renderFilledPrompt(body, fills));
-      if (copied) onClose();
+      copied = await onCopy(renderFilledPrompt(body, fills));
     } finally {
       busy = false;
+    }
+    if (copied) {
+      onClose();
+      return;
+    }
+    await tick();
+    if (focusBeforeCopy && dialog?.contains(focusBeforeCopy)) {
+      focusBeforeCopy.focus();
     }
   }
 
@@ -51,6 +63,7 @@
 <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && onClose()}>
   <dialog
     open
+    bind:this={dialog}
     class="modal variable-fill-dialog"
     aria-labelledby="variable-fill-title"
     onkeydown={handleKeydown}
