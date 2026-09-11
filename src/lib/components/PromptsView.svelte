@@ -144,8 +144,10 @@
     }
   }
 
-  function handleCopy(body: string): void {
-    void copyToClipboard(body).then((ok) => notice(ok ? t('notice.promptCopied') : t('notice.copyFailed')));
+  async function handleCopy(body: string): Promise<boolean> {
+    const ok = await copyToClipboard(body);
+    notice(ok ? t('notice.promptCopied') : t('notice.copyFailed'));
+    return ok;
   }
 
   function handleReveal(document: PromptDocument): void {

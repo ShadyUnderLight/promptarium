@@ -21,8 +21,10 @@
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
   import ExamplesSection from './ExamplesSection.svelte';
+  import VariableFillDialog from './VariableFillDialog.svelte';
   import { parseError } from '$lib/library/errors';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
+  import { parseVariables } from '$lib/variables/variables';
 
   interface Props {
     document: PromptDocument | null;
@@ -36,7 +38,7 @@
       expectedRaw: string | undefined
     ) => Promise<PromptDocument>;
     onReload: (document: PromptDocument) => Promise<void>;
-    onCopy: (body: string) => void;
+    onCopy: (body: string) => Promise<boolean>;
     onReveal: (document: PromptDocument) => void;
     onRename: (document: PromptDocument, newName: string) => void;
     onMove: (document: PromptDocument, destination: string) => void;
@@ -69,6 +71,7 @@
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
   let compareOpen = $state(false);
+  let fillDialogOpen = $state(false);
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
   let originalBody = $state('');
@@ -106,6 +109,7 @@
     const current = document;
     if (!current) {
       loadedKey = '';
+      fillDialogOpen = false;
       metadata = null;
       originalMetadata = null;
       body = '';
@@ -118,6 +122,7 @@
     const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
+    fillDialogOpen = false;
     body = current.body;
     originalBody = current.body;
     metadata = cloneMetadata(current.metadata);
@@ -248,6 +253,14 @@
     compareOpen = true;
   }
 
+  function actionCopy(): void {
+    if (parseVariables(body).length) {
+      fillDialogOpen = true;
+      return;
+    }
+    void onCopy(body);
+  }
+
   function setMode(next: 'preview' | 'edit' | 'history'): void {
     mode = next;
     if (next === 'history' && document) {
@@ -288,7 +301,7 @@
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
       </div>
       <div class="detail-header__actions">
-        <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>{t('detail.copy')}</button>
+        <button type="button" class="btn btn--primary btn--sm" onclick={actionCopy}>{t('detail.copy')}</button>
         <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>{t('detail.reveal')}</button>
       </div>
     </div>
@@ -388,6 +401,15 @@
     </div>
   {/if}
 </section>
+
+{#if fillDialogOpen && document && metadata}
+  <VariableFillDialog
+    body={body}
+    annotations={metadata.variables}
+    onCopy={onCopy}
+    onClose={() => (fillDialogOpen = false)}
+  />
+{/if}
 
 {#if compareOpen && document && metadata}
   <PromptCompare
