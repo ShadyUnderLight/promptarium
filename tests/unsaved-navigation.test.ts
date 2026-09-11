@@ -13,8 +13,9 @@
  * contract: while **any** overlay is open the global shortcuts (⌘N/⌘F/⌘S) are
  * swallowed, never reaching the page behind it. That is every overlay in the
  * app — New Prompt, delete, unsaved confirm and reload confirm, which the shell
- * renders itself; the naming dialog and Compare, which Prompt Detail reports
- * up; and the sidebar's project menu.
+ * renders itself; the naming dialog and Compare, which the shell sees as open
+ * `<dialog class="modal">` elements; and the sidebar's project menu, the one
+ * overlay that is not a dialog and therefore has to report itself.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';

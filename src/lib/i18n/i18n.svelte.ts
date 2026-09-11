@@ -100,7 +100,7 @@ export function interpolateMessage(text: string, params?: MessageParams): string
   if (!params) return text;
   let out = text;
   for (const [name, value] of Object.entries(params)) {
-    out = out.replaceAll(`{${name}}`, String(value));
+    out = out.replaceAll(`{${name}}`, () => String(value));
   }
   return out;
 }

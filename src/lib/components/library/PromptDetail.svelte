@@ -21,9 +21,11 @@
   import VariantFamilyList from './VariantFamilyList.svelte';
   import PromptCompare from './PromptCompare.svelte';
   import ExamplesSection from './ExamplesSection.svelte';
+  import VariableFillDialog from './VariableFillDialog.svelte';
   import NamePromptDialog from './NamePromptDialog.svelte';
   import { parseError } from '$lib/library/errors';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
+  import { parseVariables } from '$lib/variables/variables';
 
   interface Props {
     document: PromptDocument | null;
@@ -37,7 +39,7 @@
       expectedRaw: string | undefined
     ) => Promise<PromptDocument>;
     onReload: (document: PromptDocument) => Promise<void>;
-    onCopy: (body: string) => void;
+    onCopy: (body: string) => Promise<boolean>;
     onReveal: (document: PromptDocument) => void;
     onRename: (document: PromptDocument, newName: string) => void;
     onMove: (document: PromptDocument, destination: string) => void;
@@ -48,11 +50,6 @@
     onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
     onNavigate: (projectPath: string, name: string) => void;
-    /** Reports whether any overlay owned by this pane is open, so the shell
-     *  can make its global shortcuts (⌘N/⌘F/⌘S) yield, exactly as it already
-     *  does for its own modals. Without this a modal was open while ⌘N could
-     *  still stack a second one on top and ⌘S could save the editor behind it. */
-    onModalChange: (open: boolean) => void;
   }
 
   let {
@@ -71,11 +68,11 @@
     onDismissExternalChange,
     onNotice,
     onNavigate,
-    onModalChange,
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
   let compareOpen = $state(false);
+  let fillDialogOpen = $state(false);
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
   let originalBody = $state('');
@@ -87,6 +84,27 @@
   let saveError = $state('');
   let saveConflict = $state(false);
   let saving = $state(false);
+  // The naming step for rename/move/duplicate/variant. `window.prompt` cannot
+  // stand in for it: on macOS the WKWebView UI delegate implements no text-input
+  // panel, so it resolves to `null` without showing anything and those four
+  // actions silently did nothing in the packaged app.
+  let nameRequest = $state<{
+    title: string;
+    initial: string;
+    resolve: (value: string | null) => void;
+  } | null>(null);
+
+  function askName(title: string, initial: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      nameRequest = { title, initial, resolve };
+    });
+  }
+
+  function settleName(value: string | null): void {
+    const request = nameRequest;
+    nameRequest = null;
+    request?.resolve(value);
+  }
 
   const dirty = $derived(
     Boolean(document && metadata && originalMetadata && (body !== originalBody || JSON.stringify(metadata) !== JSON.stringify(originalMetadata)))
@@ -113,6 +131,7 @@
     const current = document;
     if (!current) {
       loadedKey = '';
+      fillDialogOpen = false;
       metadata = null;
       originalMetadata = null;
       body = '';
@@ -125,6 +144,7 @@
     const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
+    fillDialogOpen = false;
     body = current.body;
     originalBody = current.body;
     metadata = cloneMetadata(current.metadata);
@@ -226,39 +246,9 @@
     onDismissExternalChange();
   }
 
-  /** Pending naming step, while the in-app dialog is open. macOS WKWebView
-   *  shows no native `window.prompt` at all (it resolves to `null`), so the
-   *  name has to come from our own dialog; the actions await this promise. */
-  let nameRequest = $state<{
-    title: string;
-    initial: string;
-    resolve: (value: string | null) => void;
-  } | null>(null);
-
-  // Everything this pane puts on top of the shell: the naming dialog and the
-  // Compare modal, mirroring the conditions they are rendered under. A third
-  // overlay only has to join this expression — the shell never learns about it
-  // separately, so it cannot forget to yield to one.
-  const modalOpen = $derived(
-    Boolean(nameRequest) || (compareOpen && Boolean(document) && Boolean(metadata))
-  );
-
-  $effect(() => {
-    onModalChange(modalOpen);
-  });
-
-  function askName(title: string, initial: string): Promise<string | null> {
-    return new Promise((resolve) => {
-      nameRequest = { title, initial, resolve };
-    });
-  }
-
-  function settleName(value: string | null): void {
-    const request = nameRequest;
-    nameRequest = null;
-    request?.resolve(value);
-  }
-
+  // The four naming actions capture `document` before awaiting the dialog: the
+  // selected document can change while the dialog is up, and the name the user
+  // typed belongs to the one they opened it for.
   async function actionRename(): Promise<void> {
     const current = document;
     if (!current) return;
@@ -290,6 +280,14 @@
   function actionCompare(): void {
     if (!document) return;
     compareOpen = true;
+  }
+
+  function actionCopy(): void {
+    if (parseVariables(body).length) {
+      fillDialogOpen = true;
+      return;
+    }
+    void onCopy(body);
   }
 
   function setMode(next: 'preview' | 'edit' | 'history'): void {
@@ -332,7 +330,7 @@
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
       </div>
       <div class="detail-header__actions">
-        <button type="button" class="btn btn--primary btn--sm" onclick={() => onCopy(body)}>{t('detail.copy')}</button>
+        <button type="button" class="btn btn--primary btn--sm" onclick={actionCopy}>{t('detail.copy')}</button>
         <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>{t('detail.reveal')}</button>
       </div>
     </div>
@@ -432,6 +430,15 @@
     </div>
   {/if}
 </section>
+
+{#if fillDialogOpen && document && metadata}
+  <VariableFillDialog
+    body={body}
+    annotations={metadata.variables}
+    onCopy={onCopy}
+    onClose={() => (fillDialogOpen = false)}
+  />
+{/if}
 
 {#if nameRequest}
   <NamePromptDialog

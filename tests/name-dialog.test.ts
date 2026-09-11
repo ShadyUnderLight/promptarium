@@ -9,12 +9,13 @@
  * routed back through the native call there is no dialog to type into, so the
  * tests fail instead of quietly regressing again.
  *
- * All four actions are covered, plus the contracts the dialog owes its caller:
- * it reports open/closed state up (so the shell's global shortcuts can yield)
- * and a blank submit closes without acting (the native prompt did too).
+ * All four actions are covered, plus the contract the dialog owes its caller on
+ * the way out: a blank submit closes without acting, exactly as the native
+ * prompt did.
  *
- * The state that goes up covers *every* overlay this pane owns, Compare
- * included — an overlay the shell cannot see is one whose shortcuts leak.
+ * The shell's side of the contract — that the shortcuts yield while one of
+ * these dialogs is open — lives in unsaved-navigation.test.ts, which drives the
+ * real shell and sees the dialog through the DOM.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
@@ -69,7 +70,6 @@ const detailProps = {
   onDismissExternalChange: () => {},
   onNotice: () => {},
   onNavigate: () => {},
-  onModalChange: vi.fn(),
 };
 
 interface DialogParts {
@@ -183,33 +183,6 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
 
     await waitFor(() => expect(detailProps.onMove).toHaveBeenCalledWith(document, 'codes/review'));
     expect(openDialog(container)).toBeNull();
-  });
-
-  it('reports the naming dialog open/close so the shell can yield to it', async () => {
-    const { container } = render(PromptDetail, {
-      props: { ...detailProps, document: documentFixture() },
-    });
-
-    await fireEvent.click(screen.getByText('创建副本'));
-    await waitFor(() => expect(detailProps.onModalChange).toHaveBeenLastCalledWith(true));
-
-    await fireEvent.click(openDialog(container)!.cancel);
-    await waitFor(() => expect(detailProps.onModalChange).toHaveBeenLastCalledWith(false));
-  });
-
-  it('reports Compare as an overlay too, so the shell yields to it as well', async () => {
-    const { container } = render(PromptDetail, {
-      props: { ...detailProps, document: documentFixture() },
-    });
-
-    await fireEvent.click(screen.getByRole('button', { name: '比较…' }));
-    const compare = container.querySelector('.compare-modal');
-    expect(compare).not.toBeNull();
-    await waitFor(() => expect(detailProps.onModalChange).toHaveBeenLastCalledWith(true));
-
-    await fireEvent.click(compare!.querySelector('.compare-modal__controls .btn') as HTMLButtonElement);
-    await waitFor(() => expect(detailProps.onModalChange).toHaveBeenLastCalledWith(false));
-    expect(container.querySelector('.compare-modal')).toBeNull();
   });
 
   it('a blank submit closes without acting, matching the native prompt it replaced', async () => {

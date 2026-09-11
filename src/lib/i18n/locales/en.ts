@@ -220,6 +220,18 @@ export const en = {
   'detail.editor.hint': 'Markdown is stored as written. Cmd/Ctrl+S saves the file.',
   'detail.emptyBody': 'This prompt has an empty body.',
 
+  // Prompt variable fill dialog.
+  'variableFill.eyebrow': 'Prompt variables',
+  'variableFill.title': 'Fill template variables',
+  'variableFill.close': 'Close variable form',
+  'variableFill.hint': 'Fill the values for this copy. These values are temporary and will not change the Prompt file.',
+  'variableFill.field': 'Value for {name}',
+  'variableFill.emptyPlaceholder': 'Leave empty to remove this variable',
+  'variableFill.example': 'Example: {example}',
+  'variableFill.cancel': 'Cancel',
+  'variableFill.copying': 'Copying…',
+  'variableFill.copy': 'Copy final Prompt',
+
   // Prompt Detail / navigation dialogs. User values passed as params stay raw.
   'dialog.renamePrompt': 'Rename prompt file',
   'dialog.movePrompt': 'Move prompt to relative path',

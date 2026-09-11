@@ -44,11 +44,9 @@
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
-  // Two panes own overlays this shell cannot see — Prompt Detail (the naming
-  // dialog and the Compare modal) and the project sidebar (the project menu).
-  // Each reports whether any of its own is open, so the guard below yields to
-  // them exactly as it does to our modals.
-  let detailModalOpen = $state(false);
+  // The project sidebar's context menu is the one overlay in the app that is not
+  // a `<dialog>`: it renders a `.context-backdrop` with a focus trap, so while it
+  // is up it owns the keyboard and has to be counted by the guard below.
   let sidebarModalOpen = $state(false);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
@@ -101,24 +99,6 @@
     confirmRequest = null;
     request?.resolve(ok);
   }
-
-  // Every overlay in the app: New Prompt and the three ConfirmDialog cases
-  // rendered here, the two the detail pane reports (its naming dialog and
-  // Compare), and the sidebar's project menu. Each takes over the keyboard
-  // context, so the global shortcuts have to yield to all of them — an overlay
-  // this expression forgets is one where ⌘N stacks a second modal on top, ⌘F
-  // steals focus out of it and ⌘S saves the editor hidden behind it. These are
-  // the only `.modal-backdrop` and `.context-backdrop` users in the app; a new
-  // one belongs in this expression. Floating banners and toasts are deliberately
-  // absent — they do not take the keyboard.
-  const shellModalOpen = $derived(
-    newPromptOpen ||
-      refreshPending ||
-      Boolean(deleteTarget) ||
-      Boolean(confirmRequest) ||
-      detailModalOpen ||
-      sidebarModalOpen
-  );
 
   async function canNavigate(): Promise<boolean> {
     if (!detailDirty) return true;
@@ -190,8 +170,10 @@
     }
   }
 
-  function handleCopy(body: string): void {
-    void copyToClipboard(body).then((ok) => notice(ok ? t('notice.promptCopied') : t('notice.copyFailed')));
+  async function handleCopy(body: string): Promise<boolean> {
+    const ok = await copyToClipboard(body);
+    notice(ok ? t('notice.promptCopied') : t('notice.copyFailed'));
+    return ok;
   }
 
   function handleReveal(document: PromptDocument): void {
@@ -312,20 +294,28 @@
     else notice(tPlural('notice.batchUpdated', succeeded));
   }
 
+  // Any overlay that owns the keyboard right now: the shell's own three flags,
+  // every `<dialog class="modal">` any pane has open (New Prompt, the naming
+  // dialog, the confirms, Compare, variable fill), and the sidebar's project
+  // menu — the only one of them that is not a dialog.
+  function hasOpenModal(): boolean {
+    return Boolean(
+      newPromptOpen ||
+        deleteTarget ||
+        refreshPending ||
+        sidebarModalOpen ||
+        document.querySelector('dialog.modal[open]')
+    );
+  }
+
   function onGlobalKeydown(event: KeyboardEvent): void {
     const modifier = event.metaKey || event.ctrlKey;
     if (!modifier || event.altKey) return;
     const key = event.key.toLowerCase();
-    if (key !== 'n' && key !== 'f' && key !== 's') return;
-
-    // An open modal owns the keyboard: swallow the chord rather than acting on
-    // the page behind it, so it cannot stack a second modal on top, pull focus
-    // out, or save a hidden editor.
-    if (shellModalOpen) {
-      event.preventDefault();
+    if (hasOpenModal()) {
+      if (key === 'n' || key === 'f' || key === 's') event.preventDefault();
       return;
     }
-
     if (key === 'n') {
       event.preventDefault();
       void openNewPrompt();
@@ -452,7 +442,6 @@
       onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
       onNavigate={handleNavigateRelation}
-      onModalChange={(open) => (detailModalOpen = open)}
     />
   </div>
 </div>

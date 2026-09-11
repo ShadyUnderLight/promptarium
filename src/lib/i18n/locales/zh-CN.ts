@@ -216,6 +216,18 @@ export const zhCN = {
   'detail.editor.hint': 'Markdown 按原样存储。Cmd/Ctrl+S 保存文件。',
   'detail.emptyBody': '此提示词的正文为空。',
 
+  // Prompt 变量填写对话框。
+  'variableFill.eyebrow': '提示词变量',
+  'variableFill.title': '填写模板变量',
+  'variableFill.close': '关闭变量填写表单',
+  'variableFill.hint': '填写本次复制所需的变量值。这些值只在本次操作中使用，不会修改 Prompt 文件。',
+  'variableFill.field': '{name} 的值',
+  'variableFill.emptyPlaceholder': '留空即可移除该变量',
+  'variableFill.example': '示例：{example}',
+  'variableFill.cancel': '取消',
+  'variableFill.copying': '复制中…',
+  'variableFill.copy': '复制最终 Prompt',
+
   // Prompt Detail / 导航对话框。用户值通过参数传入，保持原样。
   'dialog.renamePrompt': '重命名提示词文件',
   'dialog.movePrompt': '移动提示词到相对路径',

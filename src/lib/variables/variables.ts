@@ -1,6 +1,7 @@
 /**
- * The variable grammar + copy-output builder. As of v0.13 this is the ONE AND
- * ONLY implementation — the Rust half (`prompts/grammar.rs`) is deleted, because
+ * Prompt 变量语法与填充后的纯文本渲染。这里是唯一实现；Rust 不参与 body
+ * 变量解析，避免前后端维护两套 grammar。原有 Rust half (`prompts/grammar.rs`)
+ * 已删除，因为
  * after the schema cut nothing in the backend parses variables. There is no
  * second implementation to drift from, and so no cross-language vector table to
  * keep in sync; the vectors live in tests/prompts_smoke.mjs, one copy.
@@ -15,8 +16,7 @@
  * whole rule, and it is deliberately a rule the user already knows.
  *
  *   1. `{name}` is a variable, where name is [A-Za-z0-9_-]+ (case-sensitive).
- *   2. `{{` emits a literal `{`; `}}` emits a literal `}`. To get a literal
- *      `{{`, write `{{{{` — exactly as in Python.
+ *   2. `{{` 与 `}}` 是转义语法，不会生成变量 source span。
  *   3. Anything else braced is literal, because Python could not read it as a
  *      plain field either: `{my var}`, `{a.b}`, `{:x}`, `{"json": 1}`,
  *      `{ return x }`, and `{task:write tests}` (the removed default form) all
@@ -28,16 +28,9 @@
  *      dedupe. The model cannot tell two identically-named variables apart, so
  *      pretending they differ would be a fiction the UI maintains and the output
  *      discards.
- *   5. An unfilled variable resolves to the literal sentinel
- *      `variable not set, ask user for it`. A forgotten variable therefore still
- *      produces a working prompt: the model asks, rather than silently
- *      receiving a blank or a stray `{placeholder}`.
- *   6. Every variable is always hoisted on copy: `{name}` becomes
- *      `<prompt_var name="name"/>` in place, and one `<prompt_vars>` block,
- *      appended at the end, carries each distinct name's value once. Round 1
- *      had a per-variable as-variable toggle; round 2 cut it — a control nobody
- *      flipped is the archetype of the forgotten feature this whole redesign
- *      exists to delete. See `copyText` below.
+ *   5. 填充变量时直接使用对应字符串，缺失值和空值都输出空字符串。
+ *   6. `renderFilledPrompt` 只替换变量 source span，不使用 normalized literal
+ *      token 重建文本。
  *
  * ── There is no Markdown awareness. Do not add any. ──────────────────────────
  *
@@ -59,37 +52,25 @@
  * would in Python. The UI surfacing every parsed variable is what makes this
  * safe.
  *
- * ⚠ The one case that IS silent, named here so nobody "fixes" it back into a
- * carve-out: a body containing `{{` inside a code sample — say a Rust
- * `format!("{{}}")` — unescapes to `format!("{}")` on copy. That is not a bug.
- * Under Python semantics `{{` MEANS a literal brace, so unescaping it is correct,
- * and a user who wants a literal `{{` writes `{{{{` — again, exactly as in
- * Python. Re-introducing a fence carve-out to "protect" this would trade one
- * quiet surprise for an unguessable rule, which is the worse trade.
+ * 转义花括号属于非变量源码，renderFilledPrompt 会逐字保留它们。需要替换
+ * 的只有 scanner 返回的变量 source span，不会因为同一段 body 中出现其他
+ * 变量而改变这些字面量。
  */
 
-/** What an unfilled variable becomes on copy (rule 5). */
-export const UNSET_VALUE = 'variable not set, ask user for it';
-
-/** One distinct variable: a name, and nothing else. Every variable is a string,
- *  and none carries a default — they all collapsed into UNSET_VALUE. */
+/** 一个去重后的变量名。变量值不属于 Prompt 文档本身。 */
 export interface Variable {
   name: string;
 }
 
-/** A lexed run. A `literal` token is ready to emit — escapes already resolved. */
+/** 扫描得到的 token；literal token 仅用于解析，渲染会改用原始 source slice。 */
 type Token =
   | { kind: 'literal'; text: string }
   | { kind: 'variable'; name: string; start: number; end: number };
 
-/** A variable at the start of the slice. This regex IS rule 3: everything that
- *  "stays literal" does so by failing to match here, not by a carve-out. The
- *  absence of a `:` branch is what makes `{task:write tests}` fall through to
- *  prose — the removed default form needs no special case. */
+/** 判断当前位置是否是合法变量。 */
 const VAR_AT = /^\{([A-Za-z0-9_-]+)\}/;
 
-/** The token stream: one uniform left-to-right pass over the whole document. No
- *  Markdown awareness, by design — see the module header before adding any. */
+/** 从左到右扫描全文，不感知 Markdown 结构。 */
 function scan(text: string): Token[] {
   const tokens: Token[] = [];
   let literal = '';
@@ -126,7 +107,7 @@ function scan(text: string): Token[] {
   return tokens;
 }
 
-/** Distinct variables in `text`, first-appearance order (rule 4). */
+/** 按首次出现顺序返回去重后的变量。 */
 export function parseVariables(text: string): Variable[] {
   const seen = new Set<string>();
   const vars: Variable[] = [];
@@ -139,61 +120,35 @@ export function parseVariables(text: string): Variable[] {
   return vars;
 }
 
-/** Source spans for preview decoration. This is exposed from the same scanner
- * used by parseVariables/copyText so the Markdown renderer cannot grow a
- * second, subtly different variable grammar. Spans include the original braces
- * and preserve escaped source text everywhere else. */
+/** 返回预览高亮使用的变量源码区间。 */
 export function variableSpans(text: string): Array<{ start: number; end: number; name: string }> {
   return scan(text).flatMap((token) =>
     token.kind === 'variable' ? [{ start: token.start, end: token.end, name: token.name }] : []
   );
 }
 
-/** A variable's effective value. An empty input reads as untouched, so it
- *  resolves to the sentinel exactly as an absent one does (rule 5). There is
- *  deliberately no way to fill a variable with the empty string — to say
- *  nothing, delete the `{name}`. */
+/** 读取一次填充值，缺失值和 undefined 都按空字符串处理。 */
 function resolve(name: string, fills: Record<string, string>): string {
-  const filled = fills[name];
-  return filled !== undefined && filled !== '' ? filled : UNSET_VALUE;
-}
-
-/** XML-escape a value interpolated into the <prompt_vars> block: the wrapper
- *  form exists to be parseable, and an unescaped value containing
- *  `</prompt_var>` would inject phantom variables into what the reading LLM
- *  sees. `&` first — escaping it later would re-escape the entities just
- *  produced. Names need no escaping: rule 1's name class is attribute-safe by
- *  construction. */
-function escapeXml(value: string): string {
-  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  return Object.hasOwn(fills, name) ? (fills[name] ?? '') : '';
 }
 
 /**
- * The Copy Prompt output.
+ * 只替换 scanner 识别出的变量 source span，其他源码逐字保留。
  *
- * Round 2 cut the per-variable as-variable toggle (a control nobody flipped —
- * the archetype of the forgotten feature this whole redesign exists to
- * delete). Every variable is now always hoisted: every occurrence becomes
- * `<prompt_var name="x"/>`, and one `<prompt_vars>` block, appended at the end,
- * carries each distinct name's value once, in first-appearance order,
- * XML-escaped.
- *
- * An unfilled variable resolves to UNSET_VALUE (rule 5) — a forgotten variable
- * still produces a working prompt, the model just asks.
+ * 因此 `{{repo}}` 在复制时仍是 `{{repo}}`；如果 body 同时含有 `{goal}`，
+ * 填写 goal 也不会改变前者。填充值不会再次参与解析或转义。
  */
-export function copyText(text: string, fills: Record<string, string>): string {
-  const out: string[] = [];
-  for (const t of scan(text)) {
-    if (t.kind === 'literal') out.push(t.text);
-    else out.push(`<prompt_var name="${t.name}"/>`);
-  }
+export function renderFilledPrompt(text: string, fills: Record<string, string>): string {
+  const spans = variableSpans(text);
+  if (!spans.length) return text;
 
-  const vars = parseVariables(text);
-  if (vars.length) {
-    const entries = vars.map(
-      (v) => `<prompt_var name="${v.name}">${escapeXml(resolve(v.name, fills))}</prompt_var>`
-    );
-    out.push(`\n\n<prompt_vars>\n${entries.join('\n')}\n</prompt_vars>`);
+  const out: string[] = [];
+  let cursor = 0;
+  for (const span of spans) {
+    out.push(text.slice(cursor, span.start));
+    out.push(resolve(span.name, fills));
+    cursor = span.end;
   }
+  out.push(text.slice(cursor));
   return out.join('');
 }
