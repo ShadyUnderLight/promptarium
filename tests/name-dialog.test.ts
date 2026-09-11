@@ -59,7 +59,7 @@ const detailProps = {
   loading: false,
   onSave: vi.fn(async (document: PromptDocument, body: string) => ({ ...document, body })),
   onReload: vi.fn(async () => undefined),
-  onCopy: () => {},
+  onCopy: async () => true,
   onReveal: () => {},
   onRename: vi.fn(),
   onMove: vi.fn(),
