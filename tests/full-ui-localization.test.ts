@@ -62,7 +62,7 @@ const detailProps = {
     return { ...documentFixture(), body };
   }),
   onReload: vi.fn(async () => undefined),
-  onCopy: () => {},
+  onCopy: async () => true,
   onReveal: () => {},
   onRename: () => {},
   onMove: () => {},

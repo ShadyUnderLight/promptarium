@@ -2287,6 +2287,67 @@ body {
   font: 0.76rem/1.55 var(--font-mono) !important;
 }
 
+.variable-fill-dialog {
+  max-width: 38rem;
+  max-height: min(92vh, 48rem);
+  overflow: auto;
+}
+
+.variable-fill-dialog__hint {
+  margin: 0 0 1rem;
+}
+
+.variable-fill-dialog__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.variable-fill-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.variable-fill-field__name {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.variable-fill-field__label,
+.variable-fill-field__description,
+.variable-fill-field__example {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.variable-fill-field__description {
+  line-height: 1.35;
+}
+
+.variable-fill-field__example {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.variable-fill-field textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 3.6rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.35rem;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.72rem;
+  resize: vertical;
+}
+
 .form-error {
   margin: 0 0 0.75rem;
   padding: 0.45rem 0.55rem;

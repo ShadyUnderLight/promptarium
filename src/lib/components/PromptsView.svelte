@@ -144,8 +144,10 @@
     }
   }
 
-  function handleCopy(body: string): void {
-    void copyToClipboard(body).then((ok) => notice(ok ? t('notice.promptCopied') : t('notice.copyFailed')));
+  async function handleCopy(body: string): Promise<boolean> {
+    const ok = await copyToClipboard(body);
+    notice(ok ? t('notice.promptCopied') : t('notice.copyFailed'));
+    return ok;
   }
 
   function handleReveal(document: PromptDocument): void {
@@ -266,11 +268,23 @@
     else notice(tPlural('notice.batchUpdated', succeeded));
   }
 
+  function hasOpenModal(): boolean {
+    return Boolean(
+      newPromptOpen ||
+        deleteTarget ||
+        refreshPending ||
+        document.querySelector('dialog.modal[open]')
+    );
+  }
+
   function onGlobalKeydown(event: KeyboardEvent): void {
-    if (newPromptOpen || deleteTarget) return;
     const modifier = event.metaKey || event.ctrlKey;
     if (!modifier || event.altKey) return;
     const key = event.key.toLowerCase();
+    if (hasOpenModal()) {
+      if (key === 'n' || key === 'f' || key === 's') event.preventDefault();
+      return;
+    }
     if (key === 'n') {
       event.preventDefault();
       openNewPrompt();
