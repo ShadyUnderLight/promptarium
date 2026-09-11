@@ -44,6 +44,10 @@
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
+  // The project sidebar's context menu is the one overlay in the app that is not
+  // a `<dialog>`: it renders a `.context-backdrop` with a focus trap, so while it
+  // is up it owns the keyboard and has to be counted by the guard below.
+  let sidebarModalOpen = $state(false);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
     !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
@@ -74,9 +78,31 @@
     toasts.push(message);
   }
 
-  function canNavigate(): boolean {
+  /** Pending confirmation, while the in-app dialog is open. macOS WKWebView
+   *  returns `false` from `window.confirm` without showing anything, which
+   *  silently cancelled every guarded action instead of asking; the guard now
+   *  awaits this promise. */
+  let confirmRequest = $state<{
+    title: string;
+    message: string;
+    resolve: (ok: boolean) => void;
+  } | null>(null);
+
+  function askConfirm(title: string, message: string): Promise<boolean> {
+    return new Promise((resolve) => {
+      confirmRequest = { title, message, resolve };
+    });
+  }
+
+  function settleConfirm(ok: boolean): void {
+    const request = confirmRequest;
+    confirmRequest = null;
+    request?.resolve(ok);
+  }
+
+  async function canNavigate(): Promise<boolean> {
     if (!detailDirty) return true;
-    return window.confirm(t('dialog.confirmUnsaved'));
+    return askConfirm(t('confirm.unsaved.title'), t('confirm.unsaved.message'));
   }
 
   function isCurrentDocument(document: PromptDocument): boolean {
@@ -88,7 +114,7 @@
     );
   }
 
-  function openNewPrompt(): void {
+  async function openNewPrompt(): Promise<void> {
     if (!library.projects.length) {
       notice(t('notice.addProjectFirst'));
       return;
@@ -97,17 +123,17 @@
       notice(t('notice.addProjectFirst'));
       return;
     }
-    if (!canNavigate()) return;
+    if (!(await canNavigate())) return;
     newPromptOpen = true;
   }
 
-  function handleSelect(prompt: PromptSummary): void {
-    if (!canNavigate()) return;
+  async function handleSelect(prompt: PromptSummary): Promise<void> {
+    if (!(await canNavigate())) return;
     void selectPrompt(prompt.projectPath, prompt.name);
   }
 
-  function handleNavigateRelation(projectPath: string, name: string): void {
-    if (!canNavigate()) return;
+  async function handleNavigateRelation(projectPath: string, name: string): Promise<void> {
+    if (!(await canNavigate())) return;
     void selectPrompt(projectPath, name);
   }
 
@@ -154,8 +180,8 @@
     void revealPrompt(document).catch((error) => notice(errorDetail(error)));
   }
 
-  function handleRename(document: PromptDocument, newName: string): void {
-    if (detailDirty && !canNavigate()) return;
+  async function handleRename(document: PromptDocument, newName: string): Promise<void> {
+    if (detailDirty && !(await canNavigate())) return;
     void renamePrompt(document, newName)
       .then(() => {
         if (isCurrentDocument({ ...document, name: newName })) detailDirty = false;
@@ -164,8 +190,8 @@
       .catch((error) => notice(errorDetail(error)));
   }
 
-  function handleMove(document: PromptDocument, destination: string): void {
-    if (detailDirty && !canNavigate()) return;
+  async function handleMove(document: PromptDocument, destination: string): Promise<void> {
+    if (detailDirty && !(await canNavigate())) return;
     void movePrompt(document, destination)
       .then(() => {
         if (isCurrentDocument({ ...document, name: destination })) detailDirty = false;
@@ -174,8 +200,8 @@
       .catch((error) => notice(errorDetail(error)));
   }
 
-  function handleDuplicate(document: PromptDocument, name: string): void {
-    if (detailDirty && !canNavigate()) return;
+  async function handleDuplicate(document: PromptDocument, name: string): Promise<void> {
+    if (detailDirty && !(await canNavigate())) return;
     void duplicatePrompt(document, name)
       .then(() => {
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
@@ -184,8 +210,8 @@
       .catch((error) => notice(errorDetail(error)));
   }
 
-  function handleDuplicateAsVariant(document: PromptDocument, name: string): void {
-    if (detailDirty && !canNavigate()) return;
+  async function handleDuplicateAsVariant(document: PromptDocument, name: string): Promise<void> {
+    if (detailDirty && !(await canNavigate())) return;
     void duplicateAsVariant(document, name)
       .then(() => {
         if (library.selectedProjectPath === document.projectPath && library.selectedName === name) detailDirty = false;
@@ -194,8 +220,8 @@
       .catch((error) => notice(errorDetail(error)));
   }
 
-  function requestDelete(document: PromptDocument): void {
-    if (detailDirty && !canNavigate()) return;
+  async function requestDelete(document: PromptDocument): Promise<void> {
+    if (detailDirty && !(await canNavigate())) return;
     deleteTarget = document;
   }
 
@@ -219,7 +245,7 @@
     tag?: string
   ): Promise<boolean> {
     if (!prompts.length) return false;
-    if (detailDirty && !canNavigate()) return false;
+    if (detailDirty && !(await canNavigate())) return false;
     if (action === 'delete') {
       const listed = prompts
         .map((prompt) => '• ' + projectDisplayName(prompt.projectPath) + ' — ' + prompt.name + '.md')
@@ -268,11 +294,16 @@
     else notice(tPlural('notice.batchUpdated', succeeded));
   }
 
+  // Any overlay that owns the keyboard right now: the shell's own three flags,
+  // every `<dialog class="modal">` any pane has open (New Prompt, the naming
+  // dialog, the confirms, Compare, variable fill), and the sidebar's project
+  // menu — the only one of them that is not a dialog.
   function hasOpenModal(): boolean {
     return Boolean(
       newPromptOpen ||
         deleteTarget ||
         refreshPending ||
+        sidebarModalOpen ||
         document.querySelector('dialog.modal[open]')
     );
   }
@@ -287,7 +318,7 @@
     }
     if (key === 'n') {
       event.preventDefault();
-      openNewPrompt();
+      void openNewPrompt();
     } else if (key === 'f') {
       event.preventDefault();
       searchInput?.focus();
@@ -385,7 +416,12 @@
     class="library-workspace"
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
   >
-    <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
+    <ProjectSidebar
+      onNewPrompt={openNewPrompt}
+      {canNavigate}
+      onNotice={notice}
+      onModalChange={(open) => (sidebarModalOpen = open)}
+    />
     <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
@@ -432,6 +468,17 @@
     destructive={true}
     onConfirm={confirmDelete}
     onCancel={() => (deleteTarget = null)}
+  />
+{/if}
+
+{#if confirmRequest}
+  <ConfirmDialog
+    title={confirmRequest.title}
+    message={confirmRequest.message}
+    confirmLabel={t('confirm.unsaved.confirm')}
+    cancelLabel={t('confirm.unsaved.cancel')}
+    onConfirm={() => settleConfirm(true)}
+    onCancel={() => settleConfirm(false)}
   />
 {/if}
 

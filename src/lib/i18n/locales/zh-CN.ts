@@ -260,12 +260,15 @@ export const zhCN = {
   'dialog.movePrompt': '移动提示词到相对路径',
   'dialog.duplicateName': '副本的新文件名',
   'dialog.variantName': '变体副本的新文件名',
-  'dialog.confirmUnsaved': '此提示词有未保存的更改。放弃并继续？',
 
   // ConfirmDialog 外壳及其调用方。
   'confirm.confirm': '确认',
   'confirm.cancel': '取消',
   'confirm.working': '处理中…',
+  'confirm.unsaved.title': '放弃未保存的改动？',
+  'confirm.unsaved.message': '此提示词有未保存的更改。放弃并继续？',
+  'confirm.unsaved.confirm': '放弃更改',
+  'confirm.unsaved.cancel': '继续编辑',
   'confirm.deletePrompt.title': '删除提示词文件？',
   'confirm.deletePrompt.message': '从 {project} / {path} 删除“{name}.md”？Markdown 文件将被永久删除。',
   'confirm.deletePrompt.confirm': '删除文件',
