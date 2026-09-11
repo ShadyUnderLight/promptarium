@@ -237,12 +237,15 @@ export const en = {
   'dialog.movePrompt': 'Move prompt to relative path',
   'dialog.duplicateName': 'New filename for duplicate',
   'dialog.variantName': 'New filename for variant',
-  'dialog.confirmUnsaved': 'This prompt has unsaved changes. Discard them and continue?',
 
   // ConfirmDialog shell + its callers.
   'confirm.confirm': 'Confirm',
   'confirm.cancel': 'Cancel',
   'confirm.working': 'Working…',
+  'confirm.unsaved.title': 'Discard unsaved changes?',
+  'confirm.unsaved.message': 'This prompt has unsaved changes. Discard them and continue?',
+  'confirm.unsaved.confirm': 'Discard changes',
+  'confirm.unsaved.cancel': 'Keep editing',
   'confirm.deletePrompt.title': 'Delete prompt file?',
   'confirm.deletePrompt.message': 'Delete “{name}.md” from {project} / {path}? The Markdown file will be permanently deleted.',
   'confirm.deletePrompt.confirm': 'Delete file',
