@@ -144,6 +144,19 @@ describe('NewPromptDialog AI naming', () => {
     expect(generateMock).not.toHaveBeenCalled();
   });
 
+  it('does not mislabel an inaccessible Keychain as an unconfigured key', async () => {
+    statusMock.mockResolvedValue({
+      configured: false,
+      supported: true,
+      failure: 'store',
+    });
+    renderDialog();
+    await waitForCredentialStatus();
+
+    expect(screen.getByText('Unable to access the macOS Keychain.')).toBeTruthy();
+    expect((screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('selecting a suggestion preserves a folder prefix and replaces only the leaf', async () => {
     renderDialog({ defaultFolder: 'coding' });
     await waitForCredentialStatus();
@@ -176,9 +189,10 @@ describe('NewPromptDialog AI naming', () => {
     expect(filename.value).toBe('my-manual-name');
   });
 
-  it('ignores a late response after the prompt body changes', async () => {
+  it('detaches stale work so the new body can request immediately', async () => {
     const requestA = deferred<FilenameSuggestionResult>();
-    generateMock.mockReturnValueOnce(requestA.promise);
+    const requestB = deferred<FilenameSuggestionResult>();
+    generateMock.mockReturnValueOnce(requestA.promise).mockReturnValueOnce(requestB.promise);
     renderDialog();
     await waitForCredentialStatus();
     const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
@@ -186,13 +200,20 @@ describe('NewPromptDialog AI naming', () => {
     await fireEvent.input(body, { target: { value: 'Prompt A' } });
     await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
     await fireEvent.input(body, { target: { value: 'Prompt B' } });
+    const namingButton = screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement;
+    expect(namingButton.disabled).toBe(false);
+    await fireEvent.click(namingButton);
+    expect(generateMock).toHaveBeenCalledTimes(2);
+    expect(generateMock).toHaveBeenNthCalledWith(1, 'Prompt A');
+    expect(generateMock).toHaveBeenNthCalledWith(2, 'Prompt B');
 
     requestA.resolve({ names: ['过时建议一', '过时建议二', '过时建议三'] });
+    requestB.resolve({ names: ['最新建议一', '最新建议二', '最新建议三'] });
     await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(screen.queryByText('过时建议一')).toBeNull();
-    expect(screen.queryByText('AI filename suggestions')).toBeNull();
+    expect(screen.getByText('最新建议一')).toBeTruthy();
   });
 
   it('keeps Cancel available while naming is busy', async () => {

@@ -99,6 +99,8 @@ export type CredentialFailure = 'unsupported' | 'empty-key' | 'store';
 export interface DeepSeekCredentialStatus {
   configured: boolean;
   supported: boolean;
+  failure?: CredentialFailure;
+  detail?: string;
 }
 
 export interface CredentialMutationResult {

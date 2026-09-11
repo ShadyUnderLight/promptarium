@@ -5,11 +5,12 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "macos")]
-use keyring::Entry;
+use keyring::{Entry, Error as KeyringError};
 
 const KEYCHAIN_SERVICE: &str = "com.shadyunderlight.promptarium";
 const KEYCHAIN_ACCOUNT: &str = "deepseek-api-key";
 const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
+// 当前 V4.1 Flash 的官方 API 名；deepseek-v4-flash 仅是兼容旧别名。
 const DEEPSEEK_MODEL: &str = "deepseek-flash";
 const MAX_CANDIDATE_CHARS: usize = 80;
 
@@ -58,6 +59,10 @@ pub enum CredentialFailure {
 pub struct DeepSeekCredentialStatus {
     pub configured: bool,
     pub supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<CredentialFailure>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -142,120 +147,203 @@ fn failure(code: AiNamingFailure, detail: Option<&str>) -> FilenameSuggestionRes
     }
 }
 
-fn credential_success() -> CredentialMutationResult {
-    CredentialMutationResult {
-        status: deepseek_credential_status(),
+fn supported_status(configured: bool) -> DeepSeekCredentialStatus {
+    DeepSeekCredentialStatus {
+        configured,
+        supported: true,
         failure: None,
         detail: None,
     }
 }
 
-fn credential_failure(code: CredentialFailure, detail: &'static str) -> CredentialMutationResult {
-    CredentialMutationResult {
-        status: deepseek_credential_status(),
-        failure: Some(code),
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn unsupported_status() -> DeepSeekCredentialStatus {
+    DeepSeekCredentialStatus {
+        configured: false,
+        supported: false,
+        failure: Some(CredentialFailure::Unsupported),
+        detail: None,
+    }
+}
+
+fn credential_store_status(detail: &'static str) -> DeepSeekCredentialStatus {
+    DeepSeekCredentialStatus {
+        configured: false,
+        supported: true,
+        failure: Some(CredentialFailure::Store),
         detail: Some(detail.to_owned()),
     }
 }
 
-#[cfg(target_os = "macos")]
-fn keychain_entry() -> Result<Entry, ()> {
-    Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT).map_err(|_| ())
+fn credential_result(
+    status: DeepSeekCredentialStatus,
+    failure: Option<CredentialFailure>,
+    detail: Option<&'static str>,
+) -> CredentialMutationResult {
+    CredentialMutationResult {
+        status,
+        failure,
+        detail: detail.map(str::to_owned),
+    }
 }
 
 #[cfg(target_os = "macos")]
-fn stored_api_key() -> Result<Option<String>, ()> {
+fn keychain_entry() -> Result<Entry, KeyringError> {
+    Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT)
+}
+
+#[cfg(target_os = "macos")]
+fn credential_status_sync() -> DeepSeekCredentialStatus {
+    let entry = match keychain_entry() {
+        Ok(entry) => entry,
+        Err(_) => return credential_store_status("macOS Keychain is unavailable"),
+    };
+    match entry.get_password() {
+        Ok(secret) => supported_status(!secret.trim().is_empty()),
+        Err(KeyringError::NoEntry) => supported_status(false),
+        Err(_) => credential_store_status("macOS Keychain could not be accessed"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn stored_api_key() -> Result<Option<String>, KeyringError> {
     let entry = keychain_entry()?;
     match entry.get_password() {
         Ok(secret) if !secret.trim().is_empty() => Ok(Some(secret)),
         Ok(_) => Ok(None),
-        Err(_) => Ok(None),
+        Err(KeyringError::NoEntry) => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_api_key_sync(secret: &str) -> CredentialMutationResult {
+    let entry = match keychain_entry() {
+        Ok(entry) => entry,
+        Err(_) => {
+            return credential_result(
+                credential_store_status("macOS Keychain is unavailable"),
+                Some(CredentialFailure::Store),
+                Some("macOS Keychain is unavailable"),
+            );
+        }
+    };
+    match entry.set_password(secret) {
+        Ok(()) => credential_result(supported_status(true), None, None),
+        Err(_) => credential_result(
+            credential_store_status("macOS Keychain could not save the API key"),
+            Some(CredentialFailure::Store),
+            Some("macOS Keychain could not save the API key"),
+        ),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn clear_api_key_sync() -> CredentialMutationResult {
+    let entry = match keychain_entry() {
+        Ok(entry) => entry,
+        Err(_) => {
+            return credential_result(
+                credential_store_status("macOS Keychain is unavailable"),
+                Some(CredentialFailure::Store),
+                Some("macOS Keychain is unavailable"),
+            );
+        }
+    };
+    match entry.delete_credential() {
+        Ok(()) | Err(KeyringError::NoEntry) => {
+            credential_result(supported_status(false), None, None)
+        }
+        Err(_) => credential_result(
+            credential_store_status("macOS Keychain could not clear the API key"),
+            Some(CredentialFailure::Store),
+            Some("macOS Keychain could not clear the API key"),
+        ),
     }
 }
 
 #[tauri::command]
-pub fn deepseek_credential_status() -> DeepSeekCredentialStatus {
+pub async fn deepseek_credential_status() -> DeepSeekCredentialStatus {
     #[cfg(target_os = "macos")]
     {
-        return DeepSeekCredentialStatus {
-            configured: stored_api_key().ok().flatten().is_some(),
-            supported: true,
-        };
+        return tauri::async_runtime::spawn_blocking(credential_status_sync)
+            .await
+            .unwrap_or_else(|_| credential_store_status("macOS Keychain is unavailable"));
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        DeepSeekCredentialStatus {
-            configured: false,
-            supported: false,
-        }
+        unsupported_status()
     }
 }
 
 #[tauri::command]
-pub fn set_deepseek_api_key(api_key: String) -> CredentialMutationResult {
-    let secret = api_key.trim();
+pub async fn set_deepseek_api_key(api_key: String) -> CredentialMutationResult {
+    let secret = api_key.trim().to_owned();
     if secret.is_empty() {
-        return credential_failure(CredentialFailure::EmptyKey, "API key cannot be empty");
+        #[cfg(target_os = "macos")]
+        {
+            return credential_result(
+                supported_status(false),
+                Some(CredentialFailure::EmptyKey),
+                Some("API key cannot be empty"),
+            );
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            return credential_result(
+                unsupported_status(),
+                Some(CredentialFailure::EmptyKey),
+                Some("API key cannot be empty"),
+            );
+        }
     }
 
     #[cfg(target_os = "macos")]
     {
-        let entry = match keychain_entry() {
-            Ok(entry) => entry,
-            Err(()) => {
-                return credential_failure(
-                    CredentialFailure::Store,
-                    "macOS Keychain is unavailable",
-                );
-            }
-        };
-        if entry.set_password(secret).is_err() {
-            return credential_failure(
-                CredentialFailure::Store,
-                "macOS Keychain could not save the API key",
-            );
-        }
-        return credential_success();
+        return tauri::async_runtime::spawn_blocking(move || set_api_key_sync(&secret))
+            .await
+            .unwrap_or_else(|_| {
+                credential_result(
+                    credential_store_status("macOS Keychain is unavailable"),
+                    Some(CredentialFailure::Store),
+                    Some("macOS Keychain is unavailable"),
+                )
+            });
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         let _ = secret;
-        credential_failure(
-            CredentialFailure::Unsupported,
-            "DeepSeek credentials are supported only on macOS",
+        credential_result(
+            unsupported_status(),
+            Some(CredentialFailure::Unsupported),
+            Some("DeepSeek credentials are supported only on macOS"),
         )
     }
 }
 
 #[tauri::command]
-pub fn clear_deepseek_api_key() -> CredentialMutationResult {
+pub async fn clear_deepseek_api_key() -> CredentialMutationResult {
     #[cfg(target_os = "macos")]
     {
-        let entry = match keychain_entry() {
-            Ok(entry) => entry,
-            Err(()) => {
-                return credential_failure(
-                    CredentialFailure::Store,
-                    "macOS Keychain is unavailable",
-                );
-            }
-        };
-        if entry.delete_credential().is_err() {
-            return credential_failure(
-                CredentialFailure::Store,
-                "macOS Keychain could not clear the API key",
-            );
-        }
-        return credential_success();
+        return tauri::async_runtime::spawn_blocking(clear_api_key_sync)
+            .await
+            .unwrap_or_else(|_| {
+                credential_result(
+                    credential_store_status("macOS Keychain is unavailable"),
+                    Some(CredentialFailure::Store),
+                    Some("macOS Keychain is unavailable"),
+                )
+            });
     }
 
     #[cfg(not(target_os = "macos"))]
     {
-        credential_failure(
-            CredentialFailure::Unsupported,
-            "DeepSeek credentials are supported only on macOS",
+        credential_result(
+            unsupported_status(),
+            Some(CredentialFailure::Unsupported),
+            Some("DeepSeek credentials are supported only on macOS"),
         )
     }
 }
@@ -274,9 +362,15 @@ pub async fn generate_prompt_filename_suggestions(body: String) -> FilenameSugge
 
     #[cfg(target_os = "macos")]
     {
-        let api_key = match stored_api_key() {
-            Ok(Some(api_key)) => api_key,
-            Ok(None) | Err(()) => return failure(AiNamingFailure::NotConfigured, None),
+        let api_key = match tauri::async_runtime::spawn_blocking(stored_api_key).await {
+            Ok(Ok(Some(api_key))) => api_key,
+            Ok(Ok(None)) => return failure(AiNamingFailure::NotConfigured, None),
+            Ok(Err(_)) | Err(_) => {
+                return failure(
+                    AiNamingFailure::ServiceError,
+                    Some("macOS Keychain could not be accessed"),
+                )
+            }
         };
         request_suggestions(&api_key, &body).await
     }
@@ -392,7 +486,12 @@ fn sanitize_candidate(raw: &str) -> Option<String> {
         }
     }
     value = value.trim().to_owned();
-    if value.len() >= 3 && value[value.len() - 3..].eq_ignore_ascii_case(".md") {
+    if value
+        .len()
+        .checked_sub(3)
+        .and_then(|start| value.get(start..))
+        .is_some_and(|suffix| suffix.eq_ignore_ascii_case(".md"))
+    {
         value.truncate(value.len() - 3);
         value = value.trim().to_owned();
     }
@@ -450,6 +549,7 @@ mod tests {
             "https://api.deepseek.com/chat/completions"
         );
         assert_eq!(request["model"], "deepseek-flash");
+        assert_ne!(request["model"], "deepseek-v4-flash");
         assert_eq!(request["thinking"]["type"], "disabled");
         assert_eq!(request["response_format"]["type"], "json_object");
         assert_eq!(request["stream"], false);
@@ -496,6 +596,9 @@ mod tests {
             sanitize_candidate("Rust Unsafe 审查"),
             Some("Rust Unsafe 审查".to_owned())
         );
+        assert_eq!(sanitize_candidate("AI🚀"), Some("AI🚀".to_owned()));
+        assert_eq!(sanitize_candidate("测试é"), Some("测试é".to_owned()));
+        assert_eq!(sanitize_candidate("🚀.md"), Some("🚀".to_owned()));
     }
 
     #[test]
@@ -538,11 +641,13 @@ mod tests {
 
     #[test]
     fn credential_and_result_dtos_never_serialize_a_secret() {
-        let status = serde_json::to_string(&deepseek_credential_status()).unwrap();
+        let status = serde_json::to_string(&supported_status(true)).unwrap();
         let result = serde_json::to_string(&CredentialMutationResult {
             status: DeepSeekCredentialStatus {
                 configured: true,
                 supported: true,
+                failure: None,
+                detail: None,
             },
             failure: None,
             detail: None,

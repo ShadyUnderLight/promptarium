@@ -186,6 +186,7 @@ export const en = {
   'newPrompt.aiNaming.error.badResponse': 'DeepSeek returned an unreadable result.',
   'newPrompt.aiNaming.error.serviceError': 'DeepSeek is temporarily unavailable.',
   'newPrompt.aiNaming.error.credential': 'Unable to save the DeepSeek API key.',
+  'newPrompt.aiNaming.error.keychain': 'Unable to access the macOS Keychain.',
   'newPrompt.aiNaming.error.emptyKey': 'Enter a DeepSeek API key.',
 
   // Core-path notices (toasts).

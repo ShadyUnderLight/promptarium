@@ -71,6 +71,12 @@
     store: 'newPrompt.aiNaming.error.credential',
   };
 
+  const credentialStatusFailureMessages: Record<CredentialFailure, MessageKey> = {
+    unsupported: 'newPrompt.aiNaming.error.unsupported',
+    'empty-key': 'newPrompt.aiNaming.error.emptyKey',
+    store: 'newPrompt.aiNaming.error.keychain',
+  };
+
   onMount(() => {
     projectPath = defaultProjectPath;
     name = defaultFolder ? defaultFolder + '/' : '';
@@ -97,6 +103,8 @@
 
   function invalidateNaming(): void {
     namingRequestSerial += 1;
+    activeNamingRequest = 0;
+    namingBusy = false;
     suggestions = [];
     namingError = '';
   }
@@ -114,6 +122,10 @@
     return t(credentialFailureMessages[failure]);
   }
 
+  function credentialStatusFailureMessage(failure: CredentialFailure): string {
+    return t(credentialStatusFailureMessages[failure]);
+  }
+
   async function generateNames(): Promise<void> {
     const requestBody = body;
     if (!requestBody.trim()) {
@@ -128,6 +140,10 @@
     }
     if (!credentialStatus.supported) {
       namingError = t('newPrompt.aiNaming.error.unsupported');
+      return;
+    }
+    if (credentialStatus.failure) {
+      namingError = credentialStatusFailureMessage(credentialStatus.failure);
       return;
     }
     if (!credentialStatus.configured) {
@@ -317,6 +333,10 @@
             </button>
           {:else if credentialStatus?.supported === false}
             <span class="new-prompt-ai__unsupported">{t('newPrompt.aiNaming.error.unsupported')}</span>
+          {:else if credentialStatus?.failure}
+            <span class="new-prompt-ai__unsupported">
+              {credentialStatusFailureMessage(credentialStatus.failure)}
+            </span>
           {:else}
             <button type="button" class="btn btn--ghost btn--sm" onclick={openCredentialPanel}>
               {t('newPrompt.aiNaming.configure')}
@@ -360,7 +380,7 @@
           aria-label={t('newPrompt.aiNaming')}
           title={t('newPrompt.aiNaming.privacy')}
           onclick={generateNames}
-          disabled={!body.trim() || namingBusy || credentialStatus?.supported === false}
+          disabled={!body.trim() || namingBusy || credentialStatus?.supported === false || Boolean(credentialStatus?.failure)}
         >
           {#if namingBusy}
             {t('newPrompt.aiNaming.generating')}

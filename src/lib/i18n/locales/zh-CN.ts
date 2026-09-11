@@ -182,6 +182,7 @@ export const zhCN = {
   'newPrompt.aiNaming.error.badResponse': 'DeepSeek 返回了无法识别的结果。',
   'newPrompt.aiNaming.error.serviceError': 'DeepSeek 服务暂时不可用。',
   'newPrompt.aiNaming.error.credential': '无法保存 DeepSeek API Key。',
+  'newPrompt.aiNaming.error.keychain': '无法访问 macOS 钥匙串。',
   'newPrompt.aiNaming.error.emptyKey': '请输入 DeepSeek API Key。',
 
   // Core-path notices (toasts).
