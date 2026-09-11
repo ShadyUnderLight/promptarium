@@ -61,7 +61,7 @@ describe('VariableFillDialog', () => {
       props: {
         body: 'Review {repo} for {goal}. Review {repo} again.',
         annotations: {
-          repo: { description: 'Repository name', example: 'org/repo' },
+          repo: { description: 'Repository name', example: 'echo $$' },
           goal: { description: 'Review focus', example: 'security' },
         },
         onCopy,
@@ -71,8 +71,8 @@ describe('VariableFillDialog', () => {
 
     expect(screen.getAllByRole('textbox')).toHaveLength(2);
     expect(screen.getByText('Repository name')).toBeTruthy();
-    expect(screen.getByText('Example: org/repo')).toBeTruthy();
-    expect(screen.getByLabelText('Value for repo')).toBeTruthy();
+    expect(screen.getByText('Example: echo $$')).toBeTruthy();
+    expect((screen.getByLabelText('Value for repo') as HTMLTextAreaElement).placeholder).toBe('echo $$');
     expect(screen.getByLabelText('Value for goal')).toBeTruthy();
 
     await fireEvent.input(screen.getByLabelText('Value for repo'), {

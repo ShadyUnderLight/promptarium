@@ -193,6 +193,16 @@ describe('interpolation', () => {
     expect(interpolateMessage('{n}', { n: 42 })).toBe('42');
   });
 
+  it('keeps replacement-pattern characters in user data literal', () => {
+    expect(interpolateMessage('Example: {example}', { example: '$&' })).toBe('Example: $&');
+    expect(interpolateMessage('Example: {example}', { example: 'echo $$' })).toBe(
+      'Example: echo $$'
+    );
+    expect(interpolateMessage('Example: {example}', { example: "$` / $'" })).toBe(
+      "Example: $` / $'"
+    );
+  });
+
   it('leaves text without placeholders untouched', () => {
     expect(interpolateMessage('no placeholders', { version: '1' })).toBe('no placeholders');
     expect(interpolateMessage('plain')).toBe('plain');
