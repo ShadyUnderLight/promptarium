@@ -14,9 +14,12 @@ truth — there is no required database, cloud account, AI API key or
 Accessibility permission, and nothing the app owns is ever written into your
 project folders.
 
-Promptarium **manages** prompts. It is not a prompt execution, chat, playground
-or deployment platform: it never calls a model and never injects text into
-another application.
+Promptarium **manages** prompts. It does not execute prompts or provide
+chat/playground functionality or inject text into another application. Optional
+AI naming is explicitly triggered by the user and sends the current prompt body
+to DeepSeek only to suggest filenames; on macOS, the optional API key is stored
+in the system Keychain and never written to prompt files or project folders.
+Manual naming remains fully available without it.
 
 ## Core features
 
