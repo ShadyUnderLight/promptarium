@@ -38,8 +38,11 @@ pub enum AiNamingFailure {
     #[cfg_attr(target_os = "macos", allow(dead_code))]
     Unsupported,
     EmptyPrompt,
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    CredentialStore,
     AuthFailed,
     RateLimited,
+    InsufficientBalance,
     Network,
     Timeout,
     BadResponse,
@@ -367,7 +370,7 @@ pub async fn generate_prompt_filename_suggestions(body: String) -> FilenameSugge
             Ok(Ok(None)) => return failure(AiNamingFailure::NotConfigured, None),
             Ok(Err(_)) | Err(_) => {
                 return failure(
-                    AiNamingFailure::ServiceError,
+                    AiNamingFailure::CredentialStore,
                     Some("macOS Keychain could not be accessed"),
                 )
             }
@@ -522,6 +525,7 @@ fn matching_quotes(first: char, last: char) -> bool {
 
 fn map_http_status(status: StatusCode) -> AiNamingFailure {
     match status {
+        StatusCode::PAYMENT_REQUIRED => AiNamingFailure::InsufficientBalance,
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => AiNamingFailure::AuthFailed,
         StatusCode::TOO_MANY_REQUESTS => AiNamingFailure::RateLimited,
         status if status.is_server_error() => AiNamingFailure::ServiceError,
@@ -596,6 +600,8 @@ mod tests {
             sanitize_candidate("Rust Unsafe 审查"),
             Some("Rust Unsafe 审查".to_owned())
         );
+        assert_eq!(sanitize_candidate("AI🚀.md"), Some("AI🚀".to_owned()));
+        assert_eq!(sanitize_candidate("测试é.md"), Some("测试é".to_owned()));
         assert_eq!(sanitize_candidate("AI🚀"), Some("AI🚀".to_owned()));
         assert_eq!(sanitize_candidate("测试é"), Some("测试é".to_owned()));
         assert_eq!(sanitize_candidate("🚀.md"), Some("🚀".to_owned()));
@@ -630,6 +636,10 @@ mod tests {
         assert_eq!(
             map_http_status(StatusCode::TOO_MANY_REQUESTS),
             AiNamingFailure::RateLimited
+        );
+        assert_eq!(
+            map_http_status(StatusCode::PAYMENT_REQUIRED),
+            AiNamingFailure::InsufficientBalance
         );
         assert_eq!(
             map_http_status(StatusCode::INTERNAL_SERVER_ERROR),

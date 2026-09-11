@@ -57,8 +57,10 @@
     'not-configured': 'newPrompt.aiNaming.error.notConfigured',
     unsupported: 'newPrompt.aiNaming.error.unsupported',
     'empty-prompt': 'newPrompt.aiNaming.emptyPrompt',
+    'credential-store': 'newPrompt.aiNaming.error.keychain',
     'auth-failed': 'newPrompt.aiNaming.error.authFailed',
     'rate-limited': 'newPrompt.aiNaming.error.rateLimited',
+    'insufficient-balance': 'newPrompt.aiNaming.error.insufficientBalance',
     network: 'newPrompt.aiNaming.error.network',
     timeout: 'newPrompt.aiNaming.error.timeout',
     'bad-response': 'newPrompt.aiNaming.error.badResponse',
@@ -166,6 +168,12 @@
           credentialPanelOpen = true;
         } else if (result.failure === 'unsupported') {
           credentialStatus = { configured: false, supported: false };
+        } else if (result.failure === 'credential-store') {
+          credentialStatus = {
+            configured: credentialStatus?.configured ?? false,
+            supported: true,
+            failure: 'store',
+          };
         }
         return;
       }
@@ -211,13 +219,13 @@
     }
     credentialBusy = true;
     credentialError = '';
+    invalidateNaming();
     try {
       const result = await setDeepSeekApiKey(apiKeyInput);
       if (result.failure || !result.status.configured) {
         credentialError = result.failure
           ? credentialFailureMessage(result.failure)
           : t('newPrompt.aiNaming.error.credential');
-        credentialStatus = result.status;
         return;
       }
       credentialStatus = result.status;
@@ -236,11 +244,14 @@
     if (credentialBusy) return;
     credentialBusy = true;
     credentialError = '';
+    invalidateNaming();
     try {
       const result = await clearDeepSeekApiKey();
       if (result.failure) {
-        credentialError = credentialFailureMessage(result.failure);
-        credentialStatus = result.status;
+        credentialError =
+          result.failure === 'store'
+            ? t('newPrompt.aiNaming.error.clearCredential')
+            : credentialFailureMessage(result.failure);
         return;
       }
       credentialStatus = result.status;
@@ -326,17 +337,22 @@
           <span class="new-prompt-ai__privacy">{t('newPrompt.aiNaming.privacy')}</span>
         </div>
         <div class="new-prompt-ai__credential">
-          {#if credentialStatus?.configured}
+          {#if credentialStatus?.failure}
+            <span class="new-prompt-ai__unsupported">
+              {credentialStatusFailureMessage(credentialStatus.failure)}
+            </span>
+            {#if credentialStatus.failure === 'store'}
+              <button type="button" class="btn btn--ghost btn--sm" onclick={openCredentialPanel}>
+                {t('newPrompt.aiNaming.settings')}
+              </button>
+            {/if}
+          {:else if credentialStatus?.configured}
             <span class="new-prompt-ai__configured">{t('newPrompt.aiNaming.configured')}</span>
             <button type="button" class="btn btn--ghost btn--sm" onclick={openCredentialPanel}>
               {t('newPrompt.aiNaming.settings')}
             </button>
           {:else if credentialStatus?.supported === false}
             <span class="new-prompt-ai__unsupported">{t('newPrompt.aiNaming.error.unsupported')}</span>
-          {:else if credentialStatus?.failure}
-            <span class="new-prompt-ai__unsupported">
-              {credentialStatusFailureMessage(credentialStatus.failure)}
-            </span>
           {:else}
             <button type="button" class="btn btn--ghost btn--sm" onclick={openCredentialPanel}>
               {t('newPrompt.aiNaming.configure')}

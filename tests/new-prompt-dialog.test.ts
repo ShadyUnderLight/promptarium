@@ -157,6 +157,23 @@ describe('NewPromptDialog AI naming', () => {
     expect((screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement).disabled).toBe(true);
   });
 
+  it('maps a Keychain failure during generation to the local Keychain message', async () => {
+    generateMock.mockResolvedValue({ names: [], failure: 'credential-store' });
+    renderDialog();
+    await waitForCredentialStatus();
+
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Prompt Markdown' }), {
+      target: { value: 'Review a PR.' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
+
+    await waitFor(() =>
+      expect(screen.getAllByText('Unable to access the macOS Keychain.').length).toBeGreaterThan(0)
+    );
+    expect((screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy();
+  });
+
   it('selecting a suggestion preserves a folder prefix and replaces only the leaf', async () => {
     renderDialog({ defaultFolder: 'coding' });
     await waitForCredentialStatus();
@@ -232,10 +249,29 @@ describe('NewPromptDialog AI naming', () => {
     request.resolve({ names: suggestions });
   });
 
+  it('invalidates naming when credentials change', async () => {
+    const request = deferred<FilenameSuggestionResult>();
+    generateMock.mockReturnValueOnce(request.promise);
+    renderDialog();
+    await waitForCredentialStatus();
+    const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
+
+    await fireEvent.input(body, { target: { value: 'Review a PR.' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear API Key' }));
+    await waitFor(() => expect(clearKeyMock).toHaveBeenCalledOnce());
+
+    request.resolve({ names: suggestions });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByText('AI filename suggestions')).toBeNull();
+  });
+
   it.each([
     ['network', 'Unable to connect to DeepSeek.'],
     ['timeout', 'DeepSeek took too long to respond.'],
     ['bad-response', 'DeepSeek returned an unreadable result.'],
+    ['insufficient-balance', 'Your DeepSeek account balance is insufficient.'],
   ] as const)('localizes the %s failure without blocking manual naming', async (failure, message) => {
     generateMock.mockResolvedValue({ names: [], failure });
     renderDialog();

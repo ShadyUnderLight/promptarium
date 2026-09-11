@@ -14,6 +14,8 @@ execution, chat, playground or deployment platform.
   hints and creation date.
 - The filesystem remains the source of truth; there is no required database,
   cloud account, AI API key or Accessibility permission.
+- Optional AI naming is explicit and sends the current prompt body to DeepSeek;
+  manual naming remains fully available without it.
 - The app can search prompt names, paths, metadata and bodies, preview Markdown,
   edit files atomically, and copy a prompt body without its frontmatter.
 
