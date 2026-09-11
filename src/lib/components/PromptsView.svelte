@@ -268,11 +268,23 @@
     else notice(tPlural('notice.batchUpdated', succeeded));
   }
 
+  function hasOpenModal(): boolean {
+    return Boolean(
+      newPromptOpen ||
+        deleteTarget ||
+        refreshPending ||
+        document.querySelector('dialog.modal[open]')
+    );
+  }
+
   function onGlobalKeydown(event: KeyboardEvent): void {
-    if (newPromptOpen || deleteTarget) return;
     const modifier = event.metaKey || event.ctrlKey;
     if (!modifier || event.altKey) return;
     const key = event.key.toLowerCase();
+    if (hasOpenModal()) {
+      if (key === 'n' || key === 'f' || key === 's') event.preventDefault();
+      return;
+    }
     if (key === 'n') {
       event.preventDefault();
       openNewPrompt();
