@@ -9,7 +9,7 @@ import {
   isTauri,
   setDeepSeekApiKey,
 } from '$lib/api';
-import type { FilenameSuggestionResult } from '$lib/api';
+import type { CredentialMutationResult, DeepSeekCredentialStatus, FilenameSuggestionResult } from '$lib/api';
 import { setPreference } from '$lib/i18n/i18n.svelte';
 
 vi.mock('$lib/api', () => ({
@@ -265,6 +265,66 @@ describe('NewPromptDialog AI naming', () => {
     request.resolve({ names: suggestions });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(screen.queryByText('AI filename suggestions')).toBeNull();
+  });
+
+  it('blocks naming while clearing credentials is pending', async () => {
+    const clearRequest = deferred<CredentialMutationResult>();
+    clearKeyMock.mockReturnValueOnce(clearRequest.promise);
+    renderDialog();
+    await waitForCredentialStatus();
+    const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
+
+    await fireEvent.input(body, { target: { value: 'Review a PR.' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear API Key' }));
+
+    const namingButton = screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement;
+    expect(namingButton.disabled).toBe(true);
+    await fireEvent.click(namingButton);
+    expect(generateMock).not.toHaveBeenCalled();
+
+    clearRequest.resolve({ status: { configured: false, supported: true } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Configure DeepSeek API Key' })).toBeTruthy());
+  });
+
+  it('does not let the initial status response overwrite a saved credential', async () => {
+    const initialStatus = deferred<DeepSeekCredentialStatus>();
+    statusMock.mockReturnValueOnce(initialStatus.promise);
+    renderDialog();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Configure DeepSeek API Key' }));
+    await fireEvent.input(screen.getByLabelText('DeepSeek API Key'), {
+      target: { value: 'sk-user-secret' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save API Key' }));
+    await waitFor(() => expect(screen.getByText('DeepSeek configured')).toBeTruthy());
+
+    initialStatus.resolve({ configured: false, supported: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByText('DeepSeek configured')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Configure DeepSeek API Key' })).toBeNull();
+  });
+
+  it('does not let the initial status response resurrect a cleared credential', async () => {
+    const initialStatus = deferred<DeepSeekCredentialStatus>();
+    statusMock.mockReturnValueOnce(initialStatus.promise);
+    renderDialog();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Configure DeepSeek API Key' }));
+    await fireEvent.input(screen.getByLabelText('DeepSeek API Key'), {
+      target: { value: 'sk-user-secret' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'Save API Key' }));
+    await waitFor(() => expect(screen.getByText('DeepSeek configured')).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Clear API Key' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Configure DeepSeek API Key' })).toBeTruthy());
+
+    initialStatus.resolve({ configured: true, supported: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.getByRole('button', { name: 'Configure DeepSeek API Key' })).toBeTruthy();
+    expect(screen.queryByText('DeepSeek configured')).toBeNull();
   });
 
   it.each([

@@ -50,8 +50,16 @@
   let credentialError = $state('');
   let namingRequestSerial = 0;
   let activeNamingRequest = 0;
+  let credentialRevision = 0;
   let disposed = false;
   const showProjectPicker = $derived(projects.length > 1);
+  const namingDisabled = $derived(
+    !body.trim() ||
+      namingBusy ||
+      credentialBusy ||
+      credentialStatus?.supported === false ||
+      Boolean(credentialStatus?.failure),
+  );
 
   const namingFailureMessages: Record<AiNamingFailure, MessageKey> = {
     'not-configured': 'newPrompt.aiNaming.error.notConfigured',
@@ -96,10 +104,16 @@
   }
 
   async function loadCredentialStatus(): Promise<void> {
+    const revision = credentialRevision;
     try {
-      credentialStatus = await deepseekCredentialStatus();
+      const status = await deepseekCredentialStatus();
+      if (!disposed && revision === credentialRevision) {
+        credentialStatus = status;
+      }
     } catch {
-      credentialStatus = { configured: false, supported: isTauri() };
+      if (!disposed && revision === credentialRevision) {
+        credentialStatus = { configured: false, supported: isTauri() };
+      }
     }
   }
 
@@ -128,13 +142,25 @@
     return t(credentialStatusFailureMessages[failure]);
   }
 
+  function beginCredentialMutation(): void {
+    credentialRevision += 1;
+    invalidateNaming();
+  }
+
+  function finishCredentialMutation(): void {
+    credentialRevision += 1;
+    namingRequestSerial += 1;
+    activeNamingRequest = 0;
+    namingBusy = false;
+  }
+
   async function generateNames(): Promise<void> {
     const requestBody = body;
+    if (credentialBusy || namingBusy) return;
     if (!requestBody.trim()) {
       namingError = t('newPrompt.aiNaming.emptyPrompt');
       return;
     }
-    if (namingBusy) return;
     if (!credentialStatus) {
       credentialPanelOpen = true;
       credentialError = '';
@@ -219,7 +245,7 @@
     }
     credentialBusy = true;
     credentialError = '';
-    invalidateNaming();
+    beginCredentialMutation();
     try {
       const result = await setDeepSeekApiKey(apiKeyInput);
       if (result.failure || !result.status.configured) {
@@ -236,6 +262,7 @@
     } catch {
       credentialError = t('newPrompt.aiNaming.error.credential');
     } finally {
+      finishCredentialMutation();
       credentialBusy = false;
     }
   }
@@ -244,7 +271,7 @@
     if (credentialBusy) return;
     credentialBusy = true;
     credentialError = '';
-    invalidateNaming();
+    beginCredentialMutation();
     try {
       const result = await clearDeepSeekApiKey();
       if (result.failure) {
@@ -259,8 +286,9 @@
       namingError = '';
       suggestions = [];
     } catch {
-      credentialError = t('newPrompt.aiNaming.error.credential');
+      credentialError = t('newPrompt.aiNaming.error.clearCredential');
     } finally {
+      finishCredentialMutation();
       credentialBusy = false;
     }
   }
@@ -370,6 +398,7 @@
               autocomplete="off"
               bind:value={apiKeyInput}
               placeholder={t('newPrompt.aiNaming.apiKey.placeholder')}
+              disabled={credentialBusy}
             />
           </label>
           {#if credentialError}<p class="form-error">{credentialError}</p>{/if}
@@ -396,7 +425,7 @@
           aria-label={t('newPrompt.aiNaming')}
           title={t('newPrompt.aiNaming.privacy')}
           onclick={generateNames}
-          disabled={!body.trim() || namingBusy || credentialStatus?.supported === false || Boolean(credentialStatus?.failure)}
+          disabled={namingDisabled}
         >
           {#if namingBusy}
             {t('newPrompt.aiNaming.generating')}
@@ -420,7 +449,7 @@
               </button>
             {/each}
           </div>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={generateNames} disabled={!body.trim() || namingBusy}>
+          <button type="button" class="btn btn--ghost btn--sm" onclick={generateNames} disabled={namingDisabled}>
             {t('newPrompt.aiNaming.regenerate')}
           </button>
         </div>
