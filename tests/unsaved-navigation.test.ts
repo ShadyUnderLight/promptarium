@@ -15,13 +15,15 @@
  * app — New Prompt, delete, unsaved confirm and reload confirm, which the shell
  * renders itself; the naming dialog and Compare, which the shell sees as open
  * `<dialog class="modal">` elements; and the sidebar's project menu, the one
- * overlay that is not a dialog and therefore has to report itself.
+ * overlay that is not a dialog and therefore has to report itself — and, being
+ * a context layer painted above the modal backdrop, the one overlay that also
+ * has to *close* before it can hand the screen to a prompt of its own.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/svelte';
 import PromptsView from '../src/lib/components/PromptsView.svelte';
-import { library, saveDocument, selectPrompt } from '../src/lib/library.svelte';
+import { forgetProject, library, saveDocument, selectPrompt } from '../src/lib/library.svelte';
 import { setPreference } from '../src/lib/i18n/i18n.svelte';
 import type { PromptDocument, PromptSummary } from '../src/lib/prompts/types';
 
@@ -45,11 +47,13 @@ vi.mock('$lib/library.svelte', async (importOriginal) => {
     refreshAllProjects: vi.fn(async () => {}),
     selectPrompt: vi.fn(async () => {}),
     saveDocument: vi.fn(async () => {}),
+    forgetProject: vi.fn(async () => {}),
   };
 });
 
 const selectPromptMock = selectPrompt as unknown as Mock;
 const saveDocumentMock = saveDocument as unknown as Mock;
+const forgetProjectMock = forgetProject as unknown as Mock;
 
 const metadata = {
   description: '',
@@ -109,6 +113,31 @@ async function makeEditorDirty(container: HTMLElement): Promise<void> {
 /** Let a fire-and-forget handler settle before asserting its side effects. */
 function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/** Open the sidebar's project menu, the one overlay the shell renders neither
+ *  in its own markup nor in the detail pane. */
+async function openProjectMenu(container: HTMLElement): Promise<HTMLElement> {
+  const row = [...container.querySelectorAll<HTMLElement>('.project-row')].find(
+    (item) => item.querySelector('.project-row__name')?.textContent?.trim() === 'My Proj'
+  );
+  if (!row) throw new Error('no project row for My Proj');
+  await fireEvent.contextMenu(row);
+  // The sidebar reports its overlay through an effect; let that land, as it
+  // has long before a human could reach the keyboard.
+  await flush();
+  const menu = container.querySelector<HTMLElement>('.project-menu');
+  if (!menu) throw new Error('project menu did not open');
+  return menu;
+}
+
+/** The project-menu item carrying `label` (the buttons hold plain text). */
+function menuItem(menu: HTMLElement, label: string): HTMLElement {
+  const item = [...menu.querySelectorAll<HTMLElement>('button')].find(
+    (button) => button.textContent?.trim() === label
+  );
+  if (!item) throw new Error(`no project-menu item labelled ${label}`);
+  return item;
 }
 
 const unsavedTitle = '放弃未保存的改动？';
@@ -322,22 +351,6 @@ describe('global shortcuts yield while a modal is open', () => {
     expect(container.querySelector('.compare-modal')).not.toBeNull();
   });
 
-  /** Open the sidebar's project menu, the one overlay the shell renders
-   *  neither in its own markup nor in the detail pane. */
-  async function openProjectMenu(container: HTMLElement): Promise<HTMLElement> {
-    const row = [...container.querySelectorAll<HTMLElement>('.project-row')].find(
-      (item) => item.querySelector('.project-row__name')?.textContent?.trim() === 'My Proj'
-    );
-    if (!row) throw new Error('no project row for My Proj');
-    await fireEvent.contextMenu(row);
-    // The sidebar reports its overlay through an effect; let that land, as it
-    // has long before a human could reach the keyboard.
-    await flush();
-    const menu = container.querySelector<HTMLElement>('.project-menu');
-    if (!menu) throw new Error('project menu did not open');
-    return menu;
-  }
-
   it('⌘N, ⌘F and ⌘S yield to the project menu as well', async () => {
     const { container } = render(PromptsView);
     // Dirty, so ⌘N has an unsaved guard to leak into and ⌘S an editor to save.
@@ -373,5 +386,52 @@ describe('global shortcuts yield while a modal is open', () => {
     const focusSpy = vi.spyOn(searchInput(container), 'focus');
     expect(pressChord(window, 'f')).toBe(true);
     expect(focusSpy).toHaveBeenCalled();
+  });
+});
+
+describe('the project menu hands the screen over to the unsaved guard', () => {
+  /** Take the menu's Forget item with a dirty editor behind it. */
+  async function clickForget(container: HTMLElement): Promise<void> {
+    const menu = await openProjectMenu(container);
+    await fireEvent.click(menuItem(menu, '移除项目…'));
+  }
+
+  it('closes the menu before the discard prompt opens, so nothing buries it', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { container } = render(PromptsView);
+    await makeEditorDirty(container);
+
+    await clickForget(container);
+
+    // The discard prompt is up…
+    expect(await screen.findByText(unsavedTitle)).toBeTruthy();
+    // …and the menu that triggered it is gone. Its backdrop is a context layer
+    // (z-index 150/151) painting over the `.modal-backdrop` (100) every
+    // ConfirmDialog renders in, so a menu left standing would cover the prompt
+    // completely and swallow the clicks meant for it.
+    expect(container.querySelector('.project-menu')).toBeNull();
+  });
+
+  it('keep editing cancels the forget entirely', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { container } = render(PromptsView);
+    await makeEditorDirty(container);
+
+    await clickForget(container);
+    await fireEvent.click(await screen.findByText('继续编辑'));
+    await flush();
+
+    expect(forgetProjectMock).not.toHaveBeenCalled();
+  });
+
+  it('discard goes on to forget the project', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const { container } = render(PromptsView);
+    await makeEditorDirty(container);
+
+    await clickForget(container);
+    await fireEvent.click(await screen.findByText('放弃更改'));
+
+    await waitFor(() => expect(forgetProjectMock).toHaveBeenCalledWith('/proj'));
   });
 });

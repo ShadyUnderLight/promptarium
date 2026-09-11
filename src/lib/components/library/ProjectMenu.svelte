@@ -45,13 +45,20 @@
 
   async function forget(): Promise<void> {
     if (!window.confirm(t('dialog.forgetProject', { name: project.name }))) return;
+    // Close the menu before the unsaved guard can ask. This backdrop is a
+    // context layer (z-index 150/151) painting over the `.modal-backdrop`
+    // (100) every ConfirmDialog renders in, so a menu left standing would bury
+    // its own discard prompt and swallow the clicks meant for it. The close
+    // *is* the unmount, which nulls our props — hence the capture first.
+    const path = project.path;
+    const notify = onNotice;
+    onClose();
     if (!(await canNavigate())) return;
     try {
-      await forgetProject(project.path);
-      onNotice(t('notice.projectForgottenKept'));
-      onClose();
+      await forgetProject(path);
+      notify(t('notice.projectForgottenKept'));
     } catch (error) {
-      onNotice(errorDetail(error));
+      notify(errorDetail(error));
     }
   }
 
