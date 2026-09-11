@@ -44,10 +44,12 @@
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
-  // Prompt Detail owns overlays this shell cannot see (the naming dialog, the
-  // Compare modal); it reports whether any of them is open so the global-
-  // shortcut guard below yields to it like it does to our own modals.
+  // Two panes own overlays this shell cannot see — Prompt Detail (the naming
+  // dialog and the Compare modal) and the project sidebar (the project menu).
+  // Each reports whether any of its own is open, so the guard below yields to
+  // them exactly as it does to our modals.
   let detailModalOpen = $state(false);
+  let sidebarModalOpen = $state(false);
   let detailDirty = $state(false);
   let selectedProjectMissing = $derived(
     !isAllProjects() && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
@@ -100,17 +102,22 @@
     request?.resolve(ok);
   }
 
-  // Every overlay on screen at once — the four rendered here plus whatever
-  // Prompt Detail reports. Each one takes over the keyboard context, so the
-  // global shortcuts have to yield to all of them: an overlay this expression
-  // forgets is one where ⌘N stacks a second modal, ⌘F steals focus out of it
-  // and ⌘S saves the editor hidden behind it.
+  // Every overlay in the app: New Prompt and the three ConfirmDialog cases
+  // rendered here, the two the detail pane reports (its naming dialog and
+  // Compare), and the sidebar's project menu. Each takes over the keyboard
+  // context, so the global shortcuts have to yield to all of them — an overlay
+  // this expression forgets is one where ⌘N stacks a second modal on top, ⌘F
+  // steals focus out of it and ⌘S saves the editor hidden behind it. These are
+  // the only `.modal-backdrop` and `.context-backdrop` users in the app; a new
+  // one belongs in this expression. Floating banners and toasts are deliberately
+  // absent — they do not take the keyboard.
   const shellModalOpen = $derived(
     newPromptOpen ||
       refreshPending ||
       Boolean(deleteTarget) ||
       Boolean(confirmRequest) ||
-      detailModalOpen
+      detailModalOpen ||
+      sidebarModalOpen
   );
 
   async function canNavigate(): Promise<boolean> {
@@ -419,7 +426,12 @@
     class="library-workspace"
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
   >
-    <ProjectSidebar onNewPrompt={openNewPrompt} {canNavigate} onNotice={notice} />
+    <ProjectSidebar
+      onNewPrompt={openNewPrompt}
+      {canNavigate}
+      onNotice={notice}
+      onModalChange={(open) => (sidebarModalOpen = open)}
+    />
     <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>

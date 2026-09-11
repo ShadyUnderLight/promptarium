@@ -28,14 +28,27 @@
     onNewPrompt: () => void;
     canNavigate: () => Promise<boolean>;
     onNotice: (message: string) => void;
+    /** Reports whether this sidebar is showing an overlay of its own — the
+     *  project menu. That menu is a full-screen context backdrop with a focus
+     *  trap, so while it is open it owns the keyboard exactly like an app modal
+     *  and the shell's global shortcuts have to yield to it. */
+    onModalChange: (open: boolean) => void;
   }
 
-  let { onNewPrompt, canNavigate, onNotice }: Props = $props();
+  let { onNewPrompt, canNavigate, onNotice, onModalChange }: Props = $props();
   let addPath = $state<string | null>(null);
   let relocateFrom = $state<string | null>(null);
   let pathInput: HTMLInputElement | undefined = $state(undefined);
   let busy = $state(false);
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
+  // The menu is only mounted while it is open, so one expression states the
+  // fact the shell needs: the menu is the sidebar's one overlay, and it is up
+  // exactly when `menu` holds a target.
+  const modalOpen = $derived(menu !== null);
+
+  $effect(() => {
+    onModalChange(modalOpen);
+  });
 
   const project = $derived(activeProject());
   const allProjectsActive = $derived(isAllProjects());

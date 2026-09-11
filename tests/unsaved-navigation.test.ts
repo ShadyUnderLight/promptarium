@@ -11,10 +11,10 @@
  * These tests drive the real shell so that swapping the guard back to a native
  * call fails here instead of regressing quietly, and they pin the modal
  * contract: while **any** overlay is open the global shortcuts (⌘N/⌘F/⌘S) are
- * swallowed, never reaching the page behind it. That is every overlay the
- * shell renders itself — New Prompt, delete, unsaved confirm, reload confirm —
- * plus the two Prompt Detail owns and reports up from inside the detail pane:
- * the naming dialog and Compare.
+ * swallowed, never reaching the page behind it. That is every overlay in the
+ * app — New Prompt, delete, unsaved confirm and reload confirm, which the shell
+ * renders itself; the naming dialog and Compare, which Prompt Detail reports
+ * up; and the sidebar's project menu.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Mock } from 'vitest';
@@ -319,5 +319,58 @@ describe('global shortcuts yield while a modal is open', () => {
 
     expect(container.querySelector('.new-prompt-dialog')).toBeNull();
     expect(container.querySelector('.compare-modal')).not.toBeNull();
+  });
+
+  /** Open the sidebar's project menu, the one overlay the shell renders
+   *  neither in its own markup nor in the detail pane. */
+  async function openProjectMenu(container: HTMLElement): Promise<HTMLElement> {
+    const row = [...container.querySelectorAll<HTMLElement>('.project-row')].find(
+      (item) => item.querySelector('.project-row__name')?.textContent?.trim() === 'My Proj'
+    );
+    if (!row) throw new Error('no project row for My Proj');
+    await fireEvent.contextMenu(row);
+    // The sidebar reports its overlay through an effect; let that land, as it
+    // has long before a human could reach the keyboard.
+    await flush();
+    const menu = container.querySelector<HTMLElement>('.project-menu');
+    if (!menu) throw new Error('project menu did not open');
+    return menu;
+  }
+
+  it('⌘N, ⌘F and ⌘S yield to the project menu as well', async () => {
+    const { container } = render(PromptsView);
+    // Dirty, so ⌘N has an unsaved guard to leak into and ⌘S an editor to save.
+    await makeEditorDirty(container);
+
+    const menu = await openProjectMenu(container);
+    const focusSpy = vi.spyOn(searchInput(container), 'focus');
+
+    expect(pressChord(menu, 'n')).toBe(true);
+    expect(pressChord(menu, 'f')).toBe(true);
+    expect(pressChord(menu, 's')).toBe(true);
+    await flush();
+
+    // Nothing stacked on the menu, nothing saved behind it, and the search box
+    // never took focus.
+    expect(screen.queryByText(unsavedTitle)).toBeNull();
+    expect(container.querySelector('.new-prompt-dialog')).toBeNull();
+    expect(saveDocumentMock).not.toHaveBeenCalled();
+    expect(focusSpy).not.toHaveBeenCalled();
+    expect(container.querySelector('.project-menu')).not.toBeNull();
+  });
+
+  it('releases the shortcuts again once the project menu closes', async () => {
+    const { container } = render(PromptsView);
+
+    const menu = await openProjectMenu(container);
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => expect(container.querySelector('.project-menu')).toBeNull());
+    // Same propagation lag, now on the way out: a report stuck on `true` would
+    // leave the shortcuts dead for the rest of the session.
+    await flush();
+
+    const focusSpy = vi.spyOn(searchInput(container), 'focus');
+    expect(pressChord(window, 'f')).toBe(true);
+    expect(focusSpy).toHaveBeenCalled();
   });
 });

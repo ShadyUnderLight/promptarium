@@ -22,6 +22,7 @@ const noopProps = {
   onNewPrompt: () => {},
   canNavigate: async () => true,
   onNotice: () => {},
+  onModalChange: () => {},
 };
 
 beforeEach(() => {

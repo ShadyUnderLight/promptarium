@@ -29,6 +29,7 @@ const sidebarProps = {
   onNewPrompt: () => {},
   canNavigate: async () => true,
   onNotice: () => {},
+  onModalChange: () => {},
 };
 
 const libraryProps = {
