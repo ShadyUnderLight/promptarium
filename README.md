@@ -84,7 +84,8 @@ another application.
 - **Localization** — English and 简体中文, following the system language by
   default.
 - **Light / dark theme** following the OS, with a manual override.
-- **Self-update** from GitHub Releases for signed desktop builds.
+- **Self-update** from GitHub Releases, using cryptographically signed updater
+  artifacts (the installers themselves are unsigned — see below).
 
 ## Install
 
@@ -92,7 +93,8 @@ another application.
 
 Download the installer for your platform from
 [GitHub Releases](https://github.com/ShadyUnderLight/promptarium/releases).
-macOS is the primary target; CI also produces Linux and Windows bundles.
+macOS is the primary target; the release workflow also produces Linux and
+Windows bundles.
 
 Builds are unsigned, so the first launch may warn:
 
@@ -140,8 +142,8 @@ pnpm tauri build # native app + installers → src-tauri/target/release/bundle/
 ```
 
 Releases are cut by pushing a version tag (`v*`), which triggers
-`.github/workflows/release.yml` to build and attach signed installers plus the
-updater manifest.
+`.github/workflows/release.yml` to build and attach unsigned installers plus
+the signed updater artifacts (`latest.json` and per-platform signatures).
 
 ## Basic usage
 
@@ -228,8 +230,10 @@ so a prompt is addressed as `coding/github/review-pr`. No UUIDs, no sidecars.
 ### App data directory
 
 App-owned state and disposable indexes live in **`~/.promptarium`** — never
-inside a user project. Deleting it never loses a prompt; the next scan rebuilds
-everything from Markdown.
+inside a user project. Deleting it never deletes prompt files, but it removes
+the registered projects and their app-local metadata (roster, names, colors,
+active project). Re-add the project folders afterwards; prompt indexes rebuild
+from Markdown.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
