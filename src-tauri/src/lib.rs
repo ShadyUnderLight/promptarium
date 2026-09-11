@@ -3,6 +3,7 @@
 //! Rust owns the filesystem (the Markdown prompt store and the app-local
 //! roster). The SvelteKit frontend owns rendering and the variable grammar.
 
+mod ai;
 mod datadir;
 mod prompts;
 
@@ -50,6 +51,10 @@ pub fn run() {
             prompts::state::git_repository_info,
             prompts::state::git_file_history,
             prompts::state::git_file_diff,
+            ai::deepseek::deepseek_credential_status,
+            ai::deepseek::set_deepseek_api_key,
+            ai::deepseek::clear_deepseek_api_key,
+            ai::deepseek::generate_prompt_filename_suggestions,
         ]);
 
     builder

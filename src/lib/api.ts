@@ -83,6 +83,69 @@ export interface ProjectWatcherStatus {
   message?: string | null;
 }
 
+export type AiNamingFailure =
+  | 'not-configured'
+  | 'unsupported'
+  | 'empty-prompt'
+  | 'auth-failed'
+  | 'rate-limited'
+  | 'network'
+  | 'timeout'
+  | 'bad-response'
+  | 'service-error';
+
+export type CredentialFailure = 'unsupported' | 'empty-key' | 'store';
+
+export interface DeepSeekCredentialStatus {
+  configured: boolean;
+  supported: boolean;
+}
+
+export interface CredentialMutationResult {
+  status: DeepSeekCredentialStatus;
+  failure?: CredentialFailure;
+  detail?: string;
+}
+
+export interface FilenameSuggestionResult {
+  names: string[];
+  failure?: AiNamingFailure;
+  detail?: string;
+}
+
+/** DeepSeek 的 secret 只在原生层保存，前端只接收配置状态。 */
+export async function deepseekCredentialStatus(): Promise<DeepSeekCredentialStatus> {
+  if (!isTauri()) return { configured: false, supported: false };
+  return call<DeepSeekCredentialStatus>('deepseek_credential_status');
+}
+
+export async function setDeepSeekApiKey(apiKey: string): Promise<CredentialMutationResult> {
+  if (!isTauri()) {
+    return {
+      status: { configured: false, supported: false },
+      failure: 'unsupported',
+    };
+  }
+  return call<CredentialMutationResult>('set_deepseek_api_key', { apiKey });
+}
+
+export async function clearDeepSeekApiKey(): Promise<CredentialMutationResult> {
+  if (!isTauri()) {
+    return {
+      status: { configured: false, supported: false },
+      failure: 'unsupported',
+    };
+  }
+  return call<CredentialMutationResult>('clear_deepseek_api_key');
+}
+
+export async function generatePromptFilenameSuggestions(
+  body: string
+): Promise<FilenameSuggestionResult> {
+  if (!isTauri()) return { names: [], failure: 'unsupported' };
+  return call<FilenameSuggestionResult>('generate_prompt_filename_suggestions', { body });
+}
+
 export async function syncProjectWatcher(project: string | null): Promise<ProjectWatcherStatus> {
   if (!isTauri()) {
     return { projectPath: project, available: true, message: null };
