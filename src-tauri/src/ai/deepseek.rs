@@ -80,6 +80,15 @@ impl ReasoningEffort {
             Self::Max => 2048,
         }
     }
+
+    fn request_timeout(self) -> Duration {
+        match self {
+            Self::None => Duration::from_secs(15),
+            Self::Low => Duration::from_secs(30),
+            Self::High => Duration::from_secs(60),
+            Self::Max => Duration::from_secs(120),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -546,7 +555,7 @@ async fn request_suggestions(
 ) -> FilenameSuggestionResult {
     let client = match Client::builder()
         .connect_timeout(Duration::from_secs(5))
-        .timeout(Duration::from_secs(15))
+        .timeout(reasoning_effort.request_timeout())
         .build()
     {
         Ok(client) => client,
@@ -803,6 +812,27 @@ mod tests {
         .unwrap();
         assert_eq!(max["reasoning_effort"], "max");
         assert_eq!(max["max_tokens"], 2048);
+    }
+
+    #[test]
+    fn reasoning_effort_scales_generation_timeout() {
+        assert_eq!(
+            ReasoningEffort::None.request_timeout(),
+            Duration::from_secs(15)
+        );
+        assert_eq!(
+            ReasoningEffort::Low.request_timeout(),
+            Duration::from_secs(30)
+        );
+        assert_eq!(
+            ReasoningEffort::High.request_timeout(),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            ReasoningEffort::Max.request_timeout(),
+            Duration::from_secs(120)
+        );
+        assert!(ReasoningEffort::Max.request_timeout() > ReasoningEffort::High.request_timeout());
     }
 
     #[test]

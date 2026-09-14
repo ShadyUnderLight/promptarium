@@ -193,7 +193,7 @@ export const en = {
   'newPrompt.aiNaming.error.network': 'Unable to connect to DeepSeek.',
   'newPrompt.aiNaming.error.timeout': 'DeepSeek took too long to respond.',
   'newPrompt.aiNaming.error.badResponse': 'DeepSeek returned an unreadable result.',
-  'newPrompt.aiNaming.error.outputLimit': 'DeepSeek used the selected thinking budget before completing the filename response.',
+  'newPrompt.aiNaming.error.outputLimit': 'DeepSeek reached the output limit before completing the filename response.',
   'newPrompt.aiNaming.error.invalidSettings': 'The selected DeepSeek settings are invalid.',
   'newPrompt.aiNaming.error.serviceError': 'DeepSeek is temporarily unavailable.',
   'newPrompt.aiNaming.error.credential': 'Unable to save the DeepSeek API key.',

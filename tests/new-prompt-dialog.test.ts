@@ -434,7 +434,7 @@ describe('NewPromptDialog AI naming', () => {
     ['network', 'Unable to connect to DeepSeek.'],
     ['timeout', 'DeepSeek took too long to respond.'],
     ['bad-response', 'DeepSeek returned an unreadable result.'],
-    ['output-limit', 'DeepSeek used the selected thinking budget before completing the filename response.'],
+    ['output-limit', 'DeepSeek reached the output limit before completing the filename response.'],
     ['insufficient-balance', 'Your DeepSeek account balance is insufficient.'],
   ] as const)('localizes the %s failure without blocking manual naming', async (failure, message) => {
     generateMock.mockResolvedValue({ names: [], failure });
