@@ -92,6 +92,7 @@
     network: 'newPrompt.aiNaming.error.network',
     timeout: 'newPrompt.aiNaming.error.timeout',
     'bad-response': 'newPrompt.aiNaming.error.badResponse',
+    'output-limit': 'newPrompt.aiNaming.error.outputLimit',
     'invalid-settings': 'newPrompt.aiNaming.error.invalidSettings',
     'service-error': 'newPrompt.aiNaming.error.serviceError',
   };
@@ -226,16 +227,26 @@
       return;
     }
 
+    const requestModel = selectedModel || DEFAULT_DEEPSEEK_MODEL;
+    const requestReasoningEffort = reasoningEffort;
     const requestId = ++namingRequestSerial;
     activeNamingRequest = requestId;
     namingBusy = true;
     namingError = '';
     try {
       const result = await generatePromptFilenameSuggestions(requestBody, {
-        model: selectedModel || DEFAULT_DEEPSEEK_MODEL,
-        reasoningEffort,
+        model: requestModel,
+        reasoningEffort: requestReasoningEffort,
       });
-      if (disposed || requestId !== namingRequestSerial || body !== requestBody) return;
+      if (
+        disposed ||
+        requestId !== namingRequestSerial ||
+        body !== requestBody ||
+        (selectedModel || DEFAULT_DEEPSEEK_MODEL) !== requestModel ||
+        reasoningEffort !== requestReasoningEffort
+      ) {
+        return;
+      }
       if (result.failure) {
         namingError = namingFailureMessage(result.failure);
         applyCredentialFailure(result.failure);
@@ -247,7 +258,13 @@
       }
       suggestions = result.names.slice(0, 3);
     } catch {
-      if (!disposed && requestId === namingRequestSerial && body === requestBody) {
+      if (
+        !disposed &&
+        requestId === namingRequestSerial &&
+        body === requestBody &&
+        (selectedModel || DEFAULT_DEEPSEEK_MODEL) === requestModel &&
+        reasoningEffort === requestReasoningEffort
+      ) {
         namingError = t('newPrompt.aiNaming.error.network');
       }
     } finally {
@@ -259,7 +276,7 @@
   }
 
   async function loadModels(): Promise<void> {
-    if (credentialBusy || modelBusy) return;
+    if (credentialBusy || modelBusy || namingBusy) return;
     if (!credentialStatus?.configured || credentialStatus.failure) {
       modelError = credentialStatus?.failure
         ? credentialStatusFailureMessage(credentialStatus.failure)
@@ -326,12 +343,14 @@
   function handleModelChange(event: Event): void {
     selectedModel = (event.currentTarget as HTMLSelectElement).value;
     saveDeepSeekModel(selectedModel);
+    invalidateNaming();
   }
 
   function handleReasoningEffortChange(event: Event): void {
     reasoningEffort = (event.currentTarget as HTMLSelectElement)
       .value as DeepSeekReasoningEffort;
     saveDeepSeekReasoningEffort(reasoningEffort);
+    invalidateNaming();
   }
 
   function applySuggestion(suggestion: string): void {
@@ -522,7 +541,7 @@
                 <select
                   value={selectedModel}
                   onchange={handleModelChange}
-                  disabled={credentialBusy || modelBusy}
+                  disabled={credentialBusy || modelBusy || namingBusy}
                 >
                   {#each modelOptions as model}
                     <option value={model}>{model}</option>
@@ -534,7 +553,7 @@
                 <select
                   value={reasoningEffort}
                   onchange={handleReasoningEffortChange}
-                  disabled={credentialBusy || modelBusy}
+                  disabled={credentialBusy || modelBusy || namingBusy}
                 >
                   <option value="none">{t('newPrompt.aiNaming.reasoning.none')}</option>
                   <option value="low">{t('newPrompt.aiNaming.reasoning.low')}</option>
@@ -544,7 +563,7 @@
               </label>
             </div>
             <div class="new-prompt-ai__model-actions">
-              <button type="button" class="btn btn--ghost btn--sm" onclick={loadModels} disabled={credentialBusy || modelBusy}>
+              <button type="button" class="btn btn--ghost btn--sm" onclick={loadModels} disabled={credentialBusy || modelBusy || namingBusy}>
                 {modelBusy ? t('newPrompt.aiNaming.refreshingModels') : t('newPrompt.aiNaming.refreshModels')}
               </button>
             </div>

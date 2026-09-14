@@ -48,6 +48,7 @@ pub enum AiNamingFailure {
     Network,
     Timeout,
     BadResponse,
+    OutputLimit,
     InvalidSettings,
     ServiceError,
 }
@@ -68,6 +69,15 @@ impl ReasoningEffort {
             Self::Low => Some("low"),
             Self::High => Some("high"),
             Self::Max => Some("max"),
+        }
+    }
+
+    fn max_tokens(self) -> u16 {
+        match self {
+            Self::None => 128,
+            Self::Low => 512,
+            Self::High => 1024,
+            Self::Max => 2048,
         }
     }
 }
@@ -157,6 +167,7 @@ struct ChatResponse {
 #[derive(Debug, Deserialize)]
 struct ChatChoice {
     message: ChatMessageResponse,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -568,24 +579,36 @@ async fn request_suggestions(
         Err(error) if error.is_timeout() => return failure(AiNamingFailure::Timeout, None),
         Err(_) => return failure(AiNamingFailure::BadResponse, Some("invalid JSON response")),
     };
-    let content = match response
-        .choices
-        .first()
-        .and_then(|choice| choice.message.content.as_deref())
-    {
-        Some(content) => content,
-        None => {
+    let content = match chat_content(&response) {
+        Ok(content) => content,
+        Err(AiNamingFailure::OutputLimit) => {
             return failure(
-                AiNamingFailure::BadResponse,
-                Some("missing response content"),
+                AiNamingFailure::OutputLimit,
+                Some("response reached the selected max_tokens budget"),
             )
         }
+        Err(code) => return failure(code, Some("missing response content")),
     };
 
     match parse_filename_suggestions(content) {
         Ok(names) => success(names),
         Err(code) => failure(code, Some("response did not contain three valid names")),
     }
+}
+
+fn chat_content(response: &ChatResponse) -> Result<&str, AiNamingFailure> {
+    let choice = response
+        .choices
+        .first()
+        .ok_or(AiNamingFailure::BadResponse)?;
+    if choice.finish_reason.as_deref() == Some("length") {
+        return Err(AiNamingFailure::OutputLimit);
+    }
+    choice
+        .message
+        .content
+        .as_deref()
+        .ok_or(AiNamingFailure::BadResponse)
 }
 
 fn build_chat_request<'a>(
@@ -612,7 +635,7 @@ fn build_chat_request<'a>(
             .then_some(Thinking { kind: "disabled" }),
         reasoning_effort: reasoning_effort.api_value(),
         stream: false,
-        max_tokens: 128,
+        max_tokens: reasoning_effort.max_tokens(),
     }
 }
 
@@ -751,6 +774,16 @@ mod tests {
 
     #[test]
     fn request_contract_supports_selected_model_and_reasoning_effort() {
+        let low = serde_json::to_value(build_chat_request(
+            "Review this PR.",
+            "deepseek-flash",
+            ReasoningEffort::Low,
+        ))
+        .unwrap();
+        assert_eq!(low["reasoning_effort"], "low");
+        assert_eq!(low["max_tokens"], 512);
+        assert!(low.get("thinking").is_none());
+
         let request = serde_json::to_value(build_chat_request(
             "Review this PR.",
             "deepseek-v4-pro",
@@ -760,6 +793,25 @@ mod tests {
         assert_eq!(request["model"], "deepseek-v4-pro");
         assert!(request.get("thinking").is_none());
         assert_eq!(request["reasoning_effort"], "high");
+        assert_eq!(request["max_tokens"], 1024);
+
+        let max = serde_json::to_value(build_chat_request(
+            "Review this PR.",
+            "deepseek-v4-pro",
+            ReasoningEffort::Max,
+        ))
+        .unwrap();
+        assert_eq!(max["reasoning_effort"], "max");
+        assert_eq!(max["max_tokens"], 2048);
+    }
+
+    #[test]
+    fn length_finish_reason_maps_to_output_limit() {
+        let response: ChatResponse = serde_json::from_str(
+            r#"{"choices":[{"message":{"content":null},"finish_reason":"length"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(chat_content(&response), Err(AiNamingFailure::OutputLimit));
     }
 
     #[test]

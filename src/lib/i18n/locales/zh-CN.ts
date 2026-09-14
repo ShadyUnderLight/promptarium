@@ -189,6 +189,7 @@ export const zhCN = {
   'newPrompt.aiNaming.error.network': '无法连接 DeepSeek。',
   'newPrompt.aiNaming.error.timeout': 'DeepSeek 响应超时。',
   'newPrompt.aiNaming.error.badResponse': 'DeepSeek 返回了无法识别的结果。',
+  'newPrompt.aiNaming.error.outputLimit': 'DeepSeek 在完成文件名响应前用尽了所选思考预算。',
   'newPrompt.aiNaming.error.invalidSettings': '所选 DeepSeek 设置无效。',
   'newPrompt.aiNaming.error.serviceError': 'DeepSeek 服务暂时不可用。',
   'newPrompt.aiNaming.error.credential': '无法保存 DeepSeek API Key。',

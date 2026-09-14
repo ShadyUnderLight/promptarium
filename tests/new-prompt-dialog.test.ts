@@ -169,6 +169,31 @@ describe('NewPromptDialog AI naming', () => {
     );
   });
 
+  it('ignores suggestions from a request after settings change', async () => {
+    const request = deferred<FilenameSuggestionResult>();
+    generateMock.mockReturnValueOnce(request.promise);
+    renderDialog();
+    await waitForCredentialStatus();
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    const model = screen.getByLabelText('Model') as HTMLSelectElement;
+    const effort = screen.getByLabelText('Thinking effort') as HTMLSelectElement;
+    const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
+
+    await fireEvent.input(body, { target: { value: 'Review a PR.' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
+    expect(model.disabled).toBe(true);
+    expect(effort.disabled).toBe(true);
+
+    await fireEvent.change(model, { target: { value: 'deepseek-v4-pro' } });
+    await fireEvent.change(effort, { target: { value: 'high' } });
+    request.resolve({ names: ['过时建议一', '过时建议二', '过时建议三'] });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText('AI filename suggestions')).toBeNull();
+    expect(screen.queryByText('过时建议一')).toBeNull();
+  });
+
   it('localizes model-list failures without disabling manual naming', async () => {
     listModelsMock.mockResolvedValue({ models: [], failure: 'network' });
     renderDialog();
@@ -390,6 +415,7 @@ describe('NewPromptDialog AI naming', () => {
     ['network', 'Unable to connect to DeepSeek.'],
     ['timeout', 'DeepSeek took too long to respond.'],
     ['bad-response', 'DeepSeek returned an unreadable result.'],
+    ['output-limit', 'DeepSeek used the selected thinking budget before completing the filename response.'],
     ['insufficient-balance', 'Your DeepSeek account balance is insufficient.'],
   ] as const)('localizes the %s failure without blocking manual naming', async (failure, message) => {
     generateMock.mockResolvedValue({ names: [], failure });

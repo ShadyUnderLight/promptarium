@@ -94,6 +94,7 @@ export type AiNamingFailure =
   | 'network'
   | 'timeout'
   | 'bad-response'
+  | 'output-limit'
   | 'invalid-settings'
   | 'service-error';
 
