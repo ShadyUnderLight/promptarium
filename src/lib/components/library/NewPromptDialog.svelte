@@ -8,14 +8,23 @@
     AiNamingFailure,
     CredentialFailure,
     DeepSeekCredentialStatus,
+    DeepSeekReasoningEffort,
   } from '$lib/api';
   import {
     clearDeepSeekApiKey,
     deepseekCredentialStatus,
     generatePromptFilenameSuggestions,
     isTauri,
+    listDeepSeekModels,
     setDeepSeekApiKey,
   } from '$lib/api';
+  import {
+    DEFAULT_DEEPSEEK_MODEL,
+    readDeepSeekModel,
+    readDeepSeekReasoningEffort,
+    saveDeepSeekModel,
+    saveDeepSeekReasoningEffort,
+  } from '$lib/ai/deepseek-settings';
   import type { MessageKey } from '$lib/i18n/locales/en';
   import Icon from '$lib/components/Icon.svelte';
 
@@ -48,15 +57,26 @@
   let apiKeyInput = $state('');
   let credentialBusy = $state(false);
   let credentialError = $state('');
+  let models = $state<string[]>([]);
+  let selectedModel = $state(readDeepSeekModel());
+  let reasoningEffort = $state<DeepSeekReasoningEffort>(readDeepSeekReasoningEffort());
+  let modelBusy = $state(false);
+  let modelError = $state('');
   let namingRequestSerial = 0;
   let activeNamingRequest = 0;
+  let modelRequestSerial = 0;
+  let activeModelRequest = 0;
   let credentialRevision = 0;
   let disposed = false;
   const showProjectPicker = $derived(projects.length > 1);
+  const modelOptions = $derived(
+    models.includes(selectedModel) ? models : [selectedModel, ...models],
+  );
   const namingDisabled = $derived(
     !body.trim() ||
       namingBusy ||
       credentialBusy ||
+      modelBusy ||
       credentialStatus?.supported === false ||
       Boolean(credentialStatus?.failure),
   );
@@ -72,6 +92,8 @@
     network: 'newPrompt.aiNaming.error.network',
     timeout: 'newPrompt.aiNaming.error.timeout',
     'bad-response': 'newPrompt.aiNaming.error.badResponse',
+    'output-limit': 'newPrompt.aiNaming.error.outputLimit',
+    'invalid-settings': 'newPrompt.aiNaming.error.invalidSettings',
     'service-error': 'newPrompt.aiNaming.error.serviceError',
   };
 
@@ -97,6 +119,7 @@
   onDestroy(() => {
     disposed = true;
     namingRequestSerial += 1;
+    modelRequestSerial += 1;
   });
 
   function listValue(value: string): string[] {
@@ -125,6 +148,14 @@
     namingError = '';
   }
 
+  function invalidateModelList(): void {
+    modelRequestSerial += 1;
+    activeModelRequest = 0;
+    modelBusy = false;
+    modelError = '';
+    models = [];
+  }
+
   function handleBodyInput(event: Event): void {
     body = (event.currentTarget as HTMLTextAreaElement).value;
     invalidateNaming();
@@ -142,9 +173,25 @@
     return t(credentialStatusFailureMessages[failure]);
   }
 
+  function applyCredentialFailure(failure: AiNamingFailure): void {
+    if (failure === 'not-configured') {
+      credentialStatus = { configured: false, supported: true };
+      credentialPanelOpen = true;
+    } else if (failure === 'unsupported') {
+      credentialStatus = { configured: false, supported: false };
+    } else if (failure === 'credential-store') {
+      credentialStatus = {
+        configured: credentialStatus?.configured ?? false,
+        supported: true,
+        failure: 'store',
+      };
+    }
+  }
+
   function beginCredentialMutation(): void {
     credentialRevision += 1;
     invalidateNaming();
+    invalidateModelList();
   }
 
   function finishCredentialMutation(): void {
@@ -156,7 +203,7 @@
 
   async function generateNames(): Promise<void> {
     const requestBody = body;
-    if (credentialBusy || namingBusy) return;
+    if (credentialBusy || namingBusy || modelBusy) return;
     if (!requestBody.trim()) {
       namingError = t('newPrompt.aiNaming.emptyPrompt');
       return;
@@ -180,27 +227,29 @@
       return;
     }
 
+    const requestModel = selectedModel || DEFAULT_DEEPSEEK_MODEL;
+    const requestReasoningEffort = reasoningEffort;
     const requestId = ++namingRequestSerial;
     activeNamingRequest = requestId;
     namingBusy = true;
     namingError = '';
     try {
-      const result = await generatePromptFilenameSuggestions(requestBody);
-      if (disposed || requestId !== namingRequestSerial || body !== requestBody) return;
+      const result = await generatePromptFilenameSuggestions(requestBody, {
+        model: requestModel,
+        reasoningEffort: requestReasoningEffort,
+      });
+      if (
+        disposed ||
+        requestId !== namingRequestSerial ||
+        body !== requestBody ||
+        (selectedModel || DEFAULT_DEEPSEEK_MODEL) !== requestModel ||
+        reasoningEffort !== requestReasoningEffort
+      ) {
+        return;
+      }
       if (result.failure) {
         namingError = namingFailureMessage(result.failure);
-        if (result.failure === 'not-configured') {
-          credentialStatus = { configured: false, supported: true };
-          credentialPanelOpen = true;
-        } else if (result.failure === 'unsupported') {
-          credentialStatus = { configured: false, supported: false };
-        } else if (result.failure === 'credential-store') {
-          credentialStatus = {
-            configured: credentialStatus?.configured ?? false,
-            supported: true,
-            failure: 'store',
-          };
-        }
+        applyCredentialFailure(result.failure);
         return;
       }
       if (result.names.length < 3) {
@@ -209,7 +258,13 @@
       }
       suggestions = result.names.slice(0, 3);
     } catch {
-      if (!disposed && requestId === namingRequestSerial && body === requestBody) {
+      if (
+        !disposed &&
+        requestId === namingRequestSerial &&
+        body === requestBody &&
+        (selectedModel || DEFAULT_DEEPSEEK_MODEL) === requestModel &&
+        reasoningEffort === requestReasoningEffort
+      ) {
         namingError = t('newPrompt.aiNaming.error.network');
       }
     } finally {
@@ -218,6 +273,88 @@
         namingBusy = false;
       }
     }
+  }
+
+  async function loadModels(): Promise<void> {
+    if (credentialBusy || modelBusy || namingBusy) return;
+    if (!credentialStatus?.configured || credentialStatus.failure) {
+      modelError = credentialStatus?.failure
+        ? credentialStatusFailureMessage(credentialStatus.failure)
+        : t('newPrompt.aiNaming.error.notConfigured');
+      credentialPanelOpen = true;
+      return;
+    }
+
+    const requestId = ++modelRequestSerial;
+    const requestRevision = credentialRevision;
+    activeModelRequest = requestId;
+    modelBusy = true;
+    modelError = '';
+    try {
+      const result = await listDeepSeekModels();
+      if (
+        disposed ||
+        requestId !== modelRequestSerial ||
+        requestRevision !== credentialRevision
+      ) {
+        return;
+      }
+      if (result.failure) {
+        const message = namingFailureMessage(result.failure);
+        if (
+          result.failure === 'not-configured' ||
+          result.failure === 'unsupported' ||
+          result.failure === 'credential-store'
+        ) {
+          credentialError = message;
+        } else {
+          modelError = message;
+        }
+        applyCredentialFailure(result.failure);
+        return;
+      }
+      if (result.models.length === 0) {
+        modelError = t('newPrompt.aiNaming.error.badResponse');
+        return;
+      }
+      models = result.models;
+      if (!result.models.includes(selectedModel)) {
+        const nextModel = result.models.includes(DEFAULT_DEEPSEEK_MODEL)
+          ? DEFAULT_DEEPSEEK_MODEL
+          : result.models[0];
+        if (nextModel !== selectedModel) {
+          selectedModel = nextModel;
+          saveDeepSeekModel(selectedModel);
+          invalidateNaming();
+        }
+      }
+    } catch {
+      if (
+        !disposed &&
+        requestId === modelRequestSerial &&
+        requestRevision === credentialRevision
+      ) {
+        modelError = t('newPrompt.aiNaming.error.network');
+      }
+    } finally {
+      if (!disposed && activeModelRequest === requestId) {
+        activeModelRequest = 0;
+        modelBusy = false;
+      }
+    }
+  }
+
+  function handleModelChange(event: Event): void {
+    selectedModel = (event.currentTarget as HTMLSelectElement).value;
+    saveDeepSeekModel(selectedModel);
+    invalidateNaming();
+  }
+
+  function handleReasoningEffortChange(event: Event): void {
+    reasoningEffort = (event.currentTarget as HTMLSelectElement)
+      .value as DeepSeekReasoningEffort;
+    saveDeepSeekReasoningEffort(reasoningEffort);
+    invalidateNaming();
   }
 
   function applySuggestion(suggestion: string): void {
@@ -401,6 +538,41 @@
               disabled={credentialBusy}
             />
           </label>
+          {#if credentialStatus?.configured && !credentialStatus.failure}
+            <div class="new-prompt-ai__settings-grid">
+              <label class="field">
+                <span>{t('newPrompt.aiNaming.model')}</span>
+                <select
+                  value={selectedModel}
+                  onchange={handleModelChange}
+                  disabled={credentialBusy || modelBusy || namingBusy}
+                >
+                  {#each modelOptions as model}
+                    <option value={model}>{model}</option>
+                  {/each}
+                </select>
+              </label>
+              <label class="field">
+                <span>{t('newPrompt.aiNaming.reasoningEffort')}</span>
+                <select
+                  value={reasoningEffort}
+                  onchange={handleReasoningEffortChange}
+                  disabled={credentialBusy || modelBusy || namingBusy}
+                >
+                  <option value="none">{t('newPrompt.aiNaming.reasoning.none')}</option>
+                  <option value="low">{t('newPrompt.aiNaming.reasoning.low')}</option>
+                  <option value="high">{t('newPrompt.aiNaming.reasoning.high')}</option>
+                  <option value="max">{t('newPrompt.aiNaming.reasoning.max')}</option>
+                </select>
+              </label>
+            </div>
+            <div class="new-prompt-ai__model-actions">
+              <button type="button" class="btn btn--ghost btn--sm" onclick={loadModels} disabled={credentialBusy || modelBusy || namingBusy}>
+                {modelBusy ? t('newPrompt.aiNaming.refreshingModels') : t('newPrompt.aiNaming.refreshModels')}
+              </button>
+            </div>
+            {#if modelError}<p class="form-error" aria-live="polite">{modelError}</p>{/if}
+          {/if}
           {#if credentialError}<p class="form-error">{credentialError}</p>{/if}
           <div class="new-prompt-ai__config-actions">
             <button type="button" class="btn btn--ghost btn--sm" onclick={closeCredentialPanel} disabled={credentialBusy}>

@@ -19,7 +19,8 @@ chat/playground functionality or inject text into another application. Optional
 AI naming is explicitly triggered by the user and sends the current prompt body
 to DeepSeek only to suggest filenames; on macOS, the optional API key is stored
 in the system Keychain and never written to prompt files or project folders.
-Manual naming remains fully available without it.
+The AI naming panel can refresh the models available to the key, choose a model,
+and set the reasoning effort; manual naming remains fully available without it.
 
 ## Core features
 
