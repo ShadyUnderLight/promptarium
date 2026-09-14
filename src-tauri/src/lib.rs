@@ -54,6 +54,7 @@ pub fn run() {
             ai::deepseek::deepseek_credential_status,
             ai::deepseek::set_deepseek_api_key,
             ai::deepseek::clear_deepseek_api_key,
+            ai::deepseek::list_deepseek_models,
             ai::deepseek::generate_prompt_filename_suggestions,
         ]);
 

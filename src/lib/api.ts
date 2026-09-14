@@ -94,7 +94,10 @@ export type AiNamingFailure =
   | 'network'
   | 'timeout'
   | 'bad-response'
+  | 'invalid-settings'
   | 'service-error';
+
+export type DeepSeekReasoningEffort = 'none' | 'low' | 'high' | 'max';
 
 export type CredentialFailure = 'unsupported' | 'empty-key' | 'store';
 
@@ -115,6 +118,17 @@ export interface FilenameSuggestionResult {
   names: string[];
   failure?: AiNamingFailure;
   detail?: string;
+}
+
+export interface DeepSeekModelListResult {
+  models: string[];
+  failure?: AiNamingFailure;
+  detail?: string;
+}
+
+export interface FilenameSuggestionOptions {
+  model: string;
+  reasoningEffort: DeepSeekReasoningEffort;
 }
 
 /** DeepSeek 的 secret 只在原生层保存，前端只接收配置状态。 */
@@ -143,11 +157,24 @@ export async function clearDeepSeekApiKey(): Promise<CredentialMutationResult> {
   return call<CredentialMutationResult>('clear_deepseek_api_key');
 }
 
+export async function listDeepSeekModels(): Promise<DeepSeekModelListResult> {
+  if (!isTauri()) return { models: [], failure: 'unsupported' };
+  return call<DeepSeekModelListResult>('list_deepseek_models');
+}
+
 export async function generatePromptFilenameSuggestions(
-  body: string
+  body: string,
+  options: FilenameSuggestionOptions = {
+    model: 'deepseek-flash',
+    reasoningEffort: 'none',
+  }
 ): Promise<FilenameSuggestionResult> {
   if (!isTauri()) return { names: [], failure: 'unsupported' };
-  return call<FilenameSuggestionResult>('generate_prompt_filename_suggestions', { body });
+  return call<FilenameSuggestionResult>('generate_prompt_filename_suggestions', {
+    body,
+    model: options.model,
+    reasoningEffort: options.reasoningEffort,
+  });
 }
 
 export async function syncProjectWatcher(project: string | null): Promise<ProjectWatcherStatus> {

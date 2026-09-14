@@ -8,6 +8,7 @@ import {
   generatePromptFilenameSuggestions,
   isTauri,
   setDeepSeekApiKey,
+  listDeepSeekModels,
 } from '$lib/api';
 import type { CredentialMutationResult, DeepSeekCredentialStatus, FilenameSuggestionResult } from '$lib/api';
 import { setPreference } from '$lib/i18n/i18n.svelte';
@@ -17,11 +18,13 @@ vi.mock('$lib/api', () => ({
   deepseekCredentialStatus: vi.fn(),
   generatePromptFilenameSuggestions: vi.fn(),
   isTauri: vi.fn(() => false),
+  listDeepSeekModels: vi.fn(),
   setDeepSeekApiKey: vi.fn(),
 }));
 
 const statusMock = vi.mocked(deepseekCredentialStatus);
 const generateMock = vi.mocked(generatePromptFilenameSuggestions);
+const listModelsMock = vi.mocked(listDeepSeekModels);
 const setKeyMock = vi.mocked(setDeepSeekApiKey);
 const clearKeyMock = vi.mocked(clearDeepSeekApiKey);
 
@@ -88,6 +91,7 @@ beforeEach(() => {
   vi.mocked(isTauri).mockReturnValue(true);
   statusMock.mockResolvedValue({ configured: true, supported: true });
   generateMock.mockResolvedValue({ names: suggestions });
+  listModelsMock.mockResolvedValue({ models: ['deepseek-flash', 'deepseek-v4-pro'] });
   setKeyMock.mockResolvedValue({
     status: { configured: true, supported: true },
   });
@@ -99,6 +103,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  localStorage.removeItem('promptarium-deepseek-model');
+  localStorage.removeItem('promptarium-deepseek-reasoning-effort');
   setPreference('en');
 });
 
@@ -124,11 +130,56 @@ describe('NewPromptDialog AI naming', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
     await waitFor(() => expect(generateMock).toHaveBeenCalledOnce());
-    expect(generateMock).toHaveBeenCalledWith('Review this pull request.');
+    expect(generateMock).toHaveBeenCalledWith(
+      'Review this pull request.',
+      { model: 'deepseek-flash', reasoningEffort: 'none' },
+    );
     expect(screen.getByText('AI filename suggestions')).toBeTruthy();
     for (const suggestion of suggestions) {
       expect(screen.getByRole('button', { name: suggestion })).toBeTruthy();
     }
+  });
+
+  it('refreshes models and sends the selected reasoning effort', async () => {
+    renderDialog();
+    await waitForCredentialStatus();
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    const model = screen.getByLabelText('Model') as HTMLSelectElement;
+    const effort = screen.getByLabelText('Thinking effort') as HTMLSelectElement;
+    expect(model.value).toBe('deepseek-flash');
+    expect(effort.value).toBe('none');
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
+    await waitFor(() => expect(listModelsMock).toHaveBeenCalledOnce());
+    expect(screen.getByRole('option', { name: 'deepseek-v4-pro' })).toBeTruthy();
+
+    await fireEvent.change(model, { target: { value: 'deepseek-v4-pro' } });
+    await fireEvent.change(effort, { target: { value: 'high' } });
+    await fireEvent.input(screen.getByRole('textbox', { name: 'Prompt Markdown' }), {
+      target: { value: 'Review a PR.' },
+    });
+    await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
+
+    await waitFor(() =>
+      expect(generateMock).toHaveBeenCalledWith(
+        'Review a PR.',
+        { model: 'deepseek-v4-pro', reasoningEffort: 'high' },
+      ),
+    );
+  });
+
+  it('localizes model-list failures without disabling manual naming', async () => {
+    listModelsMock.mockResolvedValue({ models: [], failure: 'network' });
+    renderDialog();
+    await waitForCredentialStatus();
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
+
+    await waitFor(() => expect(screen.getByText('Unable to connect to DeepSeek.')).toBeTruthy());
+    const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
+    await fireEvent.input(body, { target: { value: 'Review a PR.' } });
+    expect((screen.getByRole('button', { name: 'AI naming' }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('opens credential setup without uploading body when no key is configured', async () => {
@@ -221,8 +272,16 @@ describe('NewPromptDialog AI naming', () => {
     expect(namingButton.disabled).toBe(false);
     await fireEvent.click(namingButton);
     expect(generateMock).toHaveBeenCalledTimes(2);
-    expect(generateMock).toHaveBeenNthCalledWith(1, 'Prompt A');
-    expect(generateMock).toHaveBeenNthCalledWith(2, 'Prompt B');
+    expect(generateMock).toHaveBeenNthCalledWith(
+      1,
+      'Prompt A',
+      { model: 'deepseek-flash', reasoningEffort: 'none' },
+    );
+    expect(generateMock).toHaveBeenNthCalledWith(
+      2,
+      'Prompt B',
+      { model: 'deepseek-flash', reasoningEffort: 'none' },
+    );
 
     requestA.resolve({ names: ['过时建议一', '过时建议二', '过时建议三'] });
     requestB.resolve({ names: ['最新建议一', '最新建议二', '最新建议三'] });

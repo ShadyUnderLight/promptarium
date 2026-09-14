@@ -3,6 +3,7 @@ import {
   clearDeepSeekApiKey,
   deepseekCredentialStatus,
   generatePromptFilenameSuggestions,
+  listDeepSeekModels,
   setDeepSeekApiKey,
 } from '../src/lib/api';
 
@@ -28,6 +29,13 @@ describe('DeepSeek browser-development seam', () => {
   it('returns unsupported without calling a model in browser development', async () => {
     await expect(generatePromptFilenameSuggestions('Review this pull request.')).resolves.toEqual({
       names: [],
+      failure: 'unsupported',
+    });
+  });
+
+  it('returns unsupported without fetching models in browser development', async () => {
+    await expect(listDeepSeekModels()).resolves.toEqual({
+      models: [],
       failure: 'unsupported',
     });
   });

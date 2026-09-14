@@ -10,9 +10,11 @@ use keyring::{Entry, Error as KeyringError};
 const KEYCHAIN_SERVICE: &str = "com.shadyunderlight.promptarium";
 const KEYCHAIN_ACCOUNT: &str = "deepseek-api-key";
 const DEEPSEEK_ENDPOINT: &str = "https://api.deepseek.com/chat/completions";
+const DEEPSEEK_MODELS_ENDPOINT: &str = "https://api.deepseek.com/models";
 // 当前 V4.1 Flash 的官方 API 名；deepseek-v4-flash 仅是兼容旧别名。
-const DEEPSEEK_MODEL: &str = "deepseek-flash";
+const DEFAULT_DEEPSEEK_MODEL: &str = "deepseek-flash";
 const MAX_CANDIDATE_CHARS: usize = 80;
+const MAX_MODEL_ID_CHARS: usize = 128;
 
 const SYSTEM_PROMPT: &str = r#"你是 Promptarium 的文件命名助手。
 
@@ -46,7 +48,28 @@ pub enum AiNamingFailure {
     Network,
     Timeout,
     BadResponse,
+    InvalidSettings,
     ServiceError,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReasoningEffort {
+    None,
+    Low,
+    High,
+    Max,
+}
+
+impl ReasoningEffort {
+    fn api_value(self) -> Option<&'static str> {
+        match self {
+            Self::None => None,
+            Self::Low => Some("low"),
+            Self::High => Some("high"),
+            Self::Max => Some("max"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -87,11 +110,23 @@ pub struct FilenameSuggestionResult {
 }
 
 #[derive(Debug, Serialize)]
+pub struct DeepSeekModelListResult {
+    pub models: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<AiNamingFailure>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct ChatRequest<'a> {
-    model: &'static str,
+    model: &'a str,
     messages: [ChatMessage<'a>; 2],
     response_format: ResponseFormat,
-    thinking: Thinking,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thinking: Option<Thinking>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
     stream: bool,
     max_tokens: u16,
 }
@@ -134,6 +169,16 @@ struct NamesPayload {
     names: Vec<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ModelsPayload {
+    data: Vec<ModelEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelEntry {
+    id: String,
+}
+
 fn success(names: Vec<String>) -> FilenameSuggestionResult {
     FilenameSuggestionResult {
         names,
@@ -145,6 +190,22 @@ fn success(names: Vec<String>) -> FilenameSuggestionResult {
 fn failure(code: AiNamingFailure, detail: Option<&str>) -> FilenameSuggestionResult {
     FilenameSuggestionResult {
         names: Vec::new(),
+        failure: Some(code),
+        detail: detail.map(str::to_owned),
+    }
+}
+
+fn model_list_success(models: Vec<String>) -> DeepSeekModelListResult {
+    DeepSeekModelListResult {
+        models,
+        failure: None,
+        detail: None,
+    }
+}
+
+fn model_list_failure(code: AiNamingFailure, detail: Option<&str>) -> DeepSeekModelListResult {
+    DeepSeekModelListResult {
+        models: Vec::new(),
         failure: Some(code),
         detail: detail.map(str::to_owned),
     }
@@ -352,14 +413,53 @@ pub async fn clear_deepseek_api_key() -> CredentialMutationResult {
 }
 
 #[tauri::command]
-pub async fn generate_prompt_filename_suggestions(body: String) -> FilenameSuggestionResult {
+pub async fn list_deepseek_models() -> DeepSeekModelListResult {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return model_list_failure(AiNamingFailure::Unsupported, None);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let api_key = match tauri::async_runtime::spawn_blocking(stored_api_key).await {
+            Ok(Ok(Some(api_key))) => api_key,
+            Ok(Ok(None)) => {
+                return model_list_failure(AiNamingFailure::NotConfigured, None);
+            }
+            Ok(Err(_)) | Err(_) => {
+                return model_list_failure(
+                    AiNamingFailure::CredentialStore,
+                    Some("macOS Keychain could not be accessed"),
+                );
+            }
+        };
+        request_models(&api_key).await
+    }
+}
+
+#[tauri::command]
+pub async fn generate_prompt_filename_suggestions(
+    body: String,
+    model: String,
+    reasoning_effort: ReasoningEffort,
+) -> FilenameSuggestionResult {
     if body.trim().is_empty() {
         return failure(AiNamingFailure::EmptyPrompt, None);
+    }
+    let model = if model.trim().is_empty() {
+        DEFAULT_DEEPSEEK_MODEL.to_owned()
+    } else {
+        model
+    };
+    if !valid_model_id(&model) {
+        return failure(AiNamingFailure::InvalidSettings, Some("invalid model id"));
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         let _ = body;
+        let _ = model;
+        let _ = reasoning_effort;
         return failure(AiNamingFailure::Unsupported, None);
     }
 
@@ -375,11 +475,64 @@ pub async fn generate_prompt_filename_suggestions(body: String) -> FilenameSugge
                 )
             }
         };
-        request_suggestions(&api_key, &body).await
+        request_suggestions(&api_key, &body, &model, reasoning_effort).await
     }
 }
 
-async fn request_suggestions(api_key: &str, body: &str) -> FilenameSuggestionResult {
+async fn request_models(api_key: &str) -> DeepSeekModelListResult {
+    let client = match Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .timeout(Duration::from_secs(15))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => {
+            return model_list_failure(AiNamingFailure::Network, Some("request client unavailable"))
+        }
+    };
+
+    let response = match client
+        .get(DEEPSEEK_MODELS_ENDPOINT)
+        .bearer_auth(api_key)
+        .send()
+        .await
+    {
+        Ok(response) => response,
+        Err(error) => {
+            return model_list_failure(map_transport_error(error.is_timeout()), None);
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        return model_list_failure(
+            map_http_status(status),
+            Some(&format!("DeepSeek HTTP status {}", status.as_u16())),
+        );
+    }
+
+    let response = match response.json::<ModelsPayload>().await {
+        Ok(response) => response,
+        Err(error) if error.is_timeout() => {
+            return model_list_failure(AiNamingFailure::Timeout, None)
+        }
+        Err(_) => {
+            return model_list_failure(AiNamingFailure::BadResponse, Some("invalid JSON response"))
+        }
+    };
+
+    match parse_model_ids(response) {
+        Ok(models) => model_list_success(models),
+        Err(code) => model_list_failure(code, Some("response did not contain model ids")),
+    }
+}
+
+async fn request_suggestions(
+    api_key: &str,
+    body: &str,
+    model: &str,
+    reasoning_effort: ReasoningEffort,
+) -> FilenameSuggestionResult {
     let client = match Client::builder()
         .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(15))
@@ -392,7 +545,7 @@ async fn request_suggestions(api_key: &str, body: &str) -> FilenameSuggestionRes
     let response = match client
         .post(DEEPSEEK_ENDPOINT)
         .bearer_auth(api_key)
-        .json(&build_chat_request(body))
+        .json(&build_chat_request(body, model, reasoning_effort))
         .send()
         .await
     {
@@ -435,9 +588,13 @@ async fn request_suggestions(api_key: &str, body: &str) -> FilenameSuggestionRes
     }
 }
 
-fn build_chat_request(body: &str) -> ChatRequest<'_> {
+fn build_chat_request<'a>(
+    body: &'a str,
+    model: &'a str,
+    reasoning_effort: ReasoningEffort,
+) -> ChatRequest<'a> {
     ChatRequest {
-        model: DEEPSEEK_MODEL,
+        model,
         messages: [
             ChatMessage {
                 role: "system",
@@ -451,7 +608,9 @@ fn build_chat_request(body: &str) -> ChatRequest<'_> {
         response_format: ResponseFormat {
             kind: "json_object",
         },
-        thinking: Thinking { kind: "disabled" },
+        thinking: (reasoning_effort == ReasoningEffort::None)
+            .then_some(Thinking { kind: "disabled" }),
+        reasoning_effort: reasoning_effort.api_value(),
         stream: false,
         max_tokens: 128,
     }
@@ -475,6 +634,29 @@ fn parse_filename_suggestions(content: &str) -> Result<Vec<String>, AiNamingFail
     }
     names.truncate(3);
     Ok(names)
+}
+
+fn parse_model_ids(payload: ModelsPayload) -> Result<Vec<String>, AiNamingFailure> {
+    let mut seen = HashSet::new();
+    let mut models = Vec::new();
+    for entry in payload.data {
+        let model = entry.id.trim();
+        if valid_model_id(model) && seen.insert(model.to_owned()) {
+            models.push(model.to_owned());
+        }
+    }
+    if models.is_empty() {
+        return Err(AiNamingFailure::BadResponse);
+    }
+    Ok(models)
+}
+
+fn valid_model_id(model: &str) -> bool {
+    !model.is_empty()
+        && model.chars().count() <= MAX_MODEL_ID_CHARS
+        && model
+            .chars()
+            .all(|character| !character.is_control() && !character.is_whitespace())
 }
 
 fn sanitize_candidate(raw: &str) -> Option<String> {
@@ -547,7 +729,12 @@ mod tests {
 
     #[test]
     fn request_contract_uses_non_thinking_json_mode() {
-        let request = serde_json::to_value(build_chat_request("Review this PR.")).unwrap();
+        let request = serde_json::to_value(build_chat_request(
+            "Review this PR.",
+            DEFAULT_DEEPSEEK_MODEL,
+            ReasoningEffort::None,
+        ))
+        .unwrap();
         assert_eq!(
             DEEPSEEK_ENDPOINT,
             "https://api.deepseek.com/chat/completions"
@@ -560,6 +747,32 @@ mod tests {
         assert_eq!(request["max_tokens"], 128);
         assert_eq!(request["messages"][1]["content"], "Review this PR.");
         assert!(request.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn request_contract_supports_selected_model_and_reasoning_effort() {
+        let request = serde_json::to_value(build_chat_request(
+            "Review this PR.",
+            "deepseek-v4-pro",
+            ReasoningEffort::High,
+        ))
+        .unwrap();
+        assert_eq!(request["model"], "deepseek-v4-pro");
+        assert!(request.get("thinking").is_none());
+        assert_eq!(request["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn model_list_response_is_trimmed_and_deduplicated() {
+        let payload: ModelsPayload = serde_json::from_str(
+            r#"{"data":[{"id":" deepseek-flash "},{"id":"deepseek-flash"},{"id":"deepseek-v4-pro"},{"id":"bad\nmodel"},{"id":""}]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            parse_model_ids(payload).unwrap(),
+            vec!["deepseek-flash", "deepseek-v4-pro"]
+        );
+        assert_eq!(DEEPSEEK_MODELS_ENDPOINT, "https://api.deepseek.com/models");
     }
 
     #[test]
