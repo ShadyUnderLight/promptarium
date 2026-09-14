@@ -194,6 +194,25 @@ describe('NewPromptDialog AI naming', () => {
     expect(screen.queryByText('过时建议一')).toBeNull();
   });
 
+  it('clears suggestions when model refresh falls back from a retired model', async () => {
+    localStorage.setItem('promptarium-deepseek-model', 'retired-model');
+    renderDialog();
+    await waitForCredentialStatus();
+    const body = screen.getByRole('textbox', { name: 'Prompt Markdown' });
+    await fireEvent.input(body, { target: { value: 'Review a PR.' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'AI naming' }));
+    await waitFor(() => expect(screen.getByText('AI filename suggestions')).toBeTruthy());
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    listModelsMock.mockResolvedValueOnce({ models: ['deepseek-flash'] });
+    await fireEvent.click(screen.getByRole('button', { name: 'Refresh models' }));
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('Model') as HTMLSelectElement).value).toBe('deepseek-flash'),
+    );
+    expect(screen.queryByText('AI filename suggestions')).toBeNull();
+  });
+
   it('localizes model-list failures without disabling manual naming', async () => {
     listModelsMock.mockResolvedValue({ models: [], failure: 'network' });
     renderDialog();

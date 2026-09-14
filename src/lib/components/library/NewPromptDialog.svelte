@@ -319,10 +319,14 @@
       }
       models = result.models;
       if (!result.models.includes(selectedModel)) {
-        selectedModel = result.models.includes(DEFAULT_DEEPSEEK_MODEL)
+        const nextModel = result.models.includes(DEFAULT_DEEPSEEK_MODEL)
           ? DEFAULT_DEEPSEEK_MODEL
           : result.models[0];
-        saveDeepSeekModel(selectedModel);
+        if (nextModel !== selectedModel) {
+          selectedModel = nextModel;
+          saveDeepSeekModel(selectedModel);
+          invalidateNaming();
+        }
       }
     } catch {
       if (
