@@ -87,7 +87,7 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: 'Promptarium ${{ github.event.inputs.tag || github.ref_name }}'
-          releaseBody: 'Download the installer for your platform below. 100% offline — your snippets never leave your machine. Unsigned builds: on first launch, Windows may show a SmartScreen prompt (More info → Run anyway) and macOS may require right-click → Open.'
+          releaseBody: 'Download the installer for your platform below. Local-first by default: prompts stay on-device unless you explicitly use AI naming, which sends the current prompt content to DeepSeek. Unsigned builds: on first launch, Windows may show a SmartScreen prompt (More info → Run anyway) and macOS may require right-click → Open.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

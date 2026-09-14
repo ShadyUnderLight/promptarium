@@ -2287,6 +2287,93 @@ body {
   font: 0.76rem/1.55 var(--font-mono) !important;
 }
 
+.new-prompt-ai {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin: 0.15rem 0 0.9rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-subtle);
+}
+
+.new-prompt-ai__header,
+.new-prompt-ai__actions,
+.new-prompt-ai__config-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.new-prompt-ai__header {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.new-prompt-ai__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.new-prompt-ai__privacy,
+.new-prompt-ai__hint,
+.new-prompt-ai__configured,
+.new-prompt-ai__unsupported {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.new-prompt-ai__configured {
+  color: var(--success);
+}
+
+.new-prompt-ai__config {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding-top: 0.2rem;
+}
+
+.new-prompt-ai__config-actions {
+  justify-content: flex-end;
+}
+
+.new-prompt-ai__suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.new-prompt-ai__candidate-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.new-prompt-ai__candidate {
+  max-width: 100%;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.new-prompt-ai__candidate:hover {
+  border-color: var(--text-muted);
+  background: var(--bg);
+}
+
 .variable-fill-dialog {
   max-width: 38rem;
   max-height: min(92vh, 48rem);
@@ -2489,6 +2576,9 @@ body {
 @media (max-width: 720px) {
   .library-workspace {
     grid-template-columns: 11.5rem 6px minmax(0, 1fr);
+  }
+  .new-prompt-ai__header {
+    flex-direction: column;
   }
   .library-workspace > .prompt-detail,
   .library-workspace > .pane-resizer:nth-of-type(2) { display: none; }
