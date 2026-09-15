@@ -38,9 +38,8 @@
   --surface-overlay: var(--bg-card);
   /* Only ever reached from inside @supports — see the glass block below. */
   --surface-regular-glass: color-mix(in srgb, var(--surface-regular) 72%, transparent);
-  /* Prominent and overlay have no glass consumer yet: #43 owns dialogs and
-     menus. They are specified here so #43 binds a role instead of inventing a
-     material. */
+  /* Prominent is used by app-chrome actions; overlay is used by dialogs and
+     menus. Keep both roles explicit so each surface binds to one material. */
   --surface-prominent-glass: color-mix(in srgb, var(--surface-prominent) 86%, transparent);
   --surface-overlay-glass: color-mix(in srgb, var(--surface-overlay) 76%, transparent);
   --glass-blur: 18px;
@@ -49,6 +48,7 @@
   /* Geometry. */
   --radius-sm: 0.4rem;
   --radius-lg: 0.6rem;
+  --shadow-sidebar: 0 8px 24px rgba(0, 0, 0, 0.14);
   --shadow-overlay: 0 12px 40px rgba(0, 0, 0, 0.2);
   --control-h: 2rem;
 
@@ -212,9 +212,13 @@ a { color: var(--accent-user); }
   border-color: var(--border);
   color: var(--error-strong);
 }
-/* Dense rows (detail actions, sidebar add form) opt out of the control height
-   on purpose — raising these would cost more than the hit area is worth. */
+/* Dense rows (such as the sidebar add form) opt out of the control height on
+   purpose; the explicitly marked app-chrome actions opt back in below. */
 .btn--sm { font-size: 0.7rem; padding: 0.25rem 0.6rem; min-height: 0; }
+/* Primary actions in the app chrome keep the compact typography but retain
+   the shared 32px hit target, so New / Copy / Save line up with search and
+   other controls without changing dense row actions. */
+.btn--prominent { min-height: var(--control-h); }
 .btn--ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
 .btn--ghost:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
 
@@ -445,9 +449,14 @@ body {
 }
 
 .project-sidebar {
+  position: relative;
+  z-index: 1;
+  margin: 0.75rem 0 0.75rem 0.75rem;
   padding: 1rem 0.65rem;
   background: var(--surface-regular);
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sidebar);
 }
 
 .sidebar-section {
@@ -2644,6 +2653,14 @@ body {
     background: var(--surface-regular-glass);
     -webkit-backdrop-filter: blur(var(--glass-blur));
     backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--glass-highlight), var(--shadow-sidebar);
+  }
+
+  .btn--prominent:not(:disabled) {
+    background: var(--surface-prominent-glass);
+    border-color: color-mix(in srgb, var(--surface-prominent) 62%, var(--border));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: blur(var(--glass-blur));
     box-shadow: var(--glass-highlight);
   }
 
@@ -2665,6 +2682,13 @@ body {
   .prompt-toolbar,
   .project-sidebar {
     background: var(--surface-regular);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-sidebar);
+  }
+
+  .btn--prominent:not(:disabled) {
+    background: var(--surface-prominent);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: none;

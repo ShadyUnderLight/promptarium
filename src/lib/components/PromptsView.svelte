@@ -37,6 +37,19 @@
   import PromptDetail from './library/PromptDetail.svelte';
   import NewPromptDialog from './library/NewPromptDialog.svelte';
   import ConfirmDialog from './library/ConfirmDialog.svelte';
+  import NamePromptDialog from './library/NamePromptDialog.svelte';
+
+  type NameRequestOptions = {
+    label?: string;
+    hint?: string;
+    placeholder?: string;
+  };
+
+  type ConfirmRequestOptions = {
+    confirmLabel?: string;
+    cancelLabel?: string;
+    destructive?: boolean;
+  };
 
   let searchInput: HTMLInputElement | undefined = $state(undefined);
   let theme = $state(getTheme());
@@ -85,12 +98,19 @@
   let confirmRequest = $state<{
     title: string;
     message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    destructive?: boolean;
     resolve: (ok: boolean) => void;
   } | null>(null);
 
-  function askConfirm(title: string, message: string): Promise<boolean> {
+  function askConfirm(
+    title: string,
+    message: string,
+    options: ConfirmRequestOptions = {}
+  ): Promise<boolean> {
     return new Promise((resolve) => {
-      confirmRequest = { title, message, resolve };
+      confirmRequest = { title, message, ...options, resolve };
     });
   }
 
@@ -98,6 +118,33 @@
     const request = confirmRequest;
     confirmRequest = null;
     request?.resolve(ok);
+  }
+
+  /** Text prompts need the same app-owned surface as confirmations. Native
+   *  `window.prompt` is not implemented by the macOS WKWebView UI delegate. */
+  let nameRequest = $state<{
+    title: string;
+    initial: string;
+    label?: string;
+    hint?: string;
+    placeholder?: string;
+    resolve: (value: string | null) => void;
+  } | null>(null);
+
+  function askName(
+    title: string,
+    initial: string,
+    options: NameRequestOptions = {}
+  ): Promise<string | null> {
+    return new Promise((resolve) => {
+      nameRequest = { title, initial, ...options, resolve };
+    });
+  }
+
+  function settleName(value: string | null): void {
+    const request = nameRequest;
+    nameRequest = null;
+    request?.resolve(value);
   }
 
   async function canNavigate(): Promise<boolean> {
@@ -250,7 +297,17 @@
       const listed = prompts
         .map((prompt) => '• ' + projectDisplayName(prompt.projectPath) + ' — ' + prompt.name + '.md')
         .join('\n');
-      if (!window.confirm(t('dialog.batchDeleteFiles', { list: listed }))) return false;
+      if (
+        !(await askConfirm(
+          t('confirm.deletePrompt.title'),
+          t('dialog.batchDeleteFiles', { list: listed }),
+          {
+            confirmLabel: t('confirm.deletePrompt.confirm'),
+            cancelLabel: t('confirm.cancel'),
+            destructive: true,
+          }
+        ))
+      ) return false;
       const failures = await batchDelete(prompts);
       reportBatchResult(failures, prompts.length - failures.length);
       return true;
@@ -303,6 +360,8 @@
       newPromptOpen ||
         deleteTarget ||
         refreshPending ||
+        confirmRequest ||
+        nameRequest ||
         sidebarModalOpen ||
         document.querySelector('dialog.modal[open]')
     );
@@ -397,7 +456,7 @@
       <button type="button" class="btn btn--ghost btn--sm" onclick={handleToggleTheme}>
         {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
       </button>
-      <button type="button" class="btn btn--primary btn--sm" onclick={openNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
+      <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={openNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
       <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}><Icon name="refresh" /></button>
     </div>
   </div>
@@ -420,6 +479,8 @@
       onNewPrompt={openNewPrompt}
       {canNavigate}
       onNotice={notice}
+      requestName={askName}
+      requestConfirm={askConfirm}
       onModalChange={(open) => (sidebarModalOpen = open)}
     />
     <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
@@ -442,6 +503,7 @@
       onDismissExternalChange={dismissExternalChange}
       onNotice={notice}
       onNavigate={handleNavigateRelation}
+      requestConfirm={askConfirm}
     />
   </div>
 </div>
@@ -475,10 +537,23 @@
   <ConfirmDialog
     title={confirmRequest.title}
     message={confirmRequest.message}
-    confirmLabel={t('confirm.unsaved.confirm')}
-    cancelLabel={t('confirm.unsaved.cancel')}
+    confirmLabel={confirmRequest.confirmLabel ?? (confirmRequest.destructive ? t('confirm.confirm') : t('confirm.unsaved.confirm'))}
+    cancelLabel={confirmRequest.cancelLabel ?? (confirmRequest.destructive ? t('confirm.cancel') : t('confirm.unsaved.cancel'))}
+    destructive={confirmRequest.destructive ?? false}
     onConfirm={() => settleConfirm(true)}
     onCancel={() => settleConfirm(false)}
+  />
+{/if}
+
+{#if nameRequest}
+  <NamePromptDialog
+    title={nameRequest.title}
+    initialValue={nameRequest.initial}
+    label={nameRequest.label}
+    hint={nameRequest.hint}
+    placeholder={nameRequest.placeholder}
+    onConfirm={settleName}
+    onCancel={() => settleName(null)}
   />
 {/if}
 

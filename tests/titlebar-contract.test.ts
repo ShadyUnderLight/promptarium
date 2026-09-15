@@ -27,7 +27,13 @@ const sources = import.meta.glob('../src/**/*.svelte', {
 }) as Record<string, string>;
 
 const tauriConf = JSON.parse(configs['../src-tauri/tauri.conf.json']) as {
-  app?: { windows?: Array<{ titleBarStyle?: string }> };
+  app?: {
+    windows?: Array<{
+      titleBarStyle?: string;
+      hiddenTitle?: boolean;
+      trafficLightPosition?: { x?: number; y?: number };
+    }>;
+  };
 };
 const capability = JSON.parse(configs['../src-tauri/capabilities/default.json']) as {
   permissions: string[];
@@ -43,7 +49,10 @@ const titleBlockDraggable =
 
 describe('titlebar adoption contract (Issue #44)', () => {
   it('keeps the adopted Overlay titlebar wired for dragging', () => {
+    const windowConfig = tauriConf.app?.windows?.[0];
     expect(overlayOn).toBe(true);
+    expect(windowConfig?.hiddenTitle).toBe(true);
+    expect(windowConfig?.trafficLightPosition).toEqual({ x: 16, y: 26 });
     expect(titleBlockDraggable).toBe(true);
     expect(capability.permissions).toContain('core:window:allow-start-dragging');
   });

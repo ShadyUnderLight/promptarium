@@ -1,11 +1,23 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { focusTrap } from '$lib/attachments/focusTrap';
-  import { revealInFinder as apiRevealInFinder } from '$lib/api';
+  import { isTauri, revealInFinder as apiRevealInFinder } from '$lib/api';
   import type { Project } from '$lib/prompts/types';
   import { forgetProject, renameProjectLabel, setProjectColor } from '$lib/library.svelte';
   import { errorDetail } from '$lib/library/errors';
   import { t } from '$lib/i18n/i18n.svelte';
+
+  type NameRequestOptions = {
+    label?: string;
+    hint?: string;
+    placeholder?: string;
+  };
+
+  type ConfirmRequestOptions = {
+    confirmLabel?: string;
+    cancelLabel?: string;
+    destructive?: boolean;
+  };
 
   interface Props {
     project: Project;
@@ -14,23 +26,53 @@
     onClose: () => void;
     onNotice: (message: string) => void;
     canNavigate: () => Promise<boolean>;
+    /** In-app dialogs are supplied by PromptsView in the packaged window. */
+    requestName?: (title: string, initialValue: string, options?: NameRequestOptions) => Promise<string | null>;
+    requestConfirm?: (title: string, message: string, options?: ConfirmRequestOptions) => Promise<boolean>;
   }
 
-  let { project, x, y, onClose, onNotice, canNavigate }: Props = $props();
+  let {
+    project,
+    x,
+    y,
+    onClose,
+    onNotice,
+    canNavigate,
+    requestName,
+    requestConfirm,
+  }: Props = $props();
   const colors = ['#4f7cff', '#0e9f6e', '#d97706', '#8b5cf6', '#db2777', '#0891b2'];
   let menuElement: HTMLElement | undefined = $state(undefined);
 
   onMount(() => menuElement?.focus());
 
+  async function askName(title: string, initialValue: string, options?: NameRequestOptions): Promise<string | null> {
+    // Browser dev keeps the quick native fallback. WKWebView in the packaged
+    // app has no prompt panel, so an absent app callback cancels safely.
+    if (!isTauri()) return window.prompt(title, initialValue);
+    return requestName ? requestName(title, initialValue, options) : null;
+  }
+
+  async function askConfirm(title: string, message: string, options?: ConfirmRequestOptions): Promise<boolean> {
+    if (!isTauri()) return window.confirm(message);
+    return requestConfirm ? requestConfirm(title, message, options) : false;
+  }
+
   async function rename(): Promise<void> {
-    const name = window.prompt(t('dialog.projectLabel'), project.name);
-    if (!name?.trim() || name.trim() === project.name) return;
+    const currentProject = project;
+    const notify = onNotice;
+    onClose();
+    const name = await askName(
+      t('dialog.projectLabel'),
+      currentProject.name,
+      { label: t('dialog.projectLabel'), hint: '' }
+    );
+    if (!name?.trim() || name.trim() === currentProject.name) return;
     try {
-      await renameProjectLabel(name.trim(), project.path);
-      onNotice(t('notice.projectLabelUpdated'));
-      onClose();
+      await renameProjectLabel(name.trim(), currentProject.path);
+      notify(t('notice.projectLabelUpdated'));
     } catch (error) {
-      onNotice(errorDetail(error));
+      notify(errorDetail(error));
     }
   }
 
@@ -44,15 +86,23 @@
   }
 
   async function forget(): Promise<void> {
-    if (!window.confirm(t('dialog.forgetProject', { name: project.name }))) return;
-    // Close the menu before the unsaved guard can ask. This backdrop is a
-    // context layer (z-index 150/151) painting over the `.modal-backdrop`
-    // (100) every ConfirmDialog renders in, so a menu left standing would bury
-    // its own discard prompt and swallow the clicks meant for it. The close
-    // *is* the unmount, which nulls our props — hence the capture first.
-    const path = project.path;
+    // Close the menu before either app-owned dialog can ask. This backdrop is
+    // a context layer (z-index 150/151) painting over the `.modal-backdrop`
+    // (100) every ConfirmDialog/NamePromptDialog renders in, so a menu left
+    // standing would bury the dialog and swallow its clicks. Capture values
+    // before unmounting because the close nulls this component's props.
+    const currentProject = project;
+    const path = currentProject.path;
+    const name = currentProject.name;
     const notify = onNotice;
     onClose();
+    if (
+      !(await askConfirm(
+        t('dialog.forgetProject.title'),
+        t('dialog.forgetProject', { name }),
+        { confirmLabel: t('confirm.forgetProject'), destructive: true }
+      ))
+    ) return;
     if (!(await canNavigate())) return;
     try {
       await forgetProject(path);
