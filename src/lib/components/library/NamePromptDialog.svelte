@@ -6,8 +6,10 @@
    * `window.prompt` resolves to `null` **without ever showing a dialog** — the
    * native call cannot be used at all, not merely styled differently.
    *
-   * Reuses the small-modal shell (`.modal` + `.library-confirm`) and the
-   * existing `filename` copy, so this component adds no CSS and no new strings.
+   * Reuses the small-modal shell (`.modal` + `.library-confirm`) and defaults
+   * to the existing filename copy. Callers that collect a project/folder value
+   * can provide their own label, hint and placeholder without reaching for a
+   * browser-native prompt.
    */
   import { onMount } from 'svelte';
   import { focusTrap } from '$lib/attachments/focusTrap';
@@ -16,12 +18,23 @@
   interface Props {
     title: string;
     initialValue: string;
+    label?: string;
+    hint?: string;
+    placeholder?: string;
     /** Called with the raw input value; the caller decides what a no-op is. */
     onConfirm: (value: string) => void;
     onCancel: () => void;
   }
 
-  let { title, initialValue, onConfirm, onCancel }: Props = $props();
+  let {
+    title,
+    initialValue,
+    label,
+    hint,
+    placeholder,
+    onConfirm,
+    onCancel,
+  }: Props = $props();
   let input: HTMLInputElement | undefined = $state(undefined);
 
   onMount(() => {
@@ -62,8 +75,11 @@
   <dialog open class="modal library-confirm" aria-labelledby="name-prompt-title" onkeydown={handleKeydown} tabindex="-1" {@attach focusTrap}>
     <div class="dialog-heading"><h2 id="name-prompt-title">{title}</h2></div>
     <label class="field">
-      <span>{t('newPrompt.filename')} <small>{t('newPrompt.filenameHint')}</small></span>
-      <input bind:this={input} value={initialValue} spellcheck="false" onkeydown={handleInputKeydown} />
+      <span>
+        {label ?? t('newPrompt.filename')}
+        {#if hint ?? t('newPrompt.filenameHint')}<small>{hint ?? t('newPrompt.filenameHint')}</small>{/if}
+      </span>
+      <input bind:this={input} value={initialValue} placeholder={placeholder} spellcheck="false" onkeydown={handleInputKeydown} />
     </label>
     <div class="modal__actions">
       <button type="button" class="btn btn--ghost" onclick={onCancel}>{t('confirm.cancel')}</button>

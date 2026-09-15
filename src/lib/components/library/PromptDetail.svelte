@@ -50,6 +50,12 @@
     onDismissExternalChange: () => void;
     onNotice: (message: string) => void;
     onNavigate: (projectPath: string, name: string) => void;
+    /** In-app confirmation forwarded to metadata/example editors. */
+    requestConfirm?: (
+      title: string,
+      message: string,
+      options?: { confirmLabel?: string; cancelLabel?: string; destructive?: boolean }
+    ) => Promise<boolean>;
   }
 
   let {
@@ -68,6 +74,7 @@
     onDismissExternalChange,
     onNotice,
     onNavigate,
+    requestConfirm,
   }: Props = $props();
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
@@ -330,7 +337,7 @@
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
       </div>
       <div class="detail-header__actions">
-        <button type="button" class="btn btn--primary btn--sm" onclick={actionCopy}>{t('detail.copy')}</button>
+        <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={actionCopy}>{t('detail.copy')}</button>
         <button type="button" class="btn btn--ghost btn--sm" onclick={() => onReveal(document)}>{t('detail.reveal')}</button>
       </div>
     </div>
@@ -343,7 +350,7 @@
       </div>
       <div class="detail-actions">
         {#if mode === 'edit'}
-          <button type="button" class="btn btn--primary btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? t('detail.saving') : t('detail.save')}</button>
+          <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? t('detail.saving') : t('detail.save')}</button>
         {/if}
         <div class="detail-action-group">
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>{t('detail.compare')}</button>
@@ -402,7 +409,7 @@
         onLoadMore={handleLoadMoreHistory}
       />
     {:else if mode === 'preview'}
-      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
+      <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
       <div class="editor-layout">
@@ -412,7 +419,7 @@
           <span class="editor-hint">{t('detail.editor.hint')}</span>
         </div>
         <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} onChange={updateMetadata} />
+          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
         </div>
       </div>
     {/if}

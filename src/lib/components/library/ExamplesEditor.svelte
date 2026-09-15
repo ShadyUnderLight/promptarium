@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { resolvePromptAssets, pickAssetReference } from '$lib/api';
+  import { isTauri, resolvePromptAssets, pickAssetReference } from '$lib/api';
   import type { PromptExample, ResolvedPromptAsset } from '$lib/prompts/types';
   import {
     addExample,
@@ -18,6 +18,12 @@
   import { t } from '$lib/i18n/i18n.svelte';
   import Icon from '$lib/components/Icon.svelte';
 
+  type ConfirmRequestOptions = {
+    confirmLabel?: string;
+    cancelLabel?: string;
+    destructive?: boolean;
+  };
+
   interface Props {
     examples: PromptExample[];
     /** Project the edited prompt lives in — the only identity used by the
@@ -27,10 +33,12 @@
      *  asset-state preview re-resolves; the editor metadata is never touched
      *  (Issue #26 §14 live refresh). */
     refreshVersion?: number;
+    /** In-app confirmation supplied by the shell in the packaged window. */
+    requestConfirm?: (title: string, message: string, options?: ConfirmRequestOptions) => Promise<boolean>;
     onChange: (examples: PromptExample[]) => void;
   }
 
-  let { examples, projectPath, refreshVersion = 0, onChange }: Props = $props();
+  let { examples, projectPath, refreshVersion = 0, requestConfirm, onChange }: Props = $props();
 
   // ── Asset state preview (Issue #26 §9) ──────────────────────────────────
   // Every reference (inputFile / outputFile / assets) is classified through the
@@ -124,6 +132,16 @@
   // reference; only a successful conversion is written into editor state. When
   // a replacement would drop existing inline text, the user is asked first —
   // never silently deleted.
+  async function confirmReplacement(message: string): Promise<boolean> {
+    if (!isTauri()) return window.confirm(message);
+    return requestConfirm
+      ? requestConfirm(t('examples.confirm.title'), message, {
+          confirmLabel: t('examples.confirm.replace'),
+          cancelLabel: t('confirm.cancel'),
+        })
+      : false;
+  }
+
   // The failure is stored as a machine reason (never a display string) so the
   // message re-localizes when the locale changes while the editor is mounted.
   type PickerFailure = { failure: 'no-reference' | 'failed'; detail?: string };
@@ -140,7 +158,7 @@
     if (!reference) return;
     const example = examples[index];
     if (example.input) {
-      const ok = window.confirm(t('examples.confirm.replaceInput'));
+      const ok = await confirmReplacement(t('examples.confirm.replaceInput'));
       if (!ok) return;
     }
     onChange(replaceInputWithFile(examples, index, reference));
@@ -151,7 +169,7 @@
     if (!reference) return;
     const example = examples[index];
     if (example.output) {
-      const ok = window.confirm(t('examples.confirm.replaceOutput'));
+      const ok = await confirmReplacement(t('examples.confirm.replaceOutput'));
       if (!ok) return;
     }
     onChange(replaceOutputWithFile(examples, index, reference));

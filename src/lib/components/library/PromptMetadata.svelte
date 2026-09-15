@@ -24,10 +24,27 @@
     /** Bumped after a filesystem refresh; forwarded to the Examples editor so
      *  its asset-state chips re-resolve without touching editor metadata. */
     refreshVersion?: number;
+    /** In-app confirmation supplied by the shell for destructive example replacements. */
+    requestConfirm?: (
+      title: string,
+      message: string,
+      options?: { confirmLabel?: string; cancelLabel?: string; destructive?: boolean }
+    ) => Promise<boolean>;
     onChange: (metadata: Metadata) => void;
   }
 
-  let { metadata, body, editing, promptNames = [], currentName = '', summaries = [], projectPath = '', refreshVersion = 0, onChange }: Props = $props();
+  let {
+    metadata,
+    body,
+    editing,
+    promptNames = [],
+    currentName = '',
+    summaries = [],
+    projectPath = '',
+    refreshVersion = 0,
+    requestConfirm,
+    onChange,
+  }: Props = $props();
 
   // Display label for the status chip; the machine value in metadata.status
   // never changes with the locale.
@@ -302,7 +319,13 @@
         <p class="detail-muted">{t('meta.noVariantCandidates')}</p>
       {/if}
     </div>
-    <ExamplesEditor examples={metadata.examples ?? []} projectPath={projectPath} refreshVersion={refreshVersion} onChange={updateExamples} />
+    <ExamplesEditor
+      examples={metadata.examples ?? []}
+      projectPath={projectPath}
+      refreshVersion={refreshVersion}
+      {requestConfirm}
+      onChange={updateExamples}
+    />
   </div>
 {:else}
   <dl class="metadata-inspector">

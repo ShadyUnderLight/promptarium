@@ -28,6 +28,7 @@ import type { ResolvedPromptAsset } from '../src/lib/prompts/types';
 import { resolvePromptAssets, pickAssetReference, revealAssetInFinder } from '$lib/api';
 
 vi.mock('$lib/api', () => ({
+  isTauri: vi.fn(() => false),
   resolvePromptAssets: vi.fn(),
   pickAssetReference: vi.fn(),
   revealAssetInFinder: vi.fn(),

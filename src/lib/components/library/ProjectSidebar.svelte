@@ -24,10 +24,26 @@
   import Icon from '$lib/components/Icon.svelte';
   import ProjectMenu from './ProjectMenu.svelte';
 
+  type NameRequestOptions = {
+    label?: string;
+    hint?: string;
+    placeholder?: string;
+  };
+
+  type ConfirmRequestOptions = {
+    confirmLabel?: string;
+    cancelLabel?: string;
+    destructive?: boolean;
+  };
+
   interface Props {
     onNewPrompt: () => void;
     canNavigate: () => Promise<boolean>;
     onNotice: (message: string) => void;
+    /** In-app text dialog used by the packaged Tauri window. */
+    requestName?: (title: string, initialValue: string, options?: NameRequestOptions) => Promise<string | null>;
+    /** In-app confirmation used by the packaged Tauri window. */
+    requestConfirm?: (title: string, message: string, options?: ConfirmRequestOptions) => Promise<boolean>;
     /** Reports whether this sidebar is showing an overlay of its own — the
      *  project menu. That menu is a full-screen context backdrop with a focus
      *  trap, so while it is open it owns the keyboard exactly like an app modal
@@ -35,7 +51,14 @@
     onModalChange: (open: boolean) => void;
   }
 
-  let { onNewPrompt, canNavigate, onNotice, onModalChange }: Props = $props();
+  let {
+    onNewPrompt,
+    canNavigate,
+    onNotice,
+    requestName,
+    requestConfirm,
+    onModalChange,
+  }: Props = $props();
   let addPath = $state<string | null>(null);
   let relocateFrom = $state<string | null>(null);
   let pathInput: HTMLInputElement | undefined = $state(undefined);
@@ -181,9 +204,36 @@
     applyNav({ kind: 'select-view', view });
   }
 
+  async function askName(
+    title: string,
+    initialValue: string,
+    options?: NameRequestOptions
+  ): Promise<string | null> {
+    // Keep the browser-only development fallback. In the packaged Tauri
+    // window, WKWebView has no prompt panel, so a missing callback is a safe
+    // cancellation rather than a silently swallowed native prompt.
+    if (!isTauri()) return window.prompt(title, initialValue);
+    return requestName ? requestName(title, initialValue, options) : null;
+  }
+
+  async function askConfirm(
+    title: string,
+    message: string,
+    options?: ConfirmRequestOptions
+  ): Promise<boolean> {
+    // The browser fallback keeps local component previews useful; packaged
+    // macOS always uses the app-owned ConfirmDialog supplied by PromptsView.
+    if (!isTauri()) return window.confirm(message);
+    return requestConfirm ? requestConfirm(title, message, options) : false;
+  }
+
   async function newFolder(): Promise<void> {
     if (!(await canNavigate())) return;
-    const name = window.prompt(t('dialog.folderPathInsideProject'), library.folderFilter || '');
+    const name = await askName(
+      t('dialog.folderPathInsideProject'),
+      library.folderFilter || '',
+      { label: t('dialog.folderPathInsideProject'), hint: '' }
+    );
     if (!name?.trim()) return;
     try {
       await createFolder(name.trim());
@@ -195,9 +245,17 @@
 
   async function folderMenu(event: MouseEvent, folder: string): Promise<void> {
     event.preventDefault();
-    const action = window.prompt(t('dialog.folderAction'), 'rename');
+    const action = (await askName(
+      t('dialog.folderAction'),
+      'rename',
+      { label: t('dialog.folderAction'), hint: '' }
+    ))?.trim().toLowerCase();
     if (action === 'rename') {
-      const next = window.prompt(t('dialog.newFolderPath'), folder);
+      const next = await askName(
+        t('dialog.newFolderPath'),
+        folder,
+        { label: t('dialog.newFolderPath'), hint: '' }
+      );
       if (!next?.trim()) return;
       if (!(await canNavigate())) return;
       try {
@@ -208,7 +266,14 @@
       } catch (error) {
         onNotice(errorDetail(error));
       }
-    } else if (action === 'delete' && window.confirm(t('dialog.deleteEmptyFolder', { folder }))) {
+    } else if (
+      action === 'delete' &&
+      (await askConfirm(
+        t('dialog.deleteEmptyFolder.title'),
+        t('dialog.deleteEmptyFolder', { folder }),
+        { confirmLabel: t('confirm.deleteFolder'), destructive: true }
+      ))
+    ) {
       if (!(await canNavigate())) return;
       try {
         await deleteFolder(folder);
@@ -221,7 +286,13 @@
 
   async function forgetMissingProject(): Promise<void> {
     if (!library.activeProjectPath) return;
-    if (!window.confirm(t('dialog.forgetMissingProject'))) return;
+    if (
+      !(await askConfirm(
+        t('dialog.forgetMissingProject.title'),
+        t('dialog.forgetMissingProject'),
+        { confirmLabel: t('confirm.forgetProject'), destructive: true }
+      ))
+    ) return;
     if (!(await canNavigate())) return;
     try {
       await forgetProject(library.activeProjectPath);
@@ -371,5 +442,14 @@
 </aside>
 
 {#if menu}
-  <ProjectMenu project={menu.project} x={menu.x} y={menu.y} onClose={closeMenu} {onNotice} {canNavigate} />
+  <ProjectMenu
+    project={menu.project}
+    x={menu.x}
+    y={menu.y}
+    onClose={closeMenu}
+    {onNotice}
+    {canNavigate}
+    {requestName}
+    {requestConfirm}
+  />
 {/if}
