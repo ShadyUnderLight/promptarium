@@ -6,9 +6,14 @@
 
 ## 基线元数据
 
-- 目标提交：`8f2f11b88f4263e056f86990efc292c6e21259c1`
+- Baseline capture source：`origin/main @ 8f2f11b88f4263e056f86990efc292c6e21259c1`
 - 基线提交标题：`fix(ui): close macOS glass review gaps (#59)`
-- 基线关系：`HEAD == origin/main == 8f2f11b...`
+- 采集开始时的 worktree 关系：`HEAD == origin/main == 8f2f11b...`；这只描述
+  添加本文档前的采集状态，不表示 checkout 本 PR 后当前 `HEAD` 仍等于
+  `origin/main`。
+- 首次提交此文档的 PR head：`81e1340306b92df27401f2061cdd9732bcd4b381`
+  （PR #69 初始提交）；后续修订均继续追加在 PR #69，截图对应的应用代码
+  仍与上述 exact baseline 一致。
 - 采集日期：2026-09-15
 - 运行环境：macOS，Darwin 27.0.0；浏览器开发预览
 - 开发入口：`pnpm dev --host 127.0.0.1`
@@ -29,10 +34,85 @@
 
 截图命名规则统一为：
 
-`phase0/<viewport>-<theme>-<locale>-<state>.png`
+`project_docs/phase0/<viewport>-<theme>-<locale>-<state>.png`
 
-例如：`phase0/1440x900-dark-zh-CN-browse.png`。截图如果作为附件保存，
+例如：`project_docs/phase0/1440x900-dark-zh-CN-browse.png`。截图如果作为附件保存，
 必须同时记录对应的提交、视口、主题、locale 和状态；不能只用连续编号。
+
+## 截图证据与验收矩阵
+
+以下 PNG 是本次修订实际提交到仓库的截图 artifact。所有截图均在应用代码
+仍对应 `81e1340` 的开发预览中采集；逻辑 viewport 是 CDP 设置的 CSS
+viewport，浏览器工具输出的 PNG 物理像素为 `2248×2160`（由 capture scale
+造成），两者不能混为一谈。每条记录都包含 commit、viewport、theme、locale
+和 state，可直接打开链接做人工复核。
+
+### Viewport × theme × locale
+
+- `81e1340` · `1440×900` · Light · English · `browse`：
+  [1440x900-light-en-browse.png](phase0/1440x900-light-en-browse.png)
+- `81e1340` · `1440×900` · Dark · 简体中文 · `browse`：
+  [1440x900-dark-zh-CN-browse.png](phase0/1440x900-dark-zh-CN-browse.png)
+- `81e1340` · `1180×720` · Light · English · `browse`：
+  [1180x720-light-en-browse.png](phase0/1180x720-light-en-browse.png)
+- `81e1340` · `1180×720` · Dark · 简体中文 · `browse`：
+  [1180x720-dark-zh-CN-browse.png](phase0/1180x720-dark-zh-CN-browse.png)
+- `81e1340` · `900×600` · Light · English · `browse`：
+  [900x600-light-en-browse.png](phase0/900x600-light-en-browse.png)
+- `81e1340` · `900×600` · Dark · 简体中文 · `browse`：
+  [900x600-dark-zh-CN-browse.png](phase0/900x600-dark-zh-CN-browse.png)
+- `81e1340` · `720×600` · Light · English · `compact`：
+  [720x600-light-en-compact.png](phase0/720x600-light-en-compact.png)
+- `81e1340` · `720×600` · Dark · 简体中文 · `compact`：
+  [720x600-dark-zh-CN-compact.png](phase0/720x600-dark-zh-CN-compact.png)
+
+### 单项 macOS 辅助功能媒体设置
+
+这些样本每次只启用一个媒体特性，避免三项 fallback 同时变化后无法判断
+是哪条规则生效：
+
+- `81e1340` · `900×600` · Light · English ·
+  `prefers-reduced-transparency: reduce`：
+  [900x600-light-en-prefers-reduced-transparency.png](phase0/900x600-light-en-prefers-reduced-transparency.png)
+- `81e1340` · `900×600` · Light · English · `prefers-contrast: more`：
+  [900x600-light-en-prefers-contrast-more.png](phase0/900x600-light-en-prefers-contrast-more.png)
+- `81e1340` · `900×600` · Light · English ·
+  `prefers-reduced-motion: reduce`：
+  [900x600-light-en-prefers-reduced-motion.png](phase0/900x600-light-en-prefers-reduced-motion.png)
+
+### 代表性功能状态截图
+
+这些截图补充了单纯 browse 矩阵无法表达的 selected、dirty、batch、dialog、
+History 和 Compare 状态。它们统一在 `900×600`、Light、English、
+`prefers-reduced-motion: reduce` 下采集；该媒体设置在这里明确记录，避免把
+瞬时 UI 状态与系统设置混淆：
+
+- selected Prompt + Preview：
+  [900x600-light-en-preview-selected.png](phase0/900x600-light-en-preview-selected.png)
+- All Projects + 两项 Batch Select：
+  [900x600-light-en-all-projects-batch.png](phase0/900x600-light-en-all-projects-batch.png)
+- Edit + dirty editor：
+  [900x600-light-en-edit-dirty.png](phase0/900x600-light-en-edit-dirty.png)
+- Edit + 长摘要/长标签/emoji：
+  [900x600-light-en-edit-long-content-emoji.png](phase0/900x600-light-en-edit-long-content-emoji.png)
+- Rename + 长标题/emoji：
+  [900x600-light-en-rename-long-title.png](phase0/900x600-light-en-rename-long-title.png)
+- History：
+  [900x600-light-en-history.png](phase0/900x600-light-en-history.png)
+- Compare overlay：
+  [900x600-light-en-compare.png](phase0/900x600-light-en-compare.png)
+- New Prompt dialog：
+  [900x600-light-en-new-prompt.png](phase0/900x600-light-en-new-prompt.png)
+
+代表性状态截图只使用浏览器开发 fixture 和临时表单输入；没有点击 Confirm、
+Save、Create、Rename 或任何 filesystem action，不会写入用户 Prompt、Project
+或 Markdown 文件。
+
+人工检查结论：上述截图均可打开，文件名中的 viewport、theme、locale 和
+state 与采集记录一致；Light/Dark、English/简体中文、720px 换行、900px
+Detail action 裁切、独立 prefers-* fallback、selected/batch/dirty/dialog
+状态均已逐张检查。截图中的窄窗口 Detail action 裁切是已知缺陷，不作为
+后续视觉改造需要保留的正确行为。
 
 ## 当前 Shell 和区域边界
 
@@ -59,6 +139,56 @@ library-topbar
 - 内容层：Prompt row、Markdown、Editor、History、Diff 使用实体内容背景，
   不使用逐行 `backdrop-filter`。
 
+## A 方案目标信息架构与区域边界
+
+A「Floating Shelf」只重排现有能力，不新增业务主导航。目标结构如下：
+
+```text
+Topbar
+└── A Shell
+    ├── Navigation Rail
+    │   ├── Library / All Projects
+    │   ├── Search focus
+    │   ├── Projects / Folders / Tags focus
+    │   ├── History（有选中 Prompt 时可用）
+    │   └── Shelf toggle
+    ├── Floating Project Shelf
+    │   ├── Projects / All Projects
+    │   ├── Smart Views
+    │   ├── Folder tree
+    │   └── Tags
+    └── Content workspace
+        ├── Prompt List / Browse
+        └── Prompt Detail
+            ├── Preview
+            ├── Edit + Metadata Inspector
+            └── History
+
+Overlay plane（位于内容层之上）
+├── Project Menu
+├── NamePromptDialog / ConfirmDialog
+├── Compare
+└── Update Banner
+```
+
+区域职责和当前实现的映射：
+
+- **Topbar**：保留 `PromptsView.svelte` / `+layout.svelte` 中的 Search、
+  Language、Theme、New、Refresh 和 macOS safe area。
+- **Rail**：只做现有 action 的快捷入口；不新增 Settings、云同步、聊天或
+  Prompt 执行器等没有业务支撑的主 Tab。
+- **Floating Project Shelf**：是 `ProjectSidebar.svelte` 的视觉重排，继续
+  承载 Project、All Projects、Smart Views、Folder、Tag、Project Menu。
+- **Prompt List**：由 `PromptLibrary.svelte` 和 `PromptToolbar.svelte` 承载
+  Search 结果、Sort、Model Filter、List/Grid、Batch Select。
+- **Prompt Detail**：由 `PromptDetail.svelte` 继续承载 Preview、Edit、
+  History、Compare、Variables、Examples、Related、Variants 和 Health。
+- **Overlay plane**：保留现有菜单、应用内 prompt/confirm、Compare 和
+  Update Banner 的层级与关闭/恢复语义。
+
+这张目标图是后续 DOM 重排的边界，不是本 Phase 0 的实现方案；Phase 1
+不能在该信息架构、现状矩阵和风险门槛未被接受前开始。
+
 ## 视口测量结果
 
 ### 1440×900
@@ -76,7 +206,7 @@ library-topbar
 
 ### 1180×720
 
-采集组合：Dark/简体中文；普通媒体设置。
+采集组合：Light/English 和 Dark/简体中文；普通媒体设置。
 
 - 顶栏：`width=1180, height=68`
 - 侧栏外框：`x=12, width=232`
@@ -87,9 +217,8 @@ library-topbar
 
 ### 900×600
 
-采集组合：Light/English；同时启用
-`prefers-reduced-transparency: reduce`、`prefers-contrast: more` 和
-`prefers-reduced-motion: reduce`。
+采集组合：Light/English 和 Dark/简体中文；普通媒体设置。三个
+`prefers-*` 特性另行逐项采集，避免把组合 fallback 误当成单项行为。
 
 - 顶栏：`width=900, height=68`
 - 侧栏外框：`x=12, width=188`
@@ -100,12 +229,14 @@ library-topbar
     `590px`。
   - `.detail-actions` 的右边界约为 `x=1207.6`，超出当前 Detail 可视区域
     `x=900`。
-  - 因此 Preview/Edit/History 右侧操作在最小窗口不能同时显示，属于后续
-    Detail/Shell 阶段必须保留的已知回归基线；Phase 0 不在此修复。
+- 因此 Preview/Edit/History 右侧操作在最小窗口不能同时显示。这是 Phase 0
+  记录的 **known baseline defect**；Phase 0 不修复，但后续 Detail/Shell
+  阶段不得恶化，并应按 Epic #60 的窄窗口验收目标消除。
 
 ### 720×600 断点
 
-采集组合：Light/English；与上一个样本相同的 reduced 系统设置。
+采集组合：Light/English 和 Dark/简体中文；普通媒体设置。另有三张
+`900×600` Light/English 的单项 prefers-* 截图，见上面的截图证据。
 
 - 顶栏高度约 `97.8px`，`flex-wrap: wrap` 生效。
 - Search 独占第二行：`x≈11.2, width≈697.6, height=32`。
@@ -118,9 +249,10 @@ library-topbar
 
 ## 系统设置验证
 
-在 `900×600` Light/English 样本中，三个系统设置同时设置为 `reduce/more/reduce`：
+在 `900×600` Light/English 样本中，三个系统设置分别启用；每次只模拟一个
+特性，对应截图见“单项 macOS 辅助功能媒体设置”：
 
-- `prefers-reduced-transparency`：命中；Prompt Toolbar 和 Project Sidebar
+- `prefers-reduced-transparency: reduce`：命中；Prompt Toolbar 和 Project Sidebar
   的 `backdrop-filter` 为 `none`，仍保留实体背景和边框。
 - `prefers-contrast: more`：命中；边框和弱文本使用增强后的语义 token。
 - `prefers-reduced-motion: reduce`：命中；transition/animation 被压缩到
@@ -129,41 +261,128 @@ library-topbar
 
 这些是现有 CSS 的运行时结果，不代表未来 Rail/Shelf 的验收已经完成。
 
-## 功能状态与不可回归边界
+## 功能状态样本矩阵
 
-### 已在基线浏览预览中看到的入口
+本节把 Issue #61 要求的“功能状态样本”写成可执行记录。每条记录都固定为：
+**入口 / 呈现 / 取消或失败后的恢复 / 证据**。浏览器 fixture 能安全复现的
+状态使用截图；依赖真实文件系统、Tauri 或异步竞态的状态明确标为
+`contract test only`，并指向具体测试行为，而不是只列测试文件名。
 
-- 多项目：`engineering`、`writing`、`research`。
-- All Projects、All、Needs Attention、Favorites、Draft、Archived。
-- Folder tree、派生 Tag 列表和数量。
-- Search、Sort、Model Filter、List/Grid。
-- Prompt row 的名称、描述、标签、状态、变量数和修改时间。
-- Prompt Detail 的 Preview、Edit、History、Compare、Copy、Reveal 和管理动作。
-- English/简体中文切换不会替换用户项目名、Prompt 名称或标签内容。
+### Scope、项目和筛选
 
-### 由现有代码和回归测试锁定的状态
+- **无项目**：入口是将 `library.projects` 置空；呈现应为选择项目的空状态，
+  不显示伪造的 Prompt 列表；恢复入口是 Add Project/Locate Folder，locale
+  切换只翻译文案；证据为 `tests/core-ui-localization.test.ts` 的
+  `no-project empty state renders in English and Chinese`（contract test only）。
+- **单项目、多项目、All Projects**：入口分别是 `engineering`、`writing`、
+  `research` 和 All Projects；呈现为当前 scope 的选中 tint、项目名称、数量
+  和对应列表。All Projects + 两项选择的实际观察见
+  [Batch 截图](phase0/900x600-light-en-all-projects-batch.png)；恢复是再次点
+  项目或 All Projects，不丢失 Prompt selection；证据还包括
+  `tests/core-ui-localization.test.ts` 的 sidebar/library states，以及
+  `tests/all_projects_search.mjs` 的跨项目同名与 tag 搜索契约。
+- **Smart View、Folder、Tag、组合筛选、无匹配**：入口是 All、Needs Attention、
+  Favorites、Draft、Archived、Folder/Tag、Search、Sort、Model Filter；
+  呈现必须保留 active scope、结果计数、selected row 和 no-matching 提示。
+  取消/恢复是清除搜索或筛选回到当前 scope；证据为
+  `tests/core-ui-localization.test.ts` 的 `no-prompts-yet and no-matching
+  states`、`tests/visible_filter.mjs`、`tests/navigation_state.mjs`。
 
-以下状态在 Phase 0 记录为“行为契约”，不在浏览器 fixture 中人为伪造用户
-文件：
+### Prompt 内容和密度
 
-- 无项目、空列表、无匹配、loading、refreshing 和项目错误。
-- missing project、Locate Folder、Forget Project。
-- invalid frontmatter、Health、Variables、Related、Variants、Examples。
-- dirty editor、Reload/Keep editing、save conflict 和 external file missing。
-- Project Menu、Name Prompt、Confirm、Compare、Update Banner。
-- Cmd/Ctrl+N、Cmd/Ctrl+F、Cmd/Ctrl+S、Escape、Enter。
-- Tauri 下 app-owned NamePromptDialog/ConfirmDialog 路由以及 Overlay
-  titlebar/drag region 契约。
+- **普通 Prompt、长标题、长摘要、长标签、emoji**：入口是从列表打开 Prompt
+  Detail，或在 Edit 中输入用户内容；呈现优先级为 name > description/body
+  excerpt > folder/tags/status > variable count/modified time，用户内容
+  `Review 中文 PR 🚀`、中文标签、混合脚本和 emoji 不得被 i18n 覆盖。恢复是
+  切换 locale 后保持原值，保存只提交真实字段变化；证据为
+  `tests/locale-user-data-isolation.test.ts` 的 multilingual/emoji fixture
+  和 locale isolation assertions。长内容的实际窄窗口观察见
+  [长内容 Edit 截图](phase0/900x600-light-en-edit-long-content-emoji.png)；
+  长标题的输入裁切见
+  [长标题 Rename 截图](phase0/900x600-light-en-rename-long-title.png)，其中
+  右侧 inspector 和 dialog 的可视边界被记录为后续验收输入。
+- **List/Grid、选中、批量选择和批量操作**：入口是 List/Grid 控件、行选择
+  按钮和 toolbar 的 Select all；呈现是 row/card 的 selected tint、`2 selected`
+  计数、Favorite/Archive/Active/tag/Delete/Cancel action；取消是 Cancel 或
+  清空选择，失败时不改变未提交数据；实际观察见
+  [All Projects + Batch 截图](phase0/900x600-light-en-all-projects-batch.png)，
+  行为证据为 `tests/core-ui-localization.test.ts` 的 `batch toolbar counts
+  translate` 和现有 smoke contract。
 
-对应证据入口：
+### Detail、编辑和历史
 
-- `tests/tauri-dialog-routing.test.ts`
-- `tests/titlebar-contract.test.ts`
-- `tests/modal-shortcuts.test.ts`
-- `tests/unsaved-navigation.test.ts`
-- `tests/missing-project-recovery.test.ts`
-- `tests/core-ui-localization.test.ts`
-- `tests/full-ui-localization.test.ts`
+- **Preview**：入口是列表 row，再点击 Prompt Detail 的 Preview tab；呈现为
+  selected row、标题/path、Copy/Reveal、Preview selected tab、metadata 和
+  Markdown 内容；恢复是切换其他 tab 或返回列表，不清空 selection；实际观察见
+  [selected Preview 截图](phase0/900x600-light-en-preview-selected.png)，
+  语言契约见 `tests/full-ui-localization.test.ts` 的 Prompt Detail shell。
+- **Edit / clean / dirty**：入口是 Edit tab；clean 时 Save disabled，输入
+  Markdown 或 metadata 后呈现 dirty dot、可用 Save 和 editor focus；取消/失败
+  时保留 buffer，保存成功后回到 clean；实际观察见
+  [dirty Edit 截图](phase0/900x600-light-en-edit-dirty.png)，行为证据为
+  `tests/full-ui-localization.test.ts` 的 `dirty state survives a locale switch`
+  和 `tests/unsaved-navigation.test.ts` 的 `makeEditorDirty` flow。
+- **History / Compare**：入口分别是 History tab 和 Compare… action；呈现是
+  History empty/repository message 或临时 Compare overlay，不把 Compare 变成
+  永久主 tab；关闭 Compare 后恢复原 Detail tab；实际观察见
+  [History 截图](phase0/900x600-light-en-history.png) 和
+  [Compare 截图](phase0/900x600-light-en-compare.png)，差异算法契约见
+  `tests/compare_contract.mjs`。
+- **Reload / Keep editing / save conflict / external file missing**：
+  入口是 dirty editor 后点击其他 row、Refresh 或收到外部文件变化；呈现为
+  app-owned ConfirmDialog、dirty dot 或 conflict/missing 分支；Cancel/Keep
+  editing 关闭对话框并保持 buffer，Discard/Reload 才继续导航或替换内容；
+  证据为 `tests/unsaved-navigation.test.ts` 的 Cancel/Discard/reload/menu
+  流程和 `tests/refresh_selected.mjs` 的 dirty buffer/file_missing 分支
+  （contract test only）。
+
+### 异常、辅助信息和管理操作
+
+- **missing project、frontmatter warning、Health**：入口是 machine state
+  `PROJECT_FOLDER_NOT_FOUND`、frontmatter/health 派生状态；呈现为明确的
+  missing banner、warning/error severity、路径或诊断 detail，而不是只改变
+  透明度；恢复是 Locate Folder、Reload 或修正文件后重新扫描；证据为
+  `tests/missing-project-recovery.test.ts`、`tests/health_contract.mjs` 和
+  `tests/full-ui-localization.test.ts` 的 health localization
+  （contract test only）。
+- **Variables、Examples、Related、Variant**：入口是 Detail 的对应 section；
+  呈现为可识别的变量、example rows、related links、variant family 和
+  warning/error 状态；取消/失败应留在当前 section 并保留已填内容。变量复制
+  失败时 dialog 和 focus 都必须保留；证据为
+  `tests/variable-fill.test.ts`、`tests/examples_hardening.test.ts`、
+  `tests/relation_contract.mjs`、`tests/variant_contract.mjs`。
+- **Project Menu、Rename、Forget、New Prompt、Confirm、Update Banner**：
+  入口是项目行 context menu、New、Refresh/Update action；呈现是 overlay
+  backdrop、明确按钮语义、初始 focus 和稳定 z-index。Cancel/Escape 关闭最内层
+  overlay；失败不丢输入；实际观察见
+  [New Prompt 截图](phase0/900x600-light-en-new-prompt.png) 和
+  [Compare overlay 截图](phase0/900x600-light-en-compare.png)，路由证据为
+  `tests/tauri-dialog-routing.test.ts`、`tests/name-dialog.test.ts`、
+  `tests/modal-shortcuts.test.ts`。
+
+### 视觉状态和键盘状态对照
+
+- **selected / focus**：selected row、selected Preview/History tab 及当前
+  focused control 已在代表性截图和 accessibility snapshot 中确认。
+- **hover / pressed**：这是瞬时状态，当前使用现有 `app.css` 的 `:hover` /
+  `:active` 选择器和点击后 accessibility state 做观察记录；后续实现 PR 必须
+  对 Rail、Shelf、row、primary action 各留一张人工 hover/pressed 检查结果，
+  不得用“没有截图”代替验收。
+- **disabled / busy**：New Prompt 的 AI naming disabled、Edit 的 Save disabled
+  和例子移动按钮 disabled 已在 snapshot 中确认；AI naming busy 使用 deferred
+  request，Cancel 仍可用，证据为 `tests/new-prompt-dialog.test.ts` 的
+  `keeps Cancel available while naming is busy` 与
+  `blocks naming while clearing credentials is pending`。
+- **warning / error**：列表中 warning chip、missing project banner、AI naming
+  failure 和 health severity 必须同时有文字/结构/颜色信号；证据见上方异常项。
+- **dirty**：编辑器值变化后 dirty dot 与 Save enabled；locale 切换不清空
+  buffer；截图和 `full-ui-localization.test.ts` / `unsaved-navigation.test.ts`
+  共同锁定该状态。
+- **Cmd/Ctrl+N、Cmd/Ctrl+F、Cmd/Ctrl+S、Escape、Enter**：无 overlay 时
+  N/F/S 作用于 New/Search/Save；有 menu/dialog 时快捷键让位，Escape 关闭
+  最内层，Enter 提交 modal；证据为
+  `tests/unsaved-navigation.test.ts`、`tests/modal-shortcuts.test.ts` 和
+  `tests/name-dialog.test.ts`。
 
 浏览器 fixture 适合验证正常浏览、筛选和编辑显示，但不包含真实
 invalid-frontmatter、missing-folder、filesystem conflict 等全部异常状态。
@@ -182,6 +401,133 @@ invalid-frontmatter、missing-folder、filesystem conflict 等全部异常状态
 - locale 切换不清空 selection、filter、search、editor draft 或 dirty state。
 - 不修改 Prompt、Project、Folder、Tag、Markdown、Git 内容，也不新增 sidecar。
 - 内容层不使用逐行 blur；Reduce Transparency 时所有功能层仍然可读。
+
+## 技术步骤风险矩阵
+
+以下风险按“技术步骤 → 可能破坏的契约 → Phase 0 约束 → 必须提供的证据”
+记录。没有对应证据时，风险项不能被标记为已关闭。
+
+### R1：纯 CSS / token / material 变化（中风险）
+
+- 可能破坏：Light/Dark 对比度、Reduce Transparency fallback、selected/
+  focus/warning/error 的唯一可见信号、滚动性能。
+- Phase 0 约束：内容层保持实体背景；玻璃只服务 Rail、Shelf、Toolbar、
+  关键控件和 Overlay；不引入逐行 `backdrop-filter`。
+- 证据：1440/1180/900/720 双主题截图、三张单项 prefers-* 截图、
+  computed style、无 document overflow、`pnpm check`。
+
+### R2：DOM 重排 / Shell 几何变化（高风险）
+
+- 可能破坏：pane resize、sticky header、滚动容器、窄窗口 Detail action、
+  traffic lights safe area 和焦点顺序。
+- Phase 0 约束：Phase 1 不改 DOM；Phase 2 才能重排 Shell，并先收起 Shelf
+  再压缩正文；当前 `900×600` Detail overflow 是 defect，不得固化成正确行为。
+- 证据：目标区域图、1440/1180/900/720 逐项截图、边界/scrollWidth/
+  clientWidth 记录、keyboard/accessibility snapshot。
+
+### R3：状态接线 / callback / dirty 生命周期（高风险）
+
+- 可能破坏：Project/Folder/Tag/Search/Batch、Preview/Edit/History、保存、
+  conflict、external change、locale 切换和异步响应归属。
+- Phase 0 约束：布局组件只消费已有 props/callback；不复制状态机，不改变
+  Prompt/Project/Markdown 数据模型，不在 Phase 2/3 偷改保存或 filesystem 数据流。
+- 证据：本文件的功能状态矩阵、`unsaved-navigation`、
+  `refresh_selected`、`full-ui-localization`、`variable-fill`、
+  `examples_hardening` 等现有回归测试。
+
+### R4：Tauri / macOS 窗口与 Dialog（高风险）
+
+- 可能破坏：Overlay drag region、traffic lights、窗口最小尺寸、app-owned
+  NamePromptDialog/ConfirmDialog、menu → modal z-index 和 focus trap。
+- Phase 0 约束：不改 `tauri.conf.json`、Rust/IPC 或原生窗口策略；不重新引入
+  `window.prompt`/`window.confirm` 作为 Tauri 路径。
+- 证据：`tests/tauri-dialog-routing.test.ts`、
+  `tests/titlebar-contract.test.ts`、`tests/modal-shortcuts.test.ts`，以及
+  Phase 7 的打包 App 手工 smoke。
+
+### R5：发布 / 构建 / 签名验证（中风险）
+
+- 可能破坏：bundle identifier、arm64 `.app`、updater artifact、签名设置或
+  现有 `/Applications` 安装内容。
+- Phase 0 约束：只记录浏览器基线；不构建、不安装、不覆盖现有 App，不修改
+  release signing 配置。
+- 证据：Phase 6 的 frontend/backend checks，Phase 7 的
+  `pnpm tauri build --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'`
+  和未签名本地产物限制说明。
+
+## Phase 1–7 依赖与进入门槛
+
+这些 gate 是硬门槛：前一阶段的退出证据不完整时，不开始下一阶段；任何阶段
+都不得跨阶段顺手改变数据流、Rust/filesystem 或用户文件。
+
+### Phase 0 — 基线冻结（本 PR）
+
+- 前置：无。
+- 必须交付：exact baseline、工作区/环境、双主题和双 locale 的 viewport
+  矩阵、单项 prefers-* 样本、功能状态矩阵、当前/目标 A 区域图、风险矩阵。
+- 退出 gate：截图可追溯且人工检查；状态有入口/呈现/恢复/证据；已知 defect
+  与正确行为边界清楚；`git diff --check` 通过。
+
+### Phase 1 — Design Tokens 与材质契约
+
+- 前置：Phase 0 全部交付并被 review 接受。
+- 允许范围：只改 surface/text/border/radius/shadow/z-index 等 token、实体
+  fallback、material contract 和 prefers-* CSS；不改 DOM、布局、callback、
+  状态机或业务数据。
+- 退出 gate：Light/Dark/三项辅助功能可读；无布局重排；`pnpm check`、
+  `pnpm test:smoke`、`pnpm build` 通过。
+
+### Phase 2 — Shell、Rail、Floating Shelf
+
+- 前置：Phase 1 token/fallback 稳定。
+- 允许范围：才可重排 `PromptsView` / `ProjectSidebar` 的展示结构，Shelf
+  展开/收起只保存在 UI 层；复用现有 Project、Folder、Tag、Search 和 Dialog
+  callback，不改数据流。
+- 退出 gate：Rail/Shelf 区域图在 1440/1180/900/720 可解释，pane resize、
+  keyboard order、menu → modal 层级和既有导航测试通过。
+
+### Phase 3 — Browse：Prompt List 与 Detail Preview
+
+- 前置：Phase 2 Shell 几何和导航稳定。
+- 允许范围：只调整 List toolbar、List/Grid、selected/hover/warning/status
+  及 Preview 阅读层；不改保存、搜索索引或 Markdown 序列化。
+- 退出 gate：Search/Sort/Model/List/Grid/Batch、empty/no-match/missing 和
+  长中文/emoji/长标签截图与测试通过；正文没有逐行玻璃。
+
+### Phase 4 — Edit：正文主画布与 Metadata Inspector
+
+- 前置：Phase 3 Preview 稳定。
+- 允许范围：重排 Edit 视觉层和 Inspector sections；保留 dirty/save/
+  conflict/reload 生命周期、字段和用户内容。
+- 退出 gate：Save disabled/saving/success/conflict/error、locale 切换、切换
+  Prompt/Project 的 buffer 归属，以及 Examples/Variables/Related/Variant
+  测试通过。
+
+### Phase 5 — Overlay、Menu、Dialog 与状态动画
+
+- 前置：Phase 4 Edit/dirty/conflict 稳定。
+- 允许范围：统一 Project Menu、Name Prompt、Confirm、Compare、Update Banner
+  的 overlay material/z-index/focus；只添加可取消的短过渡，不改变 Tauri 路由。
+- 退出 gate：Escape/Enter/backdrop/cancel/busy/disabled、menu 先关闭再开
+  modal、app-owned dialog 和快捷键隔离测试通过；Reduce Motion 不依赖动画。
+
+### Phase 6 — i18n、Accessibility 与性能收口
+
+- 前置：Phase 2–5 结构不再变动。
+- 允许范围：双语言、Tab/aria/focus-visible、三项 prefers-*、滚动/搜索/
+  dialog 性能与有限玻璃面清理；不做无关旧代码清理或数据重写。
+- 退出 gate：`pnpm check`（0 errors / 0 warnings）、`pnpm test:smoke`、
+  `pnpm build`、`git diff --check` 通过，浏览器无 console error、clipping
+  或 document overflow。
+
+### Phase 7 — Tauri 打包与发布前验收
+
+- 前置：Phase 6 自动检查全部通过。
+- 允许范围：只做无 updater artifact 的本地 `.app` 构建、traffic lights/
+  drag region/窗口缩放和关键状态 smoke；不安装覆盖、不改签名配置。
+- 退出 gate：浏览器与打包 App 的关键布局/交互一致，arm64 bundle 信息、
+  未签名限制、before/after 截图和未解决问题均记录，之后才可关闭 Epic
+  对应阶段。
 
 ## Phase 0 边界
 
