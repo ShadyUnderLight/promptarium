@@ -6,14 +6,16 @@
 
 ## 基线元数据
 
-- Baseline capture source：`origin/main @ 8f2f11b88f4263e056f86990efc292c6e21259c1`
-- 基线提交标题：`fix(ui): close macOS glass review gaps (#59)`
-- 采集开始时的 worktree 关系：`HEAD == origin/main == 8f2f11b...`；这只描述
-  添加本文档前的采集状态，不表示 checkout 本 PR 后当前 `HEAD` 仍等于
-  `origin/main`。
-- 首次提交此文档的 PR head：`81e1340306b92df27401f2061cdd9732bcd4b381`
-  （PR #69 初始提交）；后续修订均继续追加在 PR #69，截图对应的应用代码
-  仍与上述 exact baseline 一致。
+- Source app baseline：`origin/main @ 8f2f11b88f4263e056f86990efc292c6e21259c1`
+  （提交标题：`fix(ui): close macOS glass review gaps (#59)`）。截图采集时的
+  产品代码树与该 baseline 一致。
+- Capture worktree / 首次文档提交：`81e1340306b92df27401f2061cdd9732bcd4b381`
+  （PR #69 初始提交）；这是采集时的 worktree/documentation commit，不是
+  `origin/main` 的替代标识。
+- Screenshot artifact introduction：`7121055655e6b51d58a5a827a40daa1aacedb366`
+  （PNG 首次进入 repository 的 PR 修订提交）。因此 checkout `81e1340` 不会
+  看到这些 PNG；后续复核应同时记录 source app baseline、capture commit 和
+  artifact commit。
 - 采集日期：2026-09-15
 - 运行环境：macOS，Darwin 27.0.0；浏览器开发预览
 - 开发入口：`pnpm dev --host 127.0.0.1`
@@ -41,29 +43,33 @@
 
 ## 截图证据与验收矩阵
 
-以下 PNG 是本次修订实际提交到仓库的截图 artifact。所有截图均在应用代码
-仍对应 `81e1340` 的开发预览中采集；逻辑 viewport 是 CDP 设置的 CSS
-viewport，浏览器工具输出的 PNG 物理像素为 `2248×2160`（由 capture scale
-造成），两者不能混为一谈。每条记录都包含 commit、viewport、theme、locale
-和 state，可直接打开链接做人工复核。
+以下 PNG 是本次修订实际提交到仓库的截图 artifact。所有截图都在 source app
+baseline `8f2f11b` 对应的开发预览中采集，采集 worktree/documentation commit
+为 `81e1340`，artifact introduction commit 为 `7121055`。逻辑 viewport 是
+CDP 设置的 CSS viewport；浏览器 capture path 输出的 19 张 PNG 都是
+`2248×2160` physical capture-frame dimensions，不是把各个 CSS viewport 按
+同一个 scale 等比放大的结果。捕获 frame 的宿主尺寸/留白不作为几何真值，
+几何验收使用下方记录的 CSS viewport、DOM bounding box 和 computed style。
+每条记录都明确 source/capture/artifact commit、viewport、theme、locale 和
+state，可直接打开链接做人工复核。
 
 ### Viewport × theme × locale
 
-- `81e1340` · `1440×900` · Light · English · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `1440×900` · Light · English · `browse`：
   [1440x900-light-en-browse.png](phase0/1440x900-light-en-browse.png)
-- `81e1340` · `1440×900` · Dark · 简体中文 · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `1440×900` · Dark · 简体中文 · `browse`：
   [1440x900-dark-zh-CN-browse.png](phase0/1440x900-dark-zh-CN-browse.png)
-- `81e1340` · `1180×720` · Light · English · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `1180×720` · Light · English · `browse`：
   [1180x720-light-en-browse.png](phase0/1180x720-light-en-browse.png)
-- `81e1340` · `1180×720` · Dark · 简体中文 · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `1180×720` · Dark · 简体中文 · `browse`：
   [1180x720-dark-zh-CN-browse.png](phase0/1180x720-dark-zh-CN-browse.png)
-- `81e1340` · `900×600` · Light · English · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `900×600` · Light · English · `browse`：
   [900x600-light-en-browse.png](phase0/900x600-light-en-browse.png)
-- `81e1340` · `900×600` · Dark · 简体中文 · `browse`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `900×600` · Dark · 简体中文 · `browse`：
   [900x600-dark-zh-CN-browse.png](phase0/900x600-dark-zh-CN-browse.png)
-- `81e1340` · `720×600` · Light · English · `compact`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `720×600` · Light · English · `compact`：
   [720x600-light-en-compact.png](phase0/720x600-light-en-compact.png)
-- `81e1340` · `720×600` · Dark · 简体中文 · `compact`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `720×600` · Dark · 简体中文 · `compact`：
   [720x600-dark-zh-CN-compact.png](phase0/720x600-dark-zh-CN-compact.png)
 
 ### 单项 macOS 辅助功能媒体设置
@@ -71,12 +77,12 @@ viewport，浏览器工具输出的 PNG 物理像素为 `2248×2160`（由 captu
 这些样本每次只启用一个媒体特性，避免三项 fallback 同时变化后无法判断
 是哪条规则生效：
 
-- `81e1340` · `900×600` · Light · English ·
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `900×600` · Light · English ·
   `prefers-reduced-transparency: reduce`：
   [900x600-light-en-prefers-reduced-transparency.png](phase0/900x600-light-en-prefers-reduced-transparency.png)
-- `81e1340` · `900×600` · Light · English · `prefers-contrast: more`：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `900×600` · Light · English · `prefers-contrast: more`：
   [900x600-light-en-prefers-contrast-more.png](phase0/900x600-light-en-prefers-contrast-more.png)
-- `81e1340` · `900×600` · Light · English ·
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · `900×600` · Light · English ·
   `prefers-reduced-motion: reduce`：
   [900x600-light-en-prefers-reduced-motion.png](phase0/900x600-light-en-prefers-reduced-motion.png)
 
@@ -87,21 +93,21 @@ History 和 Compare 状态。它们统一在 `900×600`、Light、English、
 `prefers-reduced-motion: reduce` 下采集；该媒体设置在这里明确记录，避免把
 瞬时 UI 状态与系统设置混淆：
 
-- selected Prompt + Preview：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · selected Prompt + Preview：
   [900x600-light-en-preview-selected.png](phase0/900x600-light-en-preview-selected.png)
-- All Projects + 两项 Batch Select：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · All Projects + 两项 Batch Select：
   [900x600-light-en-all-projects-batch.png](phase0/900x600-light-en-all-projects-batch.png)
-- Edit + dirty editor：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · Edit + dirty editor：
   [900x600-light-en-edit-dirty.png](phase0/900x600-light-en-edit-dirty.png)
-- Edit + 长摘要/长标签/emoji：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · Edit + 长摘要/长标签/emoji：
   [900x600-light-en-edit-long-content-emoji.png](phase0/900x600-light-en-edit-long-content-emoji.png)
-- Rename + 长标题/emoji：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · Rename + 长标题/emoji：
   [900x600-light-en-rename-long-title.png](phase0/900x600-light-en-rename-long-title.png)
-- History：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · History：
   [900x600-light-en-history.png](phase0/900x600-light-en-history.png)
-- Compare overlay：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · Compare overlay：
   [900x600-light-en-compare.png](phase0/900x600-light-en-compare.png)
-- New Prompt dialog：
+- `source 8f2f11b · capture 81e1340 · artifact 7121055` · New Prompt dialog：
   [900x600-light-en-new-prompt.png](phase0/900x600-light-en-new-prompt.png)
 
 代表性状态截图只使用浏览器开发 fixture 和临时表单输入；没有点击 Confirm、
@@ -184,7 +190,9 @@ Overlay plane（位于内容层之上）
 - **Prompt Detail**：由 `PromptDetail.svelte` 继续承载 Preview、Edit、
   History、Compare、Variables、Examples、Related、Variants 和 Health。
 - **Overlay plane**：保留现有菜单、应用内 prompt/confirm、Compare 和
-  Update Banner 的层级与关闭/恢复语义。
+  Update Banner 的层级与关闭/恢复语义；这里的 “plane” 是视觉 z-layer，
+  不表示其中每个成员都是 modal。Update Banner 必须继续保持独立的
+  non-modal notification contract。
 
 这张目标图是后续 DOM 重排的边界，不是本 Phase 0 的实现方案；Phase 1
 不能在该信息架构、现状矩阵和风险门槛未被接受前开始。
@@ -276,17 +284,30 @@ Overlay plane（位于内容层之上）
   `no-project empty state renders in English and Chinese`（contract test only）。
 - **单项目、多项目、All Projects**：入口分别是 `engineering`、`writing`、
   `research` 和 All Projects；呈现为当前 scope 的选中 tint、项目名称、数量
-  和对应列表。All Projects + 两项选择的实际观察见
-  [Batch 截图](phase0/900x600-light-en-all-projects-batch.png)；恢复是再次点
-  项目或 All Projects，不丢失 Prompt selection；证据还包括
+  和对应列表。切换到具体 Project 会执行 `setActiveProject(path)`：清空当前
+  Prompt selection、`externalChangeState`、Folder、Tag，并把 Smart View 重置
+  为 `all`；该函数本身不重置 `searchQuery`、`modelFilter` 或 `viewMode`。
+  进入 All Projects 会执行 `setAllProjectsScope()`：切换 scope、清空
+  `folderFilter` 后刷新全局列表。此时 selected Prompt 是否保留或重载由
+  `decideSelectedRefresh` 根据 Prompt 是否仍存在、editor 是否 dirty 和
+  `reloadSelected` 决定：不是无条件保留 selection。两条路径都继续经过
+  dirty-navigation guard；All Projects + 两项选择的实际观察见
+  [Batch 截图](phase0/900x600-light-en-all-projects-batch.png)。证据包括
+  `src/lib/library.svelte.ts`、`src/lib/library/refresh-selected.ts`、
   `tests/core-ui-localization.test.ts` 的 sidebar/library states，以及
   `tests/all_projects_search.mjs` 的跨项目同名与 tag 搜索契约。
 - **Smart View、Folder、Tag、组合筛选、无匹配**：入口是 All、Needs Attention、
   Favorites、Draft、Archived、Folder/Tag、Search、Sort、Model Filter；
   呈现必须保留 active scope、结果计数、selected row 和 no-matching 提示。
-  取消/恢复是清除搜索或筛选回到当前 scope；证据为
+  精确组合规则是：Search 始终独立组合；只有 Needs Attention 可以和 Folder
+  或 Tag 组合；Folder 与 Tag 互斥；Favorites、Draft、Archived、All 会清除
+  Folder/Tag；在非 Needs Attention 下点击 Folder/Tag 会回到
+  `smartView = all`。取消/恢复是清除搜索或筛选回到当前 scope；这些规则以
+  `src/lib/library/navigation-state.ts` 和 `tests/navigation_state.mjs` 为
+  精确 contract，`prompts-ux.md` 中“combines with ... other filters”属于
+  过宽的概要描述；无匹配和空结果证据还包括
   `tests/core-ui-localization.test.ts` 的 `no-prompts-yet and no-matching
-  states`、`tests/visible_filter.mjs`、`tests/navigation_state.mjs`。
+  states` 与 `tests/visible_filter.mjs`。
 
 ### Prompt 内容和密度
 
@@ -303,11 +324,15 @@ Overlay plane（位于内容层之上）
   右侧 inspector 和 dialog 的可视边界被记录为后续验收输入。
 - **List/Grid、选中、批量选择和批量操作**：入口是 List/Grid 控件、行选择
   按钮和 toolbar 的 Select all；呈现是 row/card 的 selected tint、`2 selected`
-  计数、Favorite/Archive/Active/tag/Delete/Cancel action；取消是 Cancel 或
-  清空选择，失败时不改变未提交数据；实际观察见
+  计数、Favorite/Archive/Active/tag/Delete/Cancel action。scope 变化会清空
+  `selectedKeys`，结果筛选变化会剔除不可见的 selection；取消是 Cancel 或
+  清空选择。批量写入按文件独立执行，允许 partial success，并逐项报告失败的
+  project/name path；它不是 all-or-nothing transaction。实际观察见
   [All Projects + Batch 截图](phase0/900x600-light-en-all-projects-batch.png)，
-  行为证据为 `tests/core-ui-localization.test.ts` 的 `batch toolbar counts
-  translate` 和现有 smoke contract。
+  行为证据为 `src/lib/components/library/PromptLibrary.svelte`、
+  `src/lib/library.svelte.ts` 的 `batchUpdate`/`batchDelete`、
+  `tests/core-ui-localization.test.ts` 的 `batch toolbar counts translate`
+  和现有 smoke contract。
 
 ### Detail、编辑和历史
 
@@ -351,14 +376,25 @@ Overlay plane（位于内容层之上）
   失败时 dialog 和 focus 都必须保留；证据为
   `tests/variable-fill.test.ts`、`tests/examples_hardening.test.ts`、
   `tests/relation_contract.mjs`、`tests/variant_contract.mjs`。
-- **Project Menu、Rename、Forget、New Prompt、Confirm、Update Banner**：
-  入口是项目行 context menu、New、Refresh/Update action；呈现是 overlay
-  backdrop、明确按钮语义、初始 focus 和稳定 z-index。Cancel/Escape 关闭最内层
-  overlay；失败不丢输入；实际观察见
+- **Project Menu、Rename、Forget、New Prompt、Confirm、Compare**：
+  入口是项目行 context menu、New、Refresh action 或 Compare action；呈现是
+  modal/menu 的明确按钮语义、初始 focus 和稳定 z-index。Cancel/Escape 关闭
+  最内层 overlay；失败不丢输入；实际观察见
   [New Prompt 截图](phase0/900x600-light-en-new-prompt.png) 和
   [Compare overlay 截图](phase0/900x600-light-en-compare.png)，路由证据为
   `tests/tauri-dialog-routing.test.ts`、`tests/name-dialog.test.ts`、
   `tests/modal-shortcuts.test.ts`。
+- **Update Banner**：仅 packaged app 使用；入口是 updater 的
+  `available`、`downloading`、`checking`、`uptodate` 或 `error` 状态。它由
+  `+layout.svelte` 常驻挂载，是 bottom-right 的 fixed notification surface，
+  `z-index: 190`，没有 backdrop、focus trap 或 Escape handler，也不接管全局
+  Cmd/Ctrl+N/F/S。`available` 使用 `role="dialog"`，提供 Update & restart
+  和显式 × dismiss；`downloading` 使用 `role="status"` 并显示 progress；
+  `checking`、`uptodate`、`error` 都是 status presentation；`idle` 不渲染。
+  Reduce Transparency 时保留实体背景 fallback。失败/取消恢复为当前主界面，
+  不得把 Banner 改成 modal 或阻塞编辑；证据为
+  `src/lib/components/UpdateBanner.svelte`、`src/routes/+layout.svelte` 和
+  `PromptsView.hasOpenModal()`。
 
 ### 视觉状态和键盘状态对照
 
@@ -378,9 +414,10 @@ Overlay plane（位于内容层之上）
 - **dirty**：编辑器值变化后 dirty dot 与 Save enabled；locale 切换不清空
   buffer；截图和 `full-ui-localization.test.ts` / `unsaved-navigation.test.ts`
   共同锁定该状态。
-- **Cmd/Ctrl+N、Cmd/Ctrl+F、Cmd/Ctrl+S、Escape、Enter**：无 overlay 时
-  N/F/S 作用于 New/Search/Save；有 menu/dialog 时快捷键让位，Escape 关闭
-  最内层，Enter 提交 modal；证据为
+- **Cmd/Ctrl+N、Cmd/Ctrl+F、Cmd/Ctrl+S、Escape、Enter**：无 keyboard-owning
+  menu/dialog 时 N/F/S 作用于 New/Search/Save；有 menu/dialog 时快捷键让位，
+  Escape 关闭最内层，Enter 提交 modal。Update Banner 不属于
+  `hasOpenModal()`，因此出现 Banner 不会触发 modal keyboard isolation；证据为
   `tests/unsaved-navigation.test.ts`、`tests/modal-shortcuts.test.ts` 和
   `tests/name-dialog.test.ts`。
 
@@ -393,9 +430,21 @@ invalid-frontmatter、missing-folder、filesystem conflict 等全部异常状态
 
 - Project path 是 Project 身份；relative Markdown path 是 Prompt 身份。
 - Search、Project、Folder、Tag、Smart View、Sort、List/Grid、Batch 和 pane
-  resize 语义不变。
+  resize 语义不变；Navigation compatibility rule 以
+  `navigation-state.ts`/`navigation_state.mjs` 为准：Search 独立组合，只有
+  Needs Attention 可与 Folder/Tag 组合，Folder 与 Tag 互斥，Favorites/Draft/
+  Archived/All 清除 Folder/Tag，非 Needs Attention 下 Folder/Tag 回到 All。
+- 具体 Project 切换清空 Prompt selection、external-change state、Folder、Tag
+  并重置 Smart View；All Projects 切换的 selection 由 selected-refresh decision
+  决定，不得被统一实现为 selection preservation。
+- Batch selection 不跨 library scope 生存；筛选后不可见项会被剔除。Batch
+  writes 按文件独立执行，partial success 合法，失败路径必须准确报告，不得
+  改成跨 scope selection 或伪装成 all-or-nothing transaction。
 - Preview/Edit/History 保持在 Prompt Detail 内；Compare 仍是临时视图。
 - dirty editor、冲突检测、Reload/Keep editing、missing project 恢复路径不变。
+- Update Banner 保持 packaged-app-only、bottom-right fixed、`z-index: 190`、
+  no backdrop、no focus trap、no Escape handler、non-modal keyboard semantics；
+  Overlay plane 是视觉 z-layer，不代表其中每个成员都是 modal。
 - Tauri 路径继续使用 app-owned Dialog，不重新引入浏览器原生
   `window.prompt`/`window.confirm`。
 - locale 切换不清空 selection、filter、search、editor draft 或 dirty state。
@@ -438,9 +487,11 @@ invalid-frontmatter、missing-folder、filesystem conflict 等全部异常状态
 ### R4：Tauri / macOS 窗口与 Dialog（高风险）
 
 - 可能破坏：Overlay drag region、traffic lights、窗口最小尺寸、app-owned
-  NamePromptDialog/ConfirmDialog、menu → modal z-index 和 focus trap。
+  NamePromptDialog/ConfirmDialog、menu → modal z-index 和 focus trap，以及
+  Update Banner 被误改成 modal 后的键盘抢占。
 - Phase 0 约束：不改 `tauri.conf.json`、Rust/IPC 或原生窗口策略；不重新引入
-  `window.prompt`/`window.confirm` 作为 Tauri 路径。
+  `window.prompt`/`window.confirm` 作为 Tauri 路径；Update Banner 不添加
+  backdrop、focus trap 或 Escape handler。
 - 证据：`tests/tauri-dialog-routing.test.ts`、
   `tests/titlebar-contract.test.ts`、`tests/modal-shortcuts.test.ts`，以及
   Phase 7 的打包 App 手工 smoke。
@@ -506,10 +557,13 @@ invalid-frontmatter、missing-folder、filesystem conflict 等全部异常状态
 ### Phase 5 — Overlay、Menu、Dialog 与状态动画
 
 - 前置：Phase 4 Edit/dirty/conflict 稳定。
-- 允许范围：统一 Project Menu、Name Prompt、Confirm、Compare、Update Banner
-  的 overlay material/z-index/focus；只添加可取消的短过渡，不改变 Tauri 路由。
+- 允许范围：统一 Project Menu、Name Prompt、Confirm、Compare 的 modal/menu
+  material/z-index/focus，以及 Update Banner 的独立 surface material/z-index；
+  只添加可取消的短过渡，不改变 Tauri 路由。Update Banner 不得新增 backdrop、
+  focus trap、Escape handler 或 global keyboard ownership。
 - 退出 gate：Escape/Enter/backdrop/cancel/busy/disabled、menu 先关闭再开
-  modal、app-owned dialog 和快捷键隔离测试通过；Reduce Motion 不依赖动画。
+  modal、app-owned dialog 和快捷键隔离测试通过；Update Banner 的 non-modal
+  keyboard semantics 以及 Reduce Motion 不依赖动画。
 
 ### Phase 6 — i18n、Accessibility 与性能收口
 
@@ -552,7 +606,7 @@ cd src-tauri && cargo test --lib
 git diff --check
 ```
 
-本分支实际验证结果（2026-09-15）：
+本地 macOS 验证结果（2026-09-15，Darwin 27.0.0）：
 
 - `pnpm check`：通过，0 errors / 0 warnings。
 - `pnpm test:smoke`：通过，16 个 Vitest 文件、168 个测试，以及全部
@@ -562,6 +616,12 @@ git diff --check
 - `cd src-tauri && cargo test --lib`：通过，143 passed / 0 failed；保留
   现有 `src/prompts/store.rs:1974 unused_mut` warning。
 - `git diff --check`：通过。
+
+GitHub Actions 的 frontend/backend job 在 Linux/Ubuntu 环境运行，warning 集合
+不应与本地 macOS 相同；backend 可能额外出现既有 platform/cfg 相关的
+dead-code warning。应分别记录本地 warning 与 CI job conclusion，不能把
+“本地只有一条 warning”解释为 CI stderr 的完整预期，也不能把 warning
+误报为测试失败。本次 review 观察到 PR 的 frontend/backend job 均成功。
 
 视觉证据仍需结合本文的运行时测量和后续阶段的浏览器/打包 App 手工 smoke；
 自动化检查通过不能替代 viewport、主题、系统设置和 macOS 窗口验收。
