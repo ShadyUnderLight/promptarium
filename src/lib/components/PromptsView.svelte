@@ -70,6 +70,8 @@
   let shelfMediaQuery: MediaQueryList | undefined;
   let detailVisible = $state(true);
   let detailMediaQuery: MediaQueryList | undefined;
+  let removeShelfMediaListener: (() => void) | undefined;
+  let removeDetailMediaListener: (() => void) | undefined;
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
@@ -93,10 +95,10 @@
     setEditorDirtyProvider(() => detailDirty);
     shelfMediaQuery = window.matchMedia('(max-width: 980px)');
     shelfExpanded = !shelfMediaQuery.matches;
-    shelfMediaQuery.addEventListener('change', onShelfViewportChange);
+    removeShelfMediaListener = listenMediaQuery(shelfMediaQuery, onShelfViewportChange);
     detailMediaQuery = window.matchMedia('(max-width: 720px)');
     detailVisible = !detailMediaQuery.matches;
-    detailMediaQuery.addEventListener('change', onDetailViewportChange);
+    removeDetailMediaListener = listenMediaQuery(detailMediaQuery, onDetailViewportChange);
     void initLibrary();
     window.addEventListener('keydown', onGlobalKeydown);
     window.addEventListener('focus', onWindowFocus);
@@ -105,8 +107,8 @@
   onDestroy(() => {
     setEditorDirtyProvider(null);
     void stopFilesystemWatch();
-    shelfMediaQuery?.removeEventListener('change', onShelfViewportChange);
-    detailMediaQuery?.removeEventListener('change', onDetailViewportChange);
+    removeShelfMediaListener?.();
+    removeDetailMediaListener?.();
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
@@ -125,6 +127,21 @@
 
   function onDetailViewportChange(event: MediaQueryListEvent): void {
     detailVisible = !event.matches;
+  }
+
+  function listenMediaQuery(
+    query: MediaQueryList,
+    listener: (event: MediaQueryListEvent) => void
+  ): () => void {
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', listener);
+      return () => query.removeEventListener('change', listener);
+    }
+    if (typeof query.addListener === 'function') {
+      query.addListener(listener);
+      return () => query.removeListener(listener);
+    }
+    return () => {};
   }
 
   function focusSearch(): void {

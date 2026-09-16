@@ -62,6 +62,26 @@ function mediaQueryStub(initialMatches: boolean) {
   };
 }
 
+function legacyMediaQueryStub(initialMatches: boolean) {
+  let matches = initialMatches;
+  const listeners = new Set<QueryListener>();
+  return {
+    get matches() {
+      return matches;
+    },
+    addListener: vi.fn((listener: QueryListener) => {
+      listeners.add(listener);
+    }),
+    removeListener: vi.fn((listener: QueryListener) => {
+      listeners.delete(listener);
+    }),
+    fire(next: boolean): void {
+      matches = next;
+      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+    },
+  };
+}
+
 beforeEach(() => {
   setPreference('en');
   library.projects = [{ path: '/project', name: 'Project' }];
@@ -441,5 +461,33 @@ describe('responsive Floating Shelf contracts', () => {
     await waitFor(() =>
       expect(rail.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(false)
     );
+  });
+
+  it('supports legacy MediaQueryList listener APIs', async () => {
+    const shelfQuery = legacyMediaQueryStub(false);
+    const detailQuery = legacyMediaQueryStub(false);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) =>
+        query === '(max-width: 980px)' ? shelfQuery : detailQuery
+      )
+    );
+
+    render(PromptsView);
+    const rail = within(screen.getByRole('navigation', { name: 'Library navigation rail' }));
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
+    });
+    expect(shelfQuery.addListener).toHaveBeenCalledOnce();
+    expect(detailQuery.addListener).toHaveBeenCalledOnce();
+
+    shelfQuery.fire(true);
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
+    });
+
+    cleanup();
+    expect(shelfQuery.removeListener).toHaveBeenCalledOnce();
+    expect(detailQuery.removeListener).toHaveBeenCalledOnce();
   });
 });
