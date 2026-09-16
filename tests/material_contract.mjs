@@ -128,6 +128,7 @@ for (const forbiddenSelector of [
 }
 for (const allowedSelector of [
   '.prompt-toolbar',
+  '.library-rail',
   '.project-sidebar',
   '.modal',
   '.project-menu',
@@ -141,6 +142,7 @@ for (const allowedSelector of [
 const noneSelectors = selectorsWithValue(materialCss, 'none').join('\n');
 for (const fallbackSelector of [
   '.prompt-toolbar',
+  '.library-rail',
   '.project-sidebar',
   '.modal',
   '.project-menu',
@@ -153,6 +155,18 @@ for (const fallbackSelector of [
 }
 
 console.log('surface consumers');
+assert(
+  appCss.includes('grid-template-columns: var(--rail-width) var(--sidebar-width) 6px'),
+  'workspace keeps separate Rail and Shelf columns'
+);
+assert(
+  appCss.includes('.library-workspace--shelf-collapsed'),
+  'workspace has a UI-only collapsed Shelf layout'
+);
+assert(
+  /\.project-sidebar--collapsed\s*\{[^}]*visibility:\s*hidden/s.test(appCss),
+  'collapsed Shelf retains its grid slot'
+);
 assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'

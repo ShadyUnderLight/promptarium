@@ -28,7 +28,11 @@
     | 'arrow-up'
     | 'arrow-down'
     | 'sparkle'
-    | 'command';
+    | 'command'
+    | 'folder'
+    | 'tag'
+    | 'history'
+    | 'panel-left';
 
   interface Props {
     name: IconName;
@@ -55,6 +59,10 @@
     'arrow-left': '<path d="M19 12H5"/><path d="m11 6-6 6 6 6"/>',
     'arrow-up': '<path d="M12 19V5"/><path d="m6 11 6-6 6 6"/>',
     'arrow-down': '<path d="M12 5v14"/><path d="m18 13-6 6-6-6"/>',
+    folder: '<path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h3l2 2h7.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-12A2.5 2.5 0 0 1 4 16.5z"/>',
+    tag: '<path d="M3.5 5.5v5.2a2 2 0 0 0 .6 1.4l7.8 7.8a2 2 0 0 0 2.8 0l4.7-4.7a2 2 0 0 0 0-2.8L11.6 4.6a2 2 0 0 0-1.4-.6H5.5a2 2 0 0 0-2 2Z"/><circle cx="7.5" cy="8" r="1"/>',
+    history: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3.5 5v4h4"/><path d="M12 7.5v5l3 1.8"/>',
+    'panel-left': '<rect x="3.5" y="4" width="17" height="16" rx="2"/><path d="M9 4v16"/>',
     sparkle: '<path fill="currentColor" stroke="none" d="m12 2 2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/>',
     command: '<path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/>'
   };

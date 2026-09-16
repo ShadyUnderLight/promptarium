@@ -22,6 +22,7 @@
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import { errorDetail } from '$lib/library/errors';
   import Icon from '$lib/components/Icon.svelte';
+  import LibraryRail from './LibraryRail.svelte';
   import ProjectMenu from './ProjectMenu.svelte';
 
   type NameRequestOptions = {
@@ -36,10 +37,16 @@
     destructive?: boolean;
   };
 
+  type ShelfSection = 'projects' | 'folders' | 'tags';
+
   interface Props {
     onNewPrompt: () => void;
     canNavigate: () => Promise<boolean>;
     onNotice: (message: string) => void;
+    shelfExpanded?: boolean;
+    onToggleShelf?: () => void;
+    onFocusSearch?: () => void;
+    onOpenHistory?: () => void;
     /** In-app text dialog used by the packaged Tauri window. */
     requestName?: (title: string, initialValue: string, options?: NameRequestOptions) => Promise<string | null>;
     /** In-app confirmation used by the packaged Tauri window. */
@@ -55,6 +62,10 @@
     onNewPrompt,
     canNavigate,
     onNotice,
+    shelfExpanded = true,
+    onToggleShelf = () => {},
+    onFocusSearch = () => {},
+    onOpenHistory = () => {},
     requestName,
     requestConfirm,
     onModalChange,
@@ -62,6 +73,10 @@
   let addPath = $state<string | null>(null);
   let relocateFrom = $state<string | null>(null);
   let pathInput: HTMLInputElement | undefined = $state(undefined);
+  let projectsSection: HTMLElement | undefined = $state(undefined);
+  let navigationSection: HTMLElement | undefined = $state(undefined);
+  let foldersSection: HTMLElement | undefined = $state(undefined);
+  let tagsSection: HTMLElement | undefined = $state(undefined);
   let busy = $state(false);
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
   // The menu is only mounted while it is open, so one expression states the
@@ -81,6 +96,7 @@
     !allProjectsActive && library.errorCode === 'PROJECT_FOLDER_NOT_FOUND'
   );
   const showNavigation = $derived(Boolean(project) || allProjectsActive);
+  const historyAvailable = $derived(Boolean(library.selected));
 
   function flattenFolders(nodes: FolderNode[], depth = 0): Array<FolderNode & { depth: number }> {
     return nodes.flatMap((node) => [{ ...node, depth }, ...flattenFolders(node.children, depth + 1)]);
@@ -96,6 +112,25 @@
   function basename(path: string): string {
     const pieces = path.split(/[\\/]/).filter(Boolean);
     return pieces[pieces.length - 1] ?? path;
+  }
+
+  function focusShelfSection(section: ShelfSection): void {
+    if (!shelfExpanded) onToggleShelf();
+
+    const focus = () => {
+      const target =
+        section === 'projects'
+          ? projectsSection
+          : section === 'folders'
+            ? foldersSection ?? navigationSection
+            : tagsSection ?? navigationSection;
+      if (!target) return;
+      target.scrollIntoView?.({ block: 'nearest' });
+      (target.querySelector<HTMLElement>('button:not([disabled])') ?? target).focus();
+    };
+
+    if (shelfExpanded) focus();
+    else queueMicrotask(focus);
   }
 
   async function pickFolder(): Promise<string | null> {
@@ -303,8 +338,25 @@
   }
 </script>
 
-<aside class="project-sidebar" aria-label={t('sidebar.nav.aria')}>
-  <div class="sidebar-section sidebar-section--projects">
+<LibraryRail
+  {shelfExpanded}
+  allProjectsActive={allProjectsActive}
+  historyAvailable={historyAvailable}
+  onAllProjects={enterAllProjects}
+  {onFocusSearch}
+  onFocusSection={focusShelfSection}
+  onHistory={onOpenHistory}
+  {onToggleShelf}
+/>
+
+<aside
+  id="project-shelf"
+  class="project-sidebar"
+  class:project-sidebar--collapsed={!shelfExpanded}
+  aria-hidden={!shelfExpanded}
+  aria-label={t('sidebar.nav.aria')}
+>
+  <div id="project-shelf-projects" bind:this={projectsSection} class="sidebar-section sidebar-section--projects">
     <div class="sidebar-section__heading">
       <span>{t('sidebar.projects')}</span>
       <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}><Icon name="plus" /></button>
@@ -377,7 +429,7 @@
   {/if}
 
   {#if showNavigation}
-    <div class="sidebar-section">
+    <div bind:this={navigationSection} class="sidebar-section">
       <div class="sidebar-section__heading"><span>{t('sidebar.smartViews')}</span></div>
       <nav class="sidebar-nav">
         <button type="button" class:sidebar-nav__item--active={library.smartView === 'all' && !library.folderFilter && !library.tagFilter} class="sidebar-nav__item" onclick={() => selectView('all')}>
@@ -399,7 +451,7 @@
     </div>
 
     {#if project && !allProjectsActive}
-      <div class="sidebar-section sidebar-section--folders">
+      <div id="project-shelf-folders" bind:this={foldersSection} class="sidebar-section sidebar-section--folders">
         <div class="sidebar-section__heading">
           <span>{t('sidebar.folders')}</span>
           <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}><Icon name="plus" /></button>
@@ -424,7 +476,7 @@
       </div>
     {/if}
 
-    <div class="sidebar-section sidebar-section--tags">
+    <div id="project-shelf-tags" bind:this={tagsSection} class="sidebar-section sidebar-section--tags">
       <div class="sidebar-section__heading"><span>{t('sidebar.tags')}</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}

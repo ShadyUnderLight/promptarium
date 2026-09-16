@@ -45,6 +45,15 @@ export const zhCN = {
 
   // Project sidebar.
   'sidebar.nav.aria': '提示词库导航',
+  'sidebar.rail.aria': '提示词库导航栏',
+  'sidebar.rail.library': '全部项目',
+  'sidebar.rail.search': '聚焦搜索',
+  'sidebar.rail.projects': '聚焦项目',
+  'sidebar.rail.folders': '聚焦文件夹',
+  'sidebar.rail.tags': '聚焦标签',
+  'sidebar.rail.history': '显示提示词历史',
+  'sidebar.rail.expandShelf': '展开项目书架',
+  'sidebar.rail.collapseShelf': '收起项目书架',
   'sidebar.projects': '项目',
   'sidebar.addProject': '添加项目',
   'sidebar.addProject.placeholder': '粘贴文件夹路径…',

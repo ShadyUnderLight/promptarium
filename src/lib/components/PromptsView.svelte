@@ -53,7 +53,13 @@
 
   let searchInput: HTMLInputElement | undefined = $state(undefined);
   let theme = $state(getTheme());
-  let detail: { save: () => Promise<void>; discardChanges: () => void } | undefined = $state(undefined);
+  let detail: {
+    save: () => Promise<void>;
+    discardChanges: () => void;
+    showHistory: () => void;
+  } | undefined = $state(undefined);
+  let shelfExpanded = $state(true);
+  let shelfMediaQuery: MediaQueryList | undefined;
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
@@ -75,6 +81,9 @@
 
   onMount(() => {
     setEditorDirtyProvider(() => detailDirty);
+    shelfMediaQuery = window.matchMedia('(max-width: 980px)');
+    shelfExpanded = !shelfMediaQuery.matches;
+    shelfMediaQuery.addEventListener('change', onShelfViewportChange);
     void initLibrary();
     window.addEventListener('keydown', onGlobalKeydown);
     window.addEventListener('focus', onWindowFocus);
@@ -83,12 +92,22 @@
   onDestroy(() => {
     setEditorDirtyProvider(null);
     void stopFilesystemWatch();
+    shelfMediaQuery?.removeEventListener('change', onShelfViewportChange);
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
 
   function notice(message: string): void {
     toasts.push(message);
+  }
+
+  function onShelfViewportChange(event: MediaQueryListEvent): void {
+    shelfExpanded = !event.matches;
+  }
+
+  function focusSearch(): void {
+    searchInput?.focus();
+    searchInput?.select();
   }
 
   /** Pending confirmation, while the in-app dialog is open. macOS WKWebView
@@ -380,8 +399,7 @@
       void openNewPrompt();
     } else if (key === 'f') {
       event.preventDefault();
-      searchInput?.focus();
-      searchInput?.select();
+      focusSearch();
     } else if (key === 's') {
       if (!detailDirty) return;
       event.preventDefault();
@@ -473,19 +491,24 @@
 
   <div
     class="library-workspace"
+    class:library-workspace--shelf-collapsed={!shelfExpanded}
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
   >
     <ProjectSidebar
       onNewPrompt={openNewPrompt}
       {canNavigate}
       onNotice={notice}
+      {shelfExpanded}
+      onToggleShelf={() => (shelfExpanded = !shelfExpanded)}
+      onFocusSearch={focusSearch}
+      onOpenHistory={() => detail?.showHistory()}
       requestName={askName}
       requestConfirm={askConfirm}
       onModalChange={(open) => (sidebarModalOpen = open)}
     />
-    <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--sidebar" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
-    <button type="button" class="pane-resizer" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--library" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail
       bind:this={detail}
       document={library.selected}
