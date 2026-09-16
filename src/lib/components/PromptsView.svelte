@@ -60,6 +60,8 @@
   } | undefined = $state(undefined);
   let shelfExpanded = $state(true);
   let shelfMediaQuery: MediaQueryList | undefined;
+  let detailVisible = $state(true);
+  let detailMediaQuery: MediaQueryList | undefined;
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
@@ -84,6 +86,9 @@
     shelfMediaQuery = window.matchMedia('(max-width: 980px)');
     shelfExpanded = !shelfMediaQuery.matches;
     shelfMediaQuery.addEventListener('change', onShelfViewportChange);
+    detailMediaQuery = window.matchMedia('(max-width: 720px)');
+    detailVisible = !detailMediaQuery.matches;
+    detailMediaQuery.addEventListener('change', onDetailViewportChange);
     void initLibrary();
     window.addEventListener('keydown', onGlobalKeydown);
     window.addEventListener('focus', onWindowFocus);
@@ -93,6 +98,7 @@
     setEditorDirtyProvider(null);
     void stopFilesystemWatch();
     shelfMediaQuery?.removeEventListener('change', onShelfViewportChange);
+    detailMediaQuery?.removeEventListener('change', onDetailViewportChange);
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
@@ -103,6 +109,10 @@
 
   function onShelfViewportChange(event: MediaQueryListEvent): void {
     shelfExpanded = !event.matches;
+  }
+
+  function onDetailViewportChange(event: MediaQueryListEvent): void {
+    detailVisible = !event.matches;
   }
 
   function focusSearch(): void {
@@ -501,12 +511,13 @@
       {shelfExpanded}
       onToggleShelf={() => (shelfExpanded = !shelfExpanded)}
       onFocusSearch={focusSearch}
+      historyAvailable={Boolean(library.selected) && detailVisible}
       onOpenHistory={() => detail?.showHistory()}
       requestName={askName}
       requestConfirm={askConfirm}
       onModalChange={(open) => (sidebarModalOpen = open)}
     />
-    <button type="button" class="pane-resizer pane-resizer--sidebar" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--sidebar" class:pane-resizer--disabled={!shelfExpanded} disabled={!shelfExpanded} aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer pane-resizer--library" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail

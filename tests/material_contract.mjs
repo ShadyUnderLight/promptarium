@@ -168,6 +168,10 @@ assert(
   'collapsed Shelf retains its grid slot'
 );
 assert(
+  /\.pane-resizer:disabled\s*\{[^}]*pointer-events:\s*none/s.test(appCss),
+  'collapsed Shelf resizer is inert'
+);
+assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'
 );

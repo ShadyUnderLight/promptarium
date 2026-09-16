@@ -7,10 +7,12 @@
   interface Props {
     shelfExpanded: boolean;
     allProjectsActive: boolean;
+    foldersAvailable: boolean;
+    tagsAvailable: boolean;
     historyAvailable: boolean;
     onAllProjects: () => void | Promise<void>;
     onFocusSearch: () => void;
-    onFocusSection: (section: ShelfSection) => void;
+    onFocusSection: (section: ShelfSection) => void | Promise<void>;
     onHistory: () => void;
     onToggleShelf: () => void;
   }
@@ -18,6 +20,8 @@
   let {
     shelfExpanded,
     allProjectsActive,
+    foldersAvailable,
+    tagsAvailable,
     historyAvailable,
     onAllProjects,
     onFocusSearch,
@@ -58,7 +62,7 @@
     aria-label={t('sidebar.rail.projects')}
     title={t('sidebar.rail.projects')}
     aria-controls="project-shelf-projects"
-    onclick={() => onFocusSection('projects')}
+    onclick={() => void onFocusSection('projects')}
   >
     <Icon name="list" />
   </button>
@@ -66,10 +70,11 @@
   <button
     type="button"
     class="rail-button"
+    disabled={!foldersAvailable}
     aria-label={t('sidebar.rail.folders')}
     title={t('sidebar.rail.folders')}
-    aria-controls="project-shelf-folders"
-    onclick={() => onFocusSection('folders')}
+    aria-controls={foldersAvailable ? 'project-shelf-folders' : undefined}
+    onclick={() => void onFocusSection('folders')}
   >
     <Icon name="folder" />
   </button>
@@ -77,10 +82,11 @@
   <button
     type="button"
     class="rail-button"
+    disabled={!tagsAvailable}
     aria-label={t('sidebar.rail.tags')}
     title={t('sidebar.rail.tags')}
-    aria-controls="project-shelf-tags"
-    onclick={() => onFocusSection('tags')}
+    aria-controls={tagsAvailable ? 'project-shelf-tags' : undefined}
+    onclick={() => void onFocusSection('tags')}
   >
     <Icon name="tag" />
   </button>

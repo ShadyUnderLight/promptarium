@@ -465,6 +465,13 @@ body {
   border-left-color: color-mix(in srgb, var(--accent-user) 50%, var(--border));
 }
 
+.pane-resizer:disabled {
+  background: transparent;
+  border-left-color: var(--border);
+  cursor: default;
+  pointer-events: none;
+}
+
 .library-rail,
 .project-sidebar,
 .prompt-library,
