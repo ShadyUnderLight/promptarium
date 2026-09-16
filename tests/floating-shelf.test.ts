@@ -118,10 +118,12 @@ describe('Floating Shelf navigation rail', () => {
     const rail = screen.getByRole('navigation', { name: 'Library navigation rail' });
     const railQueries = within(rail);
     await fireEvent.click(railQueries.getByRole('button', { name: 'Focus search' }));
-    await fireEvent.click(railQueries.getByRole('button', { name: 'Collapse project shelf' }));
+    const shelfToggle = railQueries.getByRole('button', { name: 'Collapse project shelf' });
+    await fireEvent.click(shelfToggle);
 
     expect(props.onFocusSearch).toHaveBeenCalledOnce();
     expect(props.onToggleShelf).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(shelfToggle);
   });
 
   it('disables Folders in All Projects instead of falling back to Smart Views', () => {
@@ -338,6 +340,37 @@ describe('responsive Floating Shelf contracts', () => {
     await waitFor(() => {
       const toggle = screen.getByRole('button', { name: 'Collapse project shelf' });
       expect(document.activeElement).toBe(toggle);
+    });
+  });
+
+  it('keeps missing-project recovery visible while the Shelf is collapsed', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 980px)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.errorCode = 'PROJECT_FOLDER_NOT_FOUND';
+    library.error = '/missing/proj';
+    library.activeProjectPath = '/missing/proj';
+    library.libraryScope = { kind: 'project', projectPath: '/missing/proj' };
+
+    const { container } = render(PromptsView);
+    const summary = await screen.findByRole('status');
+    expect(within(summary).getByText('Project folder not found')).toBeTruthy();
+    expect(within(summary).getByText('/missing/proj')).toBeTruthy();
+    expect(within(summary).getByRole('button', { name: 'Show recovery options' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
+
+    await fireEvent.click(within(summary).getByRole('button', { name: 'Show recovery options' }));
+    await waitFor(() => {
+      const recovery = screen.getByRole('group', { name: 'Project folder not found' });
+      expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
+      expect(screen.getByRole('button', { name: 'Locate folder' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Forget' })).toBeTruthy();
+      expect(document.activeElement).toBe(recovery);
     });
   });
 

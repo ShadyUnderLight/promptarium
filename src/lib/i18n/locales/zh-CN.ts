@@ -79,6 +79,7 @@ export const zhCN = {
   'sidebar.failedRefresh.one': '{count} 个项目刷新失败',
   'sidebar.failedRefresh.other': '{count} 个项目刷新失败',
   'sidebar.warning.showDetails': '查看失败项目详情',
+  'sidebar.missingProject.showDetails': '查看恢复选项',
 
   // Folder / project dialogs. 路径、文件夹名、项目名等参数保持原样，不翻译。
   'dialog.folderPath.browserDev': '文件夹路径（仅浏览器开发模式）：',

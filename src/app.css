@@ -459,6 +459,16 @@ body {
   color: var(--text);
 }
 
+.library-warning--missing {
+  background: color-mix(in srgb, var(--error) 8%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--error) 24%, var(--border));
+}
+
+.library-warning--missing > span {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .library-workspace {
   flex: 1;
   min-height: 0;

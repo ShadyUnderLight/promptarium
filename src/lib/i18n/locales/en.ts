@@ -81,6 +81,7 @@ export const en = {
   'sidebar.failedRefresh.one': '{count} project could not refresh',
   'sidebar.failedRefresh.other': '{count} projects could not refresh',
   'sidebar.warning.showDetails': 'Show failed project details',
+  'sidebar.missingProject.showDetails': 'Show recovery options',
 
   // Folder / project dialogs (window.prompt / window.confirm / Tauri dialog
   // titles). Paths, folder names and project names passed as params stay raw.

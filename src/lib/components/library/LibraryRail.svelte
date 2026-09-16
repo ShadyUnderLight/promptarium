@@ -34,6 +34,11 @@
   export function focusShelfToggle(): void {
     shelfToggle?.focus();
   }
+
+  function handleToggleShelf(): void {
+    onToggleShelf();
+    shelfToggle?.focus();
+  }
 </script>
 
 <nav class="library-rail" aria-label={t('sidebar.rail.aria')}>
@@ -118,7 +123,7 @@
     aria-controls="project-shelf"
     aria-label={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
     title={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
-    onclick={onToggleShelf}
+    onclick={handleToggleShelf}
   >
     <Icon name="panel-left" />
   </button>

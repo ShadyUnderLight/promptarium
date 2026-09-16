@@ -61,6 +61,7 @@
   let sidebar:
     | {
         showAllProjectsWarning: () => Promise<void>;
+        showMissingProjectRecovery: () => Promise<void>;
         hasShelfFocus: () => boolean;
         focusShelfToggle: () => void;
       }
@@ -515,6 +516,16 @@
       <span>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</span>
       <button type="button" class="btn btn--ghost btn--sm" onclick={() => void sidebar?.showAllProjectsWarning()}>
         {t('sidebar.warning.showDetails')}
+      </button>
+    </div>
+  {/if}
+
+  {#if selectedProjectMissing && !shelfExpanded}
+    <div class="library-warning library-warning--missing" role="status" aria-live="polite">
+      <strong>{t('error.projectFolderNotFound')}</strong>
+      <span>{library.activeProjectPath}</span>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => void sidebar?.showMissingProjectRecovery()}>
+        {t('sidebar.missingProject.showDetails')}
       </button>
     </div>
   {/if}

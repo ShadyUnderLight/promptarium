@@ -82,6 +82,7 @@
   let foldersSection: HTMLElement | undefined = $state(undefined);
   let tagsSection: HTMLElement | undefined = $state(undefined);
   let warningsSection: HTMLElement | undefined = $state(undefined);
+  let missingProjectSection: HTMLElement | undefined = $state(undefined);
   let busy = $state(false);
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
   // The menu is only mounted while it is open, so one expression states the
@@ -142,6 +143,17 @@
     if (warningsSection) {
       warningsSection.scrollIntoView?.({ block: 'nearest' });
       warningsSection.focus();
+      return;
+    }
+    rail?.focusShelfToggle();
+  }
+
+  export async function showMissingProjectRecovery(): Promise<void> {
+    if (!shelfExpanded) onToggleShelf();
+    await tick();
+    if (missingProjectSection) {
+      missingProjectSection.scrollIntoView?.({ block: 'nearest' });
+      missingProjectSection.focus();
       return;
     }
     rail?.focusShelfToggle();
@@ -447,8 +459,15 @@
   {/if}
 
   {#if isMissing}
-    <div class="missing-project">
-      <strong>{t('error.projectFolderNotFound')}</strong>
+    <div
+      id="project-shelf-missing-project"
+      bind:this={missingProjectSection}
+      class="missing-project"
+      role="group"
+      tabindex="-1"
+      aria-labelledby="project-shelf-missing-project-label"
+    >
+      <strong id="project-shelf-missing-project-label">{t('error.projectFolderNotFound')}</strong>
       <span>{library.activeProjectPath}</span>
       <div>
         <button
