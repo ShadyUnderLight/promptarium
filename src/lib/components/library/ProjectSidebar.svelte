@@ -139,8 +139,12 @@
   export async function showAllProjectsWarning(): Promise<void> {
     if (!shelfExpanded) onToggleShelf();
     await tick();
-    warningsSection?.scrollIntoView?.({ block: 'nearest' });
-    warningsSection?.focus();
+    if (warningsSection) {
+      warningsSection.scrollIntoView?.({ block: 'nearest' });
+      warningsSection.focus();
+      return;
+    }
+    rail?.focusShelfToggle();
   }
 
   export function hasShelfFocus(): boolean {
@@ -378,7 +382,7 @@
   aria-hidden={!shelfExpanded}
   aria-label={t('sidebar.nav.aria')}
 >
-  <div id="project-shelf-projects" bind:this={projectsSection} class="sidebar-section sidebar-section--projects" tabindex="-1" aria-labelledby="project-shelf-projects-label">
+  <div id="project-shelf-projects" bind:this={projectsSection} class="sidebar-section sidebar-section--projects" role="group" tabindex="-1" aria-labelledby="project-shelf-projects-label">
     <div class="sidebar-section__heading">
       <span id="project-shelf-projects-label">{t('sidebar.projects')}</span>
       <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}><Icon name="plus" /></button>
@@ -431,6 +435,7 @@
       id="project-shelf-warnings"
       bind:this={warningsSection}
       class="missing-project missing-project--warning"
+      role="group"
       tabindex="-1"
       aria-labelledby="project-shelf-warnings-label"
     >
@@ -479,7 +484,7 @@
     </div>
 
     {#if project && !allProjectsActive}
-      <div id="project-shelf-folders" bind:this={foldersSection} class="sidebar-section sidebar-section--folders" tabindex="-1" aria-labelledby="project-shelf-folders-label">
+      <div id="project-shelf-folders" bind:this={foldersSection} class="sidebar-section sidebar-section--folders" role="group" tabindex="-1" aria-labelledby="project-shelf-folders-label">
         <div class="sidebar-section__heading">
           <span id="project-shelf-folders-label">{t('sidebar.folders')}</span>
           <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}><Icon name="plus" /></button>
@@ -504,7 +509,7 @@
       </div>
     {/if}
 
-    <div id="project-shelf-tags" bind:this={tagsSection} class="sidebar-section sidebar-section--tags" tabindex="-1" aria-labelledby="project-shelf-tags-label">
+    <div id="project-shelf-tags" bind:this={tagsSection} class="sidebar-section sidebar-section--tags" role="group" tabindex="-1" aria-labelledby="project-shelf-tags-label">
       <div class="sidebar-section__heading"><span id="project-shelf-tags-label">{t('sidebar.tags')}</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}

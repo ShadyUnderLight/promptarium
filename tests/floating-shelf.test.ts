@@ -138,22 +138,22 @@ describe('Floating Shelf navigation rail', () => {
   it('focuses the requested section or its first navigation item', async () => {
     const { container } = render(ProjectSidebar, { props: sidebarProps() });
     const rail = within(screen.getByRole('navigation', { name: 'Library navigation rail' }));
+    const projects = screen.getByRole('group', { name: 'Projects' });
+    const folders = screen.getByRole('group', { name: 'Folders' });
+    const tags = screen.getByRole('group', { name: 'Tags' });
 
     await fireEvent.click(rail.getByRole('button', { name: 'Focus projects' }));
     await waitFor(() => expect(document.activeElement).toBe(container.querySelector('.project-row')));
+    expect(document.activeElement).not.toBe(projects);
 
     await fireEvent.click(rail.getByRole('button', { name: 'Focus folders' }));
     await waitFor(() => {
-      const folders = container.querySelector('#project-shelf-folders');
       expect(document.activeElement).toBe(folders);
-      expect(folders?.getAttribute('aria-labelledby')).toBe('project-shelf-folders-label');
     });
 
     await fireEvent.click(rail.getByRole('button', { name: 'Focus tags' }));
     await waitFor(() => {
-      const tags = container.querySelector('#project-shelf-tags');
       expect(document.activeElement).toBe(tags);
-      expect(tags?.getAttribute('aria-labelledby')).toBe('project-shelf-tags-label');
     });
   });
 
@@ -307,12 +307,37 @@ describe('responsive Floating Shelf contracts', () => {
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show failed project details' }));
     await waitFor(() => {
+      const visibleWarningDetail = screen.getByRole('group', { name: '1 project could not refresh' });
       expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
       expect(screen.queryByRole('button', { name: 'Show failed project details' })).toBeNull();
       expect(screen.getByText('Project — permission denied')).toBeTruthy();
-      expect(warningDetail.getAttribute('aria-labelledby')).toBe('project-shelf-warnings-label');
+      expect(visibleWarningDetail).toBe(warningDetail);
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
-      expect(document.activeElement).toBe(warningDetail);
+      expect(document.activeElement).toBe(visibleWarningDetail);
+    });
+  });
+
+  it('keeps focus on the Shelf toggle if warning details disappear during expansion', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 980px)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.libraryScope = { kind: 'all-projects' };
+    library.allProjectsWarnings = [{ projectPath: '/project', error: 'permission denied' }];
+
+    render(PromptsView);
+
+    const click = fireEvent.click(screen.getByRole('button', { name: 'Show failed project details' }));
+    library.allProjectsWarnings = [];
+    await click;
+
+    await waitFor(() => {
+      const toggle = screen.getByRole('button', { name: 'Collapse project shelf' });
+      expect(document.activeElement).toBe(toggle);
     });
   });
 
