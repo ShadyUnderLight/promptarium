@@ -443,7 +443,7 @@ body {
   align-items: center;
   gap: 0.75rem;
   padding: 0.45rem 1.25rem;
-  color: var(--warning-strong);
+  color: var(--text);
   background: color-mix(in srgb, var(--warning-strong) 8%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--warning-strong) 24%, var(--border));
   font-size: 0.74rem;
@@ -452,6 +452,11 @@ body {
 .library-warning > span {
   flex: 1;
   min-width: 0;
+}
+
+.library-warning .btn--ghost,
+.library-warning .btn--ghost:hover:not(:disabled) {
+  color: var(--text);
 }
 
 .library-workspace {

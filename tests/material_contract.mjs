@@ -172,6 +172,14 @@ assert(
   'collapsed Shelf resizer is inert'
 );
 assert(
+  /\.library-warning\s*\{[^}]*color:\s*var\(--text\)/s.test(appCss),
+  'warning summary uses the normal text color'
+);
+assert(
+  /\.library-warning \.btn--ghost[\s\S]*?color:\s*var\(--text\)/s.test(appCss),
+  'warning summary CTA uses the normal text color'
+);
+assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'
 );

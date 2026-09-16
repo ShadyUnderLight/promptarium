@@ -300,12 +300,19 @@ describe('responsive Floating Shelf contracts', () => {
     expect(warning.textContent).toContain('1 project could not refresh');
     expect(screen.getByRole('button', { name: 'Show failed project details' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
+    const warningDetail = container.querySelector<HTMLElement>('#project-shelf-warnings');
+    const scrollIntoView = vi.fn();
+    if (!warningDetail) throw new Error('warning detail did not render');
+    warningDetail.scrollIntoView = scrollIntoView;
 
     await fireEvent.click(screen.getByRole('button', { name: 'Show failed project details' }));
     await waitFor(() => {
       expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
       expect(screen.queryByRole('button', { name: 'Show failed project details' })).toBeNull();
       expect(screen.getByText('Project — permission denied')).toBeTruthy();
+      expect(warningDetail.getAttribute('aria-labelledby')).toBe('project-shelf-warnings-label');
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(document.activeElement).toBe(warningDetail);
     });
   });
 

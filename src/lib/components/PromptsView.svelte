@@ -58,6 +58,7 @@
     discardChanges: () => void;
     showHistory: () => void;
   } | undefined = $state(undefined);
+  let sidebar: { showAllProjectsWarning: () => Promise<void> } | undefined = $state(undefined);
   let shelfExpanded = $state(true);
   let shelfMediaQuery: MediaQueryList | undefined;
   let detailVisible = $state(true);
@@ -502,7 +503,7 @@
   {#if isAllProjects() && library.allProjectsWarnings.length && !shelfExpanded}
     <div class="library-warning" role="status" aria-live="polite">
       <span>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</span>
-      <button type="button" class="btn btn--ghost btn--sm" onclick={() => (shelfExpanded = true)}>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => void sidebar?.showAllProjectsWarning()}>
         {t('sidebar.warning.showDetails')}
       </button>
     </div>
@@ -514,6 +515,7 @@
     style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
   >
     <ProjectSidebar
+      bind:this={sidebar}
       onNewPrompt={openNewPrompt}
       {canNavigate}
       onNotice={notice}

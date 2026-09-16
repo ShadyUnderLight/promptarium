@@ -79,6 +79,7 @@
   let projectsSection: HTMLElement | undefined = $state(undefined);
   let foldersSection: HTMLElement | undefined = $state(undefined);
   let tagsSection: HTMLElement | undefined = $state(undefined);
+  let warningsSection: HTMLElement | undefined = $state(undefined);
   let busy = $state(false);
   let menu = $state<{ project: Project; x: number; y: number } | null>(null);
   // The menu is only mounted while it is open, so one expression states the
@@ -131,6 +132,13 @@
     if (!target) return;
     target.scrollIntoView?.({ block: 'nearest' });
     (target.querySelector<HTMLElement>('.project-row, .sidebar-nav__item') ?? target).focus();
+  }
+
+  export async function showAllProjectsWarning(): Promise<void> {
+    if (!shelfExpanded) onToggleShelf();
+    await tick();
+    warningsSection?.scrollIntoView?.({ block: 'nearest' });
+    warningsSection?.focus();
   }
 
   async function pickFolder(): Promise<string | null> {
@@ -407,8 +415,14 @@
   </div>
 
   {#if allProjectsActive && library.allProjectsWarnings.length}
-    <div class="missing-project missing-project--warning">
-      <strong>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</strong>
+    <div
+      id="project-shelf-warnings"
+      bind:this={warningsSection}
+      class="missing-project missing-project--warning"
+      tabindex="-1"
+      aria-labelledby="project-shelf-warnings-label"
+    >
+      <strong id="project-shelf-warnings-label">{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</strong>
       {#each library.allProjectsWarnings as warning (warning.projectPath)}
         <span>{projectDisplayName(warning.projectPath)} — {warning.error}</span>
       {/each}
