@@ -4,7 +4,7 @@
  * 这是源码契约而不是 computed-style 测试：jsdom 不实现 backdrop-filter
  * 和系统偏好媒体查询；浏览器 computed-style 检查仍属于手工 UI 验证。
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,7 +14,18 @@ const updateBanner = readFileSync(
   join(root, 'src/lib/components/UpdateBanner.svelte'),
   'utf8'
 );
-const materialCss = `${appCss}\n${updateBanner}`;
+
+function readSvelteSources(directory) {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return readSvelteSources(path);
+    return entry.isFile() && entry.name.endsWith('.svelte')
+      ? [readFileSync(path, 'utf8')]
+      : [];
+  });
+}
+
+const materialCss = [appCss, ...readSvelteSources(join(root, 'src'))].join('\n');
 
 const requiredTokens = [
   '--surface-content',
@@ -53,10 +64,13 @@ function assert(condition, message) {
   }
 }
 
-function selectorsWithBackdropFilter(source) {
-  return [...source.matchAll(/([^{}]+)\{[^{}]*(?:-webkit-)?backdrop-filter\s*:/g)].map(
-    (match) => match[1].trim()
+function selectorsWithValue(source, value) {
+  const property = '(?:-webkit-)?backdrop-filter';
+  const pattern = new RegExp(
+    `([^{}]+)\\{[^{}]*${property}\\s*:\\s*${value}`,
+    'g'
   );
+  return [...source.matchAll(pattern)].map((match) => match[1].trim());
 }
 
 console.log('material tokens');
@@ -70,11 +84,11 @@ assert(
   'app.css keeps the progressive-enhancement supports guard'
 );
 assert(
-  materialCss.includes('-webkit-backdrop-filter: blur(var(--glass-blur))'),
+  /^\s*-webkit-backdrop-filter\s*:\s*blur\(var\(--glass-blur\)\)/m.test(materialCss),
   'WebKit blur is declared'
 );
 assert(
-  materialCss.includes('backdrop-filter: blur(var(--glass-blur))'),
+  /^\s*backdrop-filter\s*:\s*blur\(var\(--glass-blur\)\)/m.test(materialCss),
   'unprefixed blur is declared'
 );
 assert(
@@ -95,7 +109,10 @@ assert(
 );
 
 console.log('blur boundaries');
-const blurredSelectors = selectorsWithBackdropFilter(materialCss).join('\n');
+const blurredSelectors = selectorsWithValue(
+  materialCss,
+  'blur\\(var\\(--glass-blur\\)\\)'
+).join('\n');
 for (const forbiddenSelector of [
   '.prompt-list-item',
   '.markdown-preview',
@@ -121,6 +138,19 @@ for (const allowedSelector of [
     `${allowedSelector} is an approved blur consumer`
   );
 }
+const noneSelectors = selectorsWithValue(materialCss, 'none').join('\n');
+for (const fallbackSelector of [
+  '.prompt-toolbar',
+  '.project-sidebar',
+  '.modal',
+  '.project-menu',
+  '.update-banner',
+]) {
+  assert(
+    noneSelectors.includes(fallbackSelector),
+    `${fallbackSelector} has a reduced-transparency blur fallback`
+  );
+}
 
 console.log('surface consumers');
 assert(
@@ -138,6 +168,18 @@ assert(
 assert(
   /\.project-menu\s*\{[^}]*background:\s*var\(--surface-overlay\)/s.test(appCss),
   'Project Menu uses the overlay surface'
+);
+assert(
+  /@supports[\s\S]*?\.prompt-toolbar select\s*\{[^}]*background:\s*var\(--surface-regular-glass\)/s.test(
+    appCss
+  ),
+  'Toolbar filters use the regular glass surface when supported'
+);
+assert(
+  /@media \(prefers-reduced-transparency: reduce\)[\s\S]*?\.prompt-toolbar select\s*\{[^}]*background:\s*var\(--surface-regular\)/s.test(
+    appCss
+  ),
+  'Toolbar filters restore the regular surface for reduced transparency'
 );
 
 console.log(failures === 0 ? 'material contract: ok' : `material contract: ${failures} failure(s)`);

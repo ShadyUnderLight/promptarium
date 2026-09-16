@@ -2681,6 +2681,10 @@ body {
     box-shadow: var(--glass-highlight), var(--shadow-sidebar);
   }
 
+  .prompt-toolbar select {
+    background: var(--surface-regular-glass);
+  }
+
   .btn--prominent:not(:disabled) {
     background: var(--surface-prominent-glass);
     border-color: color-mix(in srgb, var(--surface-prominent) 62%, var(--border));
@@ -2710,6 +2714,10 @@ body {
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
     box-shadow: var(--shadow-sidebar);
+  }
+
+  .prompt-toolbar select {
+    background: var(--surface-regular);
   }
 
   .btn--prominent:not(:disabled) {
