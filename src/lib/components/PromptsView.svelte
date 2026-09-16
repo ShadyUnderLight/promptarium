@@ -499,6 +499,15 @@
     </div>
   {/if}
 
+  {#if isAllProjects() && library.allProjectsWarnings.length && !shelfExpanded}
+    <div class="library-warning" role="status" aria-live="polite">
+      <span>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</span>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => (shelfExpanded = true)}>
+        {t('sidebar.warning.showDetails')}
+      </button>
+    </div>
+  {/if}
+
   <div
     class="library-workspace"
     class:library-workspace--shelf-collapsed={!shelfExpanded}
@@ -517,7 +526,7 @@
       requestConfirm={askConfirm}
       onModalChange={(open) => (sidebarModalOpen = open)}
     />
-    <button type="button" class="pane-resizer pane-resizer--sidebar" class:pane-resizer--disabled={!shelfExpanded} disabled={!shelfExpanded} aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--sidebar" disabled={!shelfExpanded} aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
     <button type="button" class="pane-resizer pane-resizer--library" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail

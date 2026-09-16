@@ -358,9 +358,9 @@
   aria-hidden={!shelfExpanded}
   aria-label={t('sidebar.nav.aria')}
 >
-  <div id="project-shelf-projects" bind:this={projectsSection} class="sidebar-section sidebar-section--projects" tabindex="-1">
+  <div id="project-shelf-projects" bind:this={projectsSection} class="sidebar-section sidebar-section--projects" tabindex="-1" aria-labelledby="project-shelf-projects-label">
     <div class="sidebar-section__heading">
-      <span>{t('sidebar.projects')}</span>
+      <span id="project-shelf-projects-label">{t('sidebar.projects')}</span>
       <button type="button" class="sidebar-icon" aria-label={t('sidebar.addProject')} title={t('sidebar.addProject')} onclick={() => { addPath = ''; relocateFrom = null; }}><Icon name="plus" /></button>
     </div>
 
@@ -453,9 +453,9 @@
     </div>
 
     {#if project && !allProjectsActive}
-      <div id="project-shelf-folders" bind:this={foldersSection} class="sidebar-section sidebar-section--folders" tabindex="-1">
+      <div id="project-shelf-folders" bind:this={foldersSection} class="sidebar-section sidebar-section--folders" tabindex="-1" aria-labelledby="project-shelf-folders-label">
         <div class="sidebar-section__heading">
-          <span>{t('sidebar.folders')}</span>
+          <span id="project-shelf-folders-label">{t('sidebar.folders')}</span>
           <button type="button" class="sidebar-icon" aria-label={t('sidebar.newFolder')} title={t('sidebar.newFolder')} onclick={newFolder}><Icon name="plus" /></button>
         </div>
         <nav class="sidebar-nav">
@@ -478,11 +478,11 @@
       </div>
     {/if}
 
-    <div id="project-shelf-tags" bind:this={tagsSection} class="sidebar-section sidebar-section--tags" tabindex="-1">
-      <div class="sidebar-section__heading"><span>{t('sidebar.tags')}</span></div>
+    <div id="project-shelf-tags" bind:this={tagsSection} class="sidebar-section sidebar-section--tags" tabindex="-1" aria-labelledby="project-shelf-tags-label">
+      <div class="sidebar-section__heading"><span id="project-shelf-tags-label">{t('sidebar.tags')}</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
-          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
+          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" title={'#' + item.tag} onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}

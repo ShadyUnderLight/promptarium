@@ -40,6 +40,28 @@ function sidebarProps(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type QueryListener = (event: MediaQueryListEvent) => void;
+
+function mediaQueryStub(initialMatches: boolean) {
+  let matches = initialMatches;
+  const listeners = new Set<QueryListener>();
+  return {
+    get matches() {
+      return matches;
+    },
+    addEventListener: vi.fn((_event: string, listener: QueryListener) => {
+      listeners.add(listener);
+    }),
+    removeEventListener: vi.fn((_event: string, listener: QueryListener) => {
+      listeners.delete(listener);
+    }),
+    fire(next: boolean): void {
+      matches = next;
+      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+    },
+  };
+}
+
 beforeEach(() => {
   setPreference('en');
   library.projects = [{ path: '/project', name: 'Project' }];
@@ -49,6 +71,7 @@ beforeEach(() => {
   library.prompts = [];
   library.folderPaths = [];
   library.allProjectsWarnings = [];
+  library.allProjectsHealthyPaths = [];
   library.error = null;
   library.errorCode = null;
   library.selected = null;
@@ -63,6 +86,8 @@ beforeEach(() => {
   library.viewMode = 'list';
   library.loading = false;
   library.loadingDocument = false;
+  library.fsWatchAvailable = true;
+  library.fsWatchMessage = null;
 });
 
 afterEach(() => {
@@ -118,10 +143,18 @@ describe('Floating Shelf navigation rail', () => {
     await waitFor(() => expect(document.activeElement).toBe(container.querySelector('.project-row')));
 
     await fireEvent.click(rail.getByRole('button', { name: 'Focus folders' }));
-    await waitFor(() => expect(document.activeElement).toBe(container.querySelector('#project-shelf-folders')));
+    await waitFor(() => {
+      const folders = container.querySelector('#project-shelf-folders');
+      expect(document.activeElement).toBe(folders);
+      expect(folders?.getAttribute('aria-labelledby')).toBe('project-shelf-folders-label');
+    });
 
     await fireEvent.click(rail.getByRole('button', { name: 'Focus tags' }));
-    await waitFor(() => expect(document.activeElement).toBe(container.querySelector('#project-shelf-tags')));
+    await waitFor(() => {
+      const tags = container.querySelector('#project-shelf-tags');
+      expect(document.activeElement).toBe(tags);
+      expect(tags?.getAttribute('aria-labelledby')).toBe('project-shelf-tags-label');
+    });
   });
 
   it('expands a collapsed Shelf before focusing the requested section', async () => {
@@ -176,6 +209,34 @@ describe('Floating Shelf navigation rail', () => {
     await fireEvent.click(history);
     expect(props.onOpenHistory).toHaveBeenCalledOnce();
   });
+
+  it('keeps the complete Tag value available as a tooltip', () => {
+    const longTag = 'a-tag-name-that-is-longer-than-the-sidebar-width';
+    library.allPrompts = [
+      {
+        projectPath: '/project',
+        relativePath: 'prompt.md',
+        name: 'prompt',
+        folder: '',
+        extension: '.md',
+        metadata: {
+          description: '',
+          tags: [longTag],
+          status: 'active',
+          favorite: false,
+          models: [],
+          related: [],
+          extra: {},
+        },
+        modifiedAt: 0,
+        hasFrontmatter: false,
+      },
+    ];
+
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+    const tagButton = container.querySelector<HTMLButtonElement>('.sidebar-section--tags .sidebar-nav__item');
+    expect(tagButton?.getAttribute('title')).toBe('#' + longTag);
+  });
 });
 
 describe('responsive Floating Shelf contracts', () => {
@@ -219,5 +280,96 @@ describe('responsive Floating Shelf contracts', () => {
       expect(screen.getByRole('button', { name: 'Resize project sidebar' }).hasAttribute('disabled')).toBe(true);
       expect(rail.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
     });
+  });
+
+  it('keeps an All Projects partial-refresh warning visible while the Shelf is collapsed', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query === '(max-width: 980px)',
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.libraryScope = { kind: 'all-projects' };
+    library.allProjectsWarnings = [{ projectPath: '/project', error: 'permission denied' }];
+
+    const { container } = render(PromptsView);
+
+    const warning = await screen.findByRole('status');
+    expect(warning.textContent).toContain('1 project could not refresh');
+    expect(screen.getByRole('button', { name: 'Show failed project details' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole('button', { name: 'Show failed project details' }));
+    await waitFor(() => {
+      expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
+      expect(screen.queryByRole('button', { name: 'Show failed project details' })).toBeNull();
+      expect(screen.getByText('Project — permission denied')).toBeTruthy();
+    });
+  });
+
+  it('reacts to mounted breakpoint change events', async () => {
+    const shelfQuery = mediaQueryStub(false);
+    const detailQuery = mediaQueryStub(false);
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) =>
+        query === '(max-width: 980px)' ? shelfQuery : detailQuery
+      )
+    );
+    library.selected = {
+      projectPath: '/project',
+      relativePath: 'prompt.md',
+      name: 'prompt',
+      folder: '',
+      extension: '.md',
+      body: 'body',
+      raw: 'body',
+      metadata: {
+        description: '',
+        tags: [],
+        status: 'active',
+        favorite: false,
+        models: [],
+        related: [],
+        extra: {},
+      },
+      modifiedAt: 0,
+      hasFrontmatter: false,
+    };
+    library.selectedProjectPath = '/project';
+    library.selectedName = 'prompt';
+
+    render(PromptsView);
+    const rail = within(screen.getByRole('navigation', { name: 'Library navigation rail' }));
+
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Resize project sidebar' }).hasAttribute('disabled')).toBe(false);
+      expect(rail.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    shelfQuery.fire(true);
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Resize project sidebar' }).hasAttribute('disabled')).toBe(true);
+    });
+
+    shelfQuery.fire(false);
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Resize project sidebar' }).hasAttribute('disabled')).toBe(false);
+    });
+
+    detailQuery.fire(true);
+    await waitFor(() =>
+      expect(rail.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(true)
+    );
+
+    detailQuery.fire(false);
+    await waitFor(() =>
+      expect(rail.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(false)
+    );
   });
 });
