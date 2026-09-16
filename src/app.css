@@ -52,9 +52,30 @@
   --shadow-overlay: 0 12px 40px rgba(0, 0, 0, 0.2);
   --control-h: 2rem;
 
+  /* 浮岛书架几何。运行时 pane 宽度仍由 library state 单独提供；这些值只
+     定义 Phase 2 Shell 契约，不替换用户可调整的状态。 */
+  --rail-width: 3.5rem;
+  --shelf-width: 16rem;
+  --content-gap: 0.85rem;
+  --surface-margin: 0.75rem;
+
+  /* 层级。现有数字顺序是有意保留的：上下文菜单高于 Modal backdrop，
+     Update Banner 低于 Toast 堆栈。 */
+  --z-shell: 0;
+  --z-list: 0;
+  --z-detail: 0;
+  --z-shelf: 1;
+  --z-toolbar: 2;
+  --z-overlay: 100;
+  --z-context-backdrop: 150;
+  --z-context-menu: 151;
+  --z-update: 190;
+  --z-toast: 200;
+
   /* State feedback. */
   --focus-ring: 2px solid var(--accent-user);
   --selection-tint: color-mix(in srgb, var(--accent-user) 9%, var(--bg-card));
+  --selection-border: color-mix(in srgb, var(--accent-user) 32%, var(--border));
 
   /* Semantic status. These were hard-coded literals that never adapted to
      dark, where the old values fell below contrast — both themes redefine
@@ -241,7 +262,7 @@ a { color: var(--accent-user); }
 }
 
 /* Modal */
-.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 1rem; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: var(--z-overlay); padding: 1rem; }
 .modal { background: var(--surface-overlay); border: 1px solid var(--border); border-radius: var(--radius-lg); max-width: 460px; width: 100%; padding: 1.5rem; box-shadow: var(--shadow-overlay); }
 .modal h3 { margin: 0 0 0.5rem; font-size: 1rem; }
 .modal p { font-size: 0.85rem; color: var(--text-muted); margin: 0.5rem 0; }
@@ -450,8 +471,8 @@ body {
 
 .project-sidebar {
   position: relative;
-  z-index: 1;
-  margin: 0.75rem 0 0.75rem 0.75rem;
+  z-index: var(--z-shelf);
+  margin: var(--surface-margin) 0 var(--surface-margin) var(--surface-margin);
   padding: 1rem 0.65rem;
   background: var(--surface-regular);
   border: 1px solid var(--border);
@@ -517,7 +538,7 @@ body {
 .project-row--active,
 .sidebar-nav__item--active {
   background: color-mix(in srgb, var(--accent-user) 11%, transparent);
-  border-color: color-mix(in srgb, var(--accent-user) 20%, transparent);
+  border-color: var(--selection-border);
   color: var(--text);
 }
 
@@ -644,13 +665,15 @@ body {
 }
 
 .prompt-library {
-  background: var(--bg);
+  position: relative;
+  z-index: var(--z-list);
+  background: var(--surface-content);
 }
 
 .prompt-toolbar {
   position: sticky;
   top: 0;
-  z-index: 2;
+  z-index: var(--z-toolbar);
   min-height: 3.45rem;
   display: flex;
   align-items: center;
@@ -690,7 +713,7 @@ body {
   padding: 0.3rem 0.35rem;
   border: 1px solid var(--border);
   border-radius: 0.35rem;
-  background: var(--bg-card);
+  background: var(--surface-regular);
   color: var(--text-muted);
   font: inherit;
   font-size: 0.67rem;
@@ -805,7 +828,7 @@ body {
 
 .prompt-list-item--selected {
   background: var(--selection-tint);
-  border-color: color-mix(in srgb, var(--accent-user) 32%, var(--border));
+  border-color: var(--selection-border);
 }
 
 .prompt-list-item__check {
@@ -1017,6 +1040,8 @@ body {
 }
 
 .prompt-detail {
+  position: relative;
+  z-index: var(--z-detail);
   padding: 1.25rem 1.35rem 2rem;
   background: var(--surface-content);
 }
@@ -1134,7 +1159,7 @@ body {
 .history-layout {
   display: grid;
   grid-template-columns: minmax(220px, 34%) minmax(0, 1fr);
-  gap: 0.85rem;
+  gap: var(--content-gap);
   min-height: 0;
   flex: 1;
 }
@@ -1516,7 +1541,7 @@ body {
   padding: 0.85rem;
   border: 1px solid var(--border);
   border-radius: 0.45rem;
-  background: var(--bg);
+  background: var(--surface-content);
   color: var(--text);
   font: 0.78rem/1.65 var(--font-mono);
 }
@@ -2261,7 +2286,7 @@ body {
 }
 
 .modal-backdrop {
-  z-index: 100;
+  z-index: var(--z-overlay);
 }
 
 .new-prompt-dialog {
@@ -2479,18 +2504,18 @@ body {
 .context-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 150;
+  z-index: var(--z-context-backdrop);
 }
 
 .project-menu {
   position: fixed;
-  z-index: 151;
+  z-index: var(--z-context-menu);
   width: 13rem;
   padding: 0.35rem;
   border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  background: var(--bg-card);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-overlay);
 }
 
 .project-menu button {
@@ -2569,7 +2594,7 @@ body {
   position: fixed;
   bottom: 1rem;
   left: 50%;
-  z-index: 200;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
@@ -2656,6 +2681,10 @@ body {
     box-shadow: var(--glass-highlight), var(--shadow-sidebar);
   }
 
+  .prompt-toolbar select {
+    background: var(--surface-regular-glass);
+  }
+
   .btn--prominent:not(:disabled) {
     background: var(--surface-prominent-glass);
     border-color: color-mix(in srgb, var(--surface-prominent) 62%, var(--border));
@@ -2687,6 +2716,10 @@ body {
     box-shadow: var(--shadow-sidebar);
   }
 
+  .prompt-toolbar select {
+    background: var(--surface-regular);
+  }
+
   .btn--prominent:not(:disabled) {
     background: var(--surface-prominent);
     -webkit-backdrop-filter: none;
@@ -2702,10 +2735,10 @@ body {
   }
 
   .project-menu {
-    background: var(--bg-card);
+    background: var(--surface-overlay);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-overlay);
   }
 }
 
@@ -2717,6 +2750,9 @@ body {
     --border: var(--border-strong);
     --border-strong: var(--text-muted);
     --text-faint: var(--text-muted);
+    --focus-ring: 3px solid var(--accent-user);
+    --selection-tint: color-mix(in srgb, var(--accent-user) 14%, var(--bg-card));
+    --selection-border: color-mix(in srgb, var(--accent-user) 52%, var(--border-strong));
   }
 }
 
