@@ -76,6 +76,8 @@
   let addPath = $state<string | null>(null);
   let relocateFrom = $state<string | null>(null);
   let pathInput: HTMLInputElement | undefined = $state(undefined);
+  let rail: { focusShelfToggle: () => void } | undefined = $state(undefined);
+  let projectShelf: HTMLElement | undefined = $state(undefined);
   let projectsSection: HTMLElement | undefined = $state(undefined);
   let foldersSection: HTMLElement | undefined = $state(undefined);
   let tagsSection: HTMLElement | undefined = $state(undefined);
@@ -139,6 +141,14 @@
     await tick();
     warningsSection?.scrollIntoView?.({ block: 'nearest' });
     warningsSection?.focus();
+  }
+
+  export function hasShelfFocus(): boolean {
+    return Boolean(projectShelf && document.activeElement && projectShelf.contains(document.activeElement));
+  }
+
+  export function focusShelfToggle(): void {
+    rail?.focusShelfToggle();
   }
 
   async function pickFolder(): Promise<string | null> {
@@ -347,6 +357,7 @@
 </script>
 
 <LibraryRail
+  bind:this={rail}
   {shelfExpanded}
   allProjectsActive={allProjectsActive}
   foldersAvailable={foldersAvailable}
@@ -360,6 +371,7 @@
 />
 
 <aside
+  bind:this={projectShelf}
   id="project-shelf"
   class="project-sidebar"
   class:project-sidebar--collapsed={!shelfExpanded}

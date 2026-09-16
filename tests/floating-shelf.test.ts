@@ -357,10 +357,15 @@ describe('responsive Floating Shelf contracts', () => {
       expect(rail.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(false);
     });
 
+    const shelf = document.getElementById('project-shelf');
+    if (!shelf) throw new Error('project shelf did not render');
+    const shelfControl = within(shelf).getByRole('button', { name: 'All Projects' });
+    shelfControl.focus();
     shelfQuery.fire(true);
     await waitFor(() => {
       expect(rail.getByRole('button', { name: 'Expand project shelf' })).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Resize project sidebar' }).hasAttribute('disabled')).toBe(true);
+      expect(document.activeElement).toBe(rail.getByRole('button', { name: 'Expand project shelf' }));
     });
 
     shelfQuery.fire(false);

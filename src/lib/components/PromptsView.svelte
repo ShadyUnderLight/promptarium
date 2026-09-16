@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import Icon from '$lib/components/Icon.svelte';
   import {
     batchDelete,
@@ -58,7 +58,13 @@
     discardChanges: () => void;
     showHistory: () => void;
   } | undefined = $state(undefined);
-  let sidebar: { showAllProjectsWarning: () => Promise<void> } | undefined = $state(undefined);
+  let sidebar:
+    | {
+        showAllProjectsWarning: () => Promise<void>;
+        hasShelfFocus: () => boolean;
+        focusShelfToggle: () => void;
+      }
+    | undefined = $state(undefined);
   let shelfExpanded = $state(true);
   let shelfMediaQuery: MediaQueryList | undefined;
   let detailVisible = $state(true);
@@ -109,7 +115,11 @@
   }
 
   function onShelfViewportChange(event: MediaQueryListEvent): void {
+    const shouldMoveFocus = event.matches && shelfExpanded && Boolean(sidebar?.hasShelfFocus());
     shelfExpanded = !event.matches;
+    if (shouldMoveFocus) {
+      void tick().then(() => sidebar?.focusShelfToggle());
+    }
   }
 
   function onDetailViewportChange(event: MediaQueryListEvent): void {

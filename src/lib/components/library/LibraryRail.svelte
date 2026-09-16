@@ -29,6 +29,11 @@
     onHistory,
     onToggleShelf,
   }: Props = $props();
+  let shelfToggle: HTMLButtonElement | undefined = $state(undefined);
+
+  export function focusShelfToggle(): void {
+    shelfToggle?.focus();
+  }
 </script>
 
 <nav class="library-rail" aria-label={t('sidebar.rail.aria')}>
@@ -108,6 +113,7 @@
     type="button"
     class="rail-button"
     class:rail-button--active={shelfExpanded}
+    bind:this={shelfToggle}
     aria-expanded={shelfExpanded}
     aria-controls="project-shelf"
     aria-label={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
