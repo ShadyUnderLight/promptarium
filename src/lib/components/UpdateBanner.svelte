@@ -61,43 +61,42 @@
 {/if}
 
 <style>
-  /* Bottom-RIGHT at z-index 190: deliberately clear of the toast stack, which
-     owns bottom-center at 200. See the component comment. */
+  /* 位于右下角并低于 Toast 堆栈；Toast 固定在 z-index 200 的底部中央。
+     这里必须保持分离，详见组件注释。 */
   .update-banner {
     position: fixed;
     bottom: 1.25rem;
     right: 1.25rem;
-    z-index: 190;
+    z-index: var(--z-update);
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
     min-width: 16rem;
     max-width: min(90vw, 24rem);
     padding: 0.75rem 1rem;
-    border-radius: 0.5rem;
-    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    background: var(--surface-overlay);
     color: var(--text);
     border: 1px solid var(--border-strong);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    box-shadow: var(--shadow-overlay);
     font-size: 0.8rem;
   }
-  /* Overlay glass (Issue #43). The banner floats above real content, so the
-     blur is visible; solid --bg-card above stays the fallback, and Reduce
-     Transparency restores it after the @supports block. */
+  /* Overlay glass（Issue #43）。Banner 浮在真实内容之上，因此 blur 可见；
+     上面的实体 overlay surface 始终作为 fallback。 */
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     .update-banner {
       background: var(--surface-overlay-glass);
       -webkit-backdrop-filter: blur(var(--glass-blur));
       backdrop-filter: blur(var(--glass-blur));
-      box-shadow: var(--glass-highlight), 0 8px 24px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--glass-highlight), var(--shadow-overlay);
     }
   }
   @media (prefers-reduced-transparency: reduce) {
     .update-banner {
-      background: var(--bg-card);
+      background: var(--surface-overlay);
       -webkit-backdrop-filter: none;
       backdrop-filter: none;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+      box-shadow: var(--shadow-overlay);
     }
   }
   .update-banner--quiet {
