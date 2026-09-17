@@ -284,19 +284,19 @@ describe('responsive Floating Shelf contracts', () => {
 
     await waitFor(() => {
       const workspace = container.querySelector<HTMLElement>('.library-workspace');
-      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('268px');
-      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('388px');
+      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('272px');
+      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('384px');
     });
 
     await fireEvent.pointerDown(sidebarResizer, { clientX: 300 });
     await fireEvent.pointerMove(window, { clientX: 290 });
     await fireEvent.pointerUp(window, { clientX: 290 });
-    await waitFor(() => expect(library.sidebarWidth).toBe(258));
+    await waitFor(() => expect(library.sidebarWidth).toBe(262));
 
     await fireEvent.pointerDown(libraryResizer, { clientX: 600 });
     await fireEvent.pointerMove(window, { clientX: 590 });
     await fireEvent.pointerUp(window, { clientX: 590 });
-    await waitFor(() => expect(library.libraryWidth).toBe(378));
+    await waitFor(() => expect(library.libraryWidth).toBe(374));
 
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
   });
@@ -318,11 +318,11 @@ describe('responsive Floating Shelf contracts', () => {
     const { container } = render(PromptsView);
     const workspace = () => container.querySelector<HTMLElement>('.library-workspace');
     const expectedWidths = [
-      [1279, 309, 446],
-      [1280, 309, 447],
-      [1281, 310, 447],
-      [1300, 317, 459],
-      [1360, 342, 494],
+      [1279, 311, 444],
+      [1280, 311, 445],
+      [1281, 312, 445],
+      [1300, 319, 457],
+      [1360, 343, 493],
       [1439, 360, 520],
       [1440, 360, 520],
     ] as const;

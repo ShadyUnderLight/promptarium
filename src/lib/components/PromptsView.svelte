@@ -57,18 +57,29 @@
   const MAX_LIBRARY_WIDTH = 520;
   const MIN_DETAIL_WIDTH = 456;
   const RAIL_AND_RESIZERS_WIDTH = 68;
+  const BASELINE_SIDEBAR_CAP = 272;
+  const BASELINE_LIBRARY_CAP = 384;
 
   function paneCapsForViewport(viewportWidth: number): { sidebar: number; library: number } {
     const maximumTotal = MAX_SIDEBAR_WIDTH + MAX_LIBRARY_WIDTH;
     const minimumTotal = MIN_SIDEBAR_WIDTH + MIN_LIBRARY_WIDTH;
+    const baselineTotal = BASELINE_SIDEBAR_CAP + BASELINE_LIBRARY_CAP;
     const availableTotal = Math.max(
       minimumTotal,
       Math.min(maximumTotal, viewportWidth - RAIL_AND_RESIZERS_WIDTH - MIN_DETAIL_WIDTH)
     );
-    const sidebar = Math.max(
-      MIN_SIDEBAR_WIDTH,
-      Math.min(MAX_SIDEBAR_WIDTH, Math.round((MAX_SIDEBAR_WIDTH / maximumTotal) * availableTotal))
-    );
+    const sidebar =
+      availableTotal <= baselineTotal
+        ? Math.round(
+            MIN_SIDEBAR_WIDTH +
+              ((BASELINE_SIDEBAR_CAP - MIN_SIDEBAR_WIDTH) * (availableTotal - minimumTotal)) /
+                (baselineTotal - minimumTotal)
+          )
+        : Math.round(
+            BASELINE_SIDEBAR_CAP +
+              ((MAX_SIDEBAR_WIDTH - BASELINE_SIDEBAR_CAP) * (availableTotal - baselineTotal)) /
+                (maximumTotal - baselineTotal)
+          );
     return {
       sidebar,
       library: Math.max(MIN_LIBRARY_WIDTH, availableTotal - sidebar),
