@@ -180,10 +180,16 @@ assert(
   'warning summary CTA uses the normal text color'
 );
 assert(
-  /@media \(max-width:\s*1280px\)[\s\S]*?min\(var\(--sidebar-width\),\s*17rem\)[\s\S]*?min\(var\(--library-width\),\s*24rem\)/s.test(
+  /@media \(max-width:\s*1280px\)[\s\S]*?grid-template-columns:\s*var\(--rail-width\)\s+17rem\s+6px\s+24rem\s+6px/s.test(
     appCss
   ),
-  'medium viewports cap effective pane widths without changing persisted variables'
+  'medium viewports have a legacy-safe fixed pane-width cap'
+);
+assert(
+  /@supports\s*\(width:\s*min\(1px,\s*2px\)\)[\s\S]*?@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1280px\)[\s\S]*?min\(var\(--sidebar-width\),\s*17rem\)[\s\S]*?min\(var\(--library-width\),\s*24rem\)/s.test(
+    appCss
+  ),
+  'modern medium viewports preserve smaller persisted pane widths'
 );
 assert(
   /@media \(max-width:\s*1280px\)[\s\S]*?\.detail-toolbar[\s\S]*?flex-wrap:\s*wrap/s.test(appCss),

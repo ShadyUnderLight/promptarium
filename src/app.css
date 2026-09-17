@@ -2720,10 +2720,11 @@ body {
 
 @media (max-width: 1280px) {
   .library-workspace {
-    grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+    /* Legacy WebKit fallback: cap the display width without CSS math. */
+    grid-template-columns: var(--rail-width) 17rem 6px 24rem 6px minmax(0, 1fr);
   }
   .library-workspace.library-workspace--shelf-collapsed {
-    grid-template-columns: var(--rail-width) 0 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+    grid-template-columns: var(--rail-width) 0 6px 24rem 6px minmax(0, 1fr);
   }
   .detail-toolbar,
   .detail-actions,
@@ -2742,7 +2743,7 @@ body {
 
 @media (max-width: 980px) {
   .library-workspace {
-    grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
+    grid-template-columns: var(--rail-width) 17rem 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
   }
   .library-workspace.library-workspace--shelf-collapsed {
     grid-template-columns: var(--rail-width) 0 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
@@ -2762,7 +2763,7 @@ body {
 
 @media (max-width: 720px) {
   .library-workspace {
-    grid-template-columns: var(--rail-width) var(--sidebar-width) 6px minmax(0, 1fr);
+    grid-template-columns: var(--rail-width) 17rem 6px minmax(0, 1fr);
   }
   .library-workspace.library-workspace--shelf-collapsed {
     grid-template-columns: var(--rail-width) 0 6px minmax(0, 1fr);
@@ -2796,6 +2797,29 @@ body {
   }
   .language-select__label { display: none; }
   .editor-layout { grid-template-columns: 1fr; }
+}
+
+@supports (width: min(1px, 2px)) {
+  @media (min-width: 981px) and (max-width: 1280px) {
+    .library-workspace {
+      grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+    }
+    .library-workspace.library-workspace--shelf-collapsed {
+      grid-template-columns: var(--rail-width) 0 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+    }
+  }
+
+  @media (min-width: 721px) and (max-width: 980px) {
+    .library-workspace {
+      grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
+    }
+  }
+
+  @media (max-width: 720px) {
+    .library-workspace {
+      grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px minmax(0, 1fr);
+    }
+  }
 }
 
 /* -------------------------------------------------------------------------- */
