@@ -2718,9 +2718,31 @@ body {
   cursor: pointer;
 }
 
+@media (max-width: 1280px) {
+  .library-workspace {
+    grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+  }
+  .library-workspace.library-workspace--shelf-collapsed {
+    grid-template-columns: var(--rail-width) 0 6px min(var(--library-width), 24rem) 6px minmax(0, 1fr);
+  }
+  .detail-toolbar,
+  .detail-actions,
+  .detail-action-group {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+}
+
+@media (min-width: 981px) and (max-width: 1440px) {
+  /* Keep the editor body usable after the persisted panes have been capped. */
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr) 12rem;
+  }
+}
+
 @media (max-width: 980px) {
   .library-workspace {
-    grid-template-columns: var(--rail-width) var(--sidebar-width) 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
+    grid-template-columns: var(--rail-width) min(var(--sidebar-width), 17rem) 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);
   }
   .library-workspace.library-workspace--shelf-collapsed {
     grid-template-columns: var(--rail-width) 0 6px minmax(18rem, 24rem) 6px minmax(0, 1fr);

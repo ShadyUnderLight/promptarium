@@ -180,6 +180,22 @@ assert(
   'warning summary CTA uses the normal text color'
 );
 assert(
+  /@media \(max-width:\s*1280px\)[\s\S]*?min\(var\(--sidebar-width\),\s*17rem\)[\s\S]*?min\(var\(--library-width\),\s*24rem\)/s.test(
+    appCss
+  ),
+  'medium viewports cap effective pane widths without changing persisted variables'
+);
+assert(
+  /@media \(max-width:\s*1280px\)[\s\S]*?\.detail-toolbar[\s\S]*?flex-wrap:\s*wrap/s.test(appCss),
+  'medium viewports allow Detail toolbar actions to wrap'
+);
+assert(
+  /@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1440px\)[\s\S]*?\.editor-layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+12rem/s.test(
+    appCss
+  ),
+  'medium Detail keeps a usable editor column beside the inspector'
+);
+assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'
 );
