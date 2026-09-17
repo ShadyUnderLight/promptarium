@@ -156,7 +156,7 @@ for (const fallbackSelector of [
 
 console.log('surface consumers');
 assert(
-  appCss.includes('grid-template-columns: var(--rail-width) var(--sidebar-width) 6px'),
+  appCss.includes('grid-template-columns: var(--rail-width) var(--sidebar-effective-width) 6px'),
   'workspace keeps separate Rail and Shelf columns'
 );
 assert(
@@ -180,20 +180,14 @@ assert(
   'warning summary CTA uses the normal text color'
 );
 assert(
-  /@media \(max-width:\s*1280px\)[\s\S]*?grid-template-columns:\s*var\(--rail-width\)\s+17rem\s+6px\s+24rem\s+6px/s.test(
+  /\.library-workspace\s*\{[^}]*var\(--sidebar-effective-width\)[^}]*var\(--library-effective-width\)/s.test(
     appCss
   ),
-  'medium viewports have a legacy-safe fixed pane-width cap'
+  'workspace uses viewport-aware effective pane widths'
 );
 assert(
-  /@supports\s*\(width:\s*min\(1px,\s*2px\)\)[\s\S]*?@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1280px\)[\s\S]*?min\(var\(--sidebar-width\),\s*17rem\)[\s\S]*?min\(var\(--library-width\),\s*24rem\)/s.test(
-    appCss
-  ),
-  'modern medium viewports preserve smaller persisted pane widths'
-);
-assert(
-  /@media \(max-width:\s*1280px\)[\s\S]*?\.detail-toolbar[\s\S]*?flex-wrap:\s*wrap/s.test(appCss),
-  'medium viewports allow Detail toolbar actions to wrap'
+  /@media \(max-width:\s*1440px\)[\s\S]*?\.detail-toolbar[\s\S]*?flex-wrap:\s*wrap/s.test(appCss),
+  'sub-wide viewports allow Detail toolbar actions to wrap'
 );
 assert(
   /@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1440px\)[\s\S]*?\.editor-layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+12rem/s.test(

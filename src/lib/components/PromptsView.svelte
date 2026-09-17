@@ -51,6 +51,30 @@
     destructive?: boolean;
   };
 
+  const MIN_SIDEBAR_WIDTH = 200;
+  const MAX_SIDEBAR_WIDTH = 360;
+  const MIN_LIBRARY_WIDTH = 280;
+  const MAX_LIBRARY_WIDTH = 520;
+  const MIN_DETAIL_WIDTH = 456;
+  const RAIL_AND_RESIZERS_WIDTH = 68;
+
+  function paneCapsForViewport(viewportWidth: number): { sidebar: number; library: number } {
+    const maximumTotal = MAX_SIDEBAR_WIDTH + MAX_LIBRARY_WIDTH;
+    const minimumTotal = MIN_SIDEBAR_WIDTH + MIN_LIBRARY_WIDTH;
+    const availableTotal = Math.max(
+      minimumTotal,
+      Math.min(maximumTotal, viewportWidth - RAIL_AND_RESIZERS_WIDTH - MIN_DETAIL_WIDTH)
+    );
+    const sidebar = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(MAX_SIDEBAR_WIDTH, Math.round((MAX_SIDEBAR_WIDTH / maximumTotal) * availableTotal))
+    );
+    return {
+      sidebar,
+      library: Math.max(MIN_LIBRARY_WIDTH, availableTotal - sidebar),
+    };
+  }
+
   let searchInput: HTMLInputElement | undefined = $state(undefined);
   let theme = $state(getTheme());
   let detail: {
@@ -68,10 +92,18 @@
     | undefined = $state(undefined);
   let shelfExpanded = $state(true);
   let shelfMediaQuery: MediaQueryList | undefined;
+  let viewportWidth = $state(0);
   let detailVisible = $state(true);
   let detailMediaQuery: MediaQueryList | undefined;
   let removeShelfMediaListener: (() => void) | undefined;
   let removeDetailMediaListener: (() => void) | undefined;
+  let effectivePaneCaps = $derived(paneCapsForViewport(viewportWidth));
+  let effectiveSidebarWidth = $derived(
+    Math.min(library.sidebarWidth, effectivePaneCaps.sidebar)
+  );
+  let effectiveLibraryWidth = $derived(
+    Math.min(library.libraryWidth, effectivePaneCaps.library)
+  );
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
@@ -93,6 +125,8 @@
 
   onMount(() => {
     setEditorDirtyProvider(() => detailDirty);
+    viewportWidth = window.innerWidth;
+    window.addEventListener('resize', onViewportResize);
     shelfMediaQuery = window.matchMedia('(max-width: 980px)');
     shelfExpanded = !shelfMediaQuery.matches;
     removeShelfMediaListener = listenMediaQuery(shelfMediaQuery, onShelfViewportChange);
@@ -109,6 +143,7 @@
     void stopFilesystemWatch();
     removeShelfMediaListener?.();
     removeDetailMediaListener?.();
+    window.removeEventListener('resize', onViewportResize);
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
@@ -127,6 +162,10 @@
 
   function onDetailViewportChange(event: MediaQueryListEvent): void {
     detailVisible = !event.matches;
+  }
+
+  function onViewportResize(): void {
+    viewportWidth = window.innerWidth;
   }
 
   function listenMediaQuery(
@@ -480,9 +519,14 @@
   function startResize(which: 'sidebar' | 'library', event: PointerEvent): void {
     event.preventDefault();
     const startX = event.clientX;
-    const startValue = which === 'sidebar' ? library.sidebarWidth : library.libraryWidth;
+    const startValue = which === 'sidebar' ? effectiveSidebarWidth : effectiveLibraryWidth;
+    const minimum = which === 'sidebar' ? MIN_SIDEBAR_WIDTH : MIN_LIBRARY_WIDTH;
+    const maximum = which === 'sidebar' ? effectivePaneCaps.sidebar : effectivePaneCaps.library;
     const move = (moveEvent: PointerEvent) => {
-      const next = startValue + moveEvent.clientX - startX;
+      const next = Math.max(
+        minimum,
+        Math.min(maximum, startValue + moveEvent.clientX - startX)
+      );
       setPaneWidth(which, next);
     };
     const stop = () => {
@@ -550,7 +594,11 @@
   <div
     class="library-workspace"
     class:library-workspace--shelf-collapsed={!shelfExpanded}
-    style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
+    style={
+      '--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth +
+      'px;--sidebar-effective-width:' + effectiveSidebarWidth + 'px;--library-effective-width:' +
+      effectiveLibraryWidth + 'px'
+    }
   >
     <ProjectSidebar
       bind:this={sidebar}

@@ -108,6 +108,8 @@ beforeEach(() => {
   library.loadingDocument = false;
   library.fsWatchAvailable = true;
   library.fsWatchMessage = null;
+  library.sidebarWidth = 244;
+  library.libraryWidth = 362;
 });
 
 afterEach(() => {
@@ -262,6 +264,85 @@ describe('Floating Shelf navigation rail', () => {
 });
 
 describe('responsive Floating Shelf contracts', () => {
+  it('resizes from rendered pane widths when persisted widths are capped', async () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1180 });
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.sidebarWidth = 360;
+    library.libraryWidth = 520;
+
+    const { container } = render(PromptsView);
+    const sidebarResizer = screen.getByRole('button', { name: 'Resize project sidebar' });
+    const libraryResizer = screen.getByRole('button', { name: 'Resize prompt library' });
+
+    await waitFor(() => {
+      const workspace = container.querySelector<HTMLElement>('.library-workspace');
+      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('268px');
+      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('388px');
+    });
+
+    await fireEvent.pointerDown(sidebarResizer, { clientX: 300 });
+    await fireEvent.pointerMove(window, { clientX: 290 });
+    await fireEvent.pointerUp(window, { clientX: 290 });
+    await waitFor(() => expect(library.sidebarWidth).toBe(258));
+
+    await fireEvent.pointerDown(libraryResizer, { clientX: 600 });
+    await fireEvent.pointerMove(window, { clientX: 590 });
+    await fireEvent.pointerUp(window, { clientX: 590 });
+    await waitFor(() => expect(library.libraryWidth).toBe(378));
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+  });
+
+  it('keeps effective pane widths continuous around the 1280px boundary', async () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1180 });
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.sidebarWidth = 360;
+    library.libraryWidth = 520;
+
+    const { container } = render(PromptsView);
+    const workspace = () => container.querySelector<HTMLElement>('.library-workspace');
+    const expectedWidths = [
+      [1279, 309, 446],
+      [1280, 309, 447],
+      [1281, 310, 447],
+      [1300, 317, 459],
+      [1360, 342, 494],
+      [1439, 360, 520],
+      [1440, 360, 520],
+    ] as const;
+
+    for (const [width, sidebarWidth, libraryWidth] of expectedWidths) {
+      Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+      window.dispatchEvent(new Event('resize'));
+      await waitFor(() => {
+        expect(workspace()?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe(
+          `${sidebarWidth}px`
+        );
+        expect(workspace()?.style.getPropertyValue('--library-effective-width').trim()).toBe(
+          `${libraryWidth}px`
+        );
+      });
+    }
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+  });
+
   it('disables hidden Detail actions and the collapsed Shelf resizer at 720px', async () => {
     vi.stubGlobal(
       'matchMedia',
