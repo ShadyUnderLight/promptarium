@@ -47,6 +47,15 @@ export const en = {
 
   // Project sidebar.
   'sidebar.nav.aria': 'Prompt Library navigation',
+  'sidebar.rail.aria': 'Library navigation rail',
+  'sidebar.rail.library': 'All Projects',
+  'sidebar.rail.search': 'Focus search',
+  'sidebar.rail.projects': 'Focus projects',
+  'sidebar.rail.folders': 'Focus folders',
+  'sidebar.rail.tags': 'Focus tags',
+  'sidebar.rail.history': 'Show prompt history',
+  'sidebar.rail.expandShelf': 'Expand project shelf',
+  'sidebar.rail.collapseShelf': 'Collapse project shelf',
   'sidebar.projects': 'Projects',
   'sidebar.addProject': 'Add project',
   'sidebar.addProject.placeholder': 'Paste a folder path…',
@@ -71,6 +80,8 @@ export const en = {
   'sidebar.newPrompt': 'New prompt',
   'sidebar.failedRefresh.one': '{count} project could not refresh',
   'sidebar.failedRefresh.other': '{count} projects could not refresh',
+  'sidebar.warning.showDetails': 'Show failed project details',
+  'sidebar.missingProject.showDetails': 'Show recovery options',
 
   // Folder / project dialogs (window.prompt / window.confirm / Tauri dialog
   // titles). Paths, folder names and project names passed as params stay raw.

@@ -304,6 +304,10 @@
     }
   }
 
+  export function showHistory(): void {
+    if (document) setMode('history');
+  }
+
   function handleSelectCommit(commit: GitFileCommit): void {
     if (!document) return;
     void selectHistoryCommit(document.projectPath, document.name, commit);

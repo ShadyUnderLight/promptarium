@@ -45,6 +45,15 @@ export const zhCN = {
 
   // Project sidebar.
   'sidebar.nav.aria': '提示词库导航',
+  'sidebar.rail.aria': '提示词库导航栏',
+  'sidebar.rail.library': '全部项目',
+  'sidebar.rail.search': '聚焦搜索',
+  'sidebar.rail.projects': '聚焦项目',
+  'sidebar.rail.folders': '聚焦文件夹',
+  'sidebar.rail.tags': '聚焦标签',
+  'sidebar.rail.history': '显示提示词历史',
+  'sidebar.rail.expandShelf': '展开项目书架',
+  'sidebar.rail.collapseShelf': '收起项目书架',
   'sidebar.projects': '项目',
   'sidebar.addProject': '添加项目',
   'sidebar.addProject.placeholder': '粘贴文件夹路径…',
@@ -69,6 +78,8 @@ export const zhCN = {
   'sidebar.newPrompt': '新建提示词',
   'sidebar.failedRefresh.one': '{count} 个项目刷新失败',
   'sidebar.failedRefresh.other': '{count} 个项目刷新失败',
+  'sidebar.warning.showDetails': '查看失败项目详情',
+  'sidebar.missingProject.showDetails': '查看恢复选项',
 
   // Folder / project dialogs. 路径、文件夹名、项目名等参数保持原样，不翻译。
   'dialog.folderPath.browserDev': '文件夹路径（仅浏览器开发模式）：',

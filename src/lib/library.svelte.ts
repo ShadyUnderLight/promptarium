@@ -94,6 +94,11 @@ import {
 
 const SEARCH_DEBOUNCE_MS = 100;
 
+export const PANE_WIDTH_LIMITS = {
+  sidebar: { min: 200, max: 360 },
+  library: { min: 280, max: 520 },
+} as const;
+
 export const library = $state({
   projects: [] as Project[],
   activeProjectPath: null as string | null,
@@ -370,8 +375,20 @@ function loadUiState(): void {
   try {
     const saved = JSON.parse(localStorage.getItem('prompt-library-ui') ?? 'null') as Partial<typeof library> | null;
     if (!saved) return;
-    if (typeof saved.sidebarWidth === 'number') library.sidebarWidth = clamp(saved.sidebarWidth, 200, 360);
-    if (typeof saved.libraryWidth === 'number') library.libraryWidth = clamp(saved.libraryWidth, 280, 520);
+    if (typeof saved.sidebarWidth === 'number') {
+      library.sidebarWidth = clamp(
+        saved.sidebarWidth,
+        PANE_WIDTH_LIMITS.sidebar.min,
+        PANE_WIDTH_LIMITS.sidebar.max
+      );
+    }
+    if (typeof saved.libraryWidth === 'number') {
+      library.libraryWidth = clamp(
+        saved.libraryWidth,
+        PANE_WIDTH_LIMITS.library.min,
+        PANE_WIDTH_LIMITS.library.max
+      );
+    }
     if (saved.sort) library.sort = saved.sort as PromptSort;
     if (saved.viewMode === 'list' || saved.viewMode === 'grid') library.viewMode = saved.viewMode;
   } catch {
@@ -1133,8 +1150,9 @@ async function runSearch(): Promise<void> {
 }
 
 export function setPaneWidth(which: 'sidebar' | 'library', width: number): void {
-  if (which === 'sidebar') library.sidebarWidth = clamp(width, 200, 360);
-  else library.libraryWidth = clamp(width, 280, 520);
+  const limits = PANE_WIDTH_LIMITS[which];
+  if (which === 'sidebar') library.sidebarWidth = clamp(width, limits.min, limits.max);
+  else library.libraryWidth = clamp(width, limits.min, limits.max);
   saveUiState();
 }
 

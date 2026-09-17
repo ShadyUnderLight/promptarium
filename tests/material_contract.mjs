@@ -128,6 +128,7 @@ for (const forbiddenSelector of [
 }
 for (const allowedSelector of [
   '.prompt-toolbar',
+  '.library-rail',
   '.project-sidebar',
   '.modal',
   '.project-menu',
@@ -141,6 +142,7 @@ for (const allowedSelector of [
 const noneSelectors = selectorsWithValue(materialCss, 'none').join('\n');
 for (const fallbackSelector of [
   '.prompt-toolbar',
+  '.library-rail',
   '.project-sidebar',
   '.modal',
   '.project-menu',
@@ -153,6 +155,46 @@ for (const fallbackSelector of [
 }
 
 console.log('surface consumers');
+assert(
+  appCss.includes('grid-template-columns: var(--rail-width) var(--sidebar-effective-width) 6px'),
+  'workspace keeps separate Rail and Shelf columns'
+);
+assert(
+  appCss.includes('.library-workspace--shelf-collapsed'),
+  'workspace has a UI-only collapsed Shelf layout'
+);
+assert(
+  /\.project-sidebar--collapsed\s*\{[^}]*visibility:\s*hidden/s.test(appCss),
+  'collapsed Shelf retains its grid slot'
+);
+assert(
+  /\.pane-resizer:disabled\s*\{[^}]*pointer-events:\s*none/s.test(appCss),
+  'collapsed Shelf resizer is inert'
+);
+assert(
+  /\.library-warning\s*\{[^}]*color:\s*var\(--text\)/s.test(appCss),
+  'warning summary uses the normal text color'
+);
+assert(
+  /\.library-warning \.btn--ghost[\s\S]*?color:\s*var\(--text\)/s.test(appCss),
+  'warning summary CTA uses the normal text color'
+);
+assert(
+  /\.library-workspace\s*\{[^}]*var\(--sidebar-effective-width\)[^}]*var\(--library-effective-width\)/s.test(
+    appCss
+  ),
+  'workspace uses viewport-aware effective pane widths'
+);
+assert(
+  /@media \(max-width:\s*1440px\)[\s\S]*?\.detail-toolbar[\s\S]*?flex-wrap:\s*wrap/s.test(appCss),
+  'sub-wide viewports allow Detail toolbar actions to wrap'
+);
+assert(
+  /@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1440px\)[\s\S]*?\.editor-layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+12rem/s.test(
+    appCss
+  ),
+  'medium Detail keeps a usable editor column beside the inspector'
+);
 assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'

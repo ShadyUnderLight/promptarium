@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { onDestroy, onMount, tick } from 'svelte';
   import Icon from '$lib/components/Icon.svelte';
   import {
     batchDelete,
@@ -23,6 +23,7 @@
     setEditorDirtyProvider,
     setSearchQuery,
     setPaneWidth,
+    PANE_WIDTH_LIMITS,
     stopFilesystemWatch,
   } from '$lib/library.svelte';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
@@ -51,9 +52,70 @@
     destructive?: boolean;
   };
 
+  const MIN_SIDEBAR_WIDTH = PANE_WIDTH_LIMITS.sidebar.min;
+  const MAX_SIDEBAR_WIDTH = PANE_WIDTH_LIMITS.sidebar.max;
+  const MIN_LIBRARY_WIDTH = PANE_WIDTH_LIMITS.library.min;
+  const MAX_LIBRARY_WIDTH = PANE_WIDTH_LIMITS.library.max;
+  const MIN_DETAIL_WIDTH = 456;
+  const RAIL_AND_RESIZERS_WIDTH = 68;
+  const BASELINE_SIDEBAR_CAP = 272;
+  const BASELINE_LIBRARY_CAP = 384;
+
+  function paneCapsForViewport(viewportWidth: number): { sidebar: number; library: number } {
+    const maximumTotal = MAX_SIDEBAR_WIDTH + MAX_LIBRARY_WIDTH;
+    const minimumTotal = MIN_SIDEBAR_WIDTH + MIN_LIBRARY_WIDTH;
+    const baselineTotal = BASELINE_SIDEBAR_CAP + BASELINE_LIBRARY_CAP;
+    const availableTotal = Math.max(
+      minimumTotal,
+      Math.min(maximumTotal, viewportWidth - RAIL_AND_RESIZERS_WIDTH - MIN_DETAIL_WIDTH)
+    );
+    const sidebar =
+      availableTotal <= baselineTotal
+        ? Math.round(
+            MIN_SIDEBAR_WIDTH +
+              ((BASELINE_SIDEBAR_CAP - MIN_SIDEBAR_WIDTH) * (availableTotal - minimumTotal)) /
+                (baselineTotal - minimumTotal)
+          )
+        : Math.round(
+            BASELINE_SIDEBAR_CAP +
+              ((MAX_SIDEBAR_WIDTH - BASELINE_SIDEBAR_CAP) * (availableTotal - baselineTotal)) /
+                (maximumTotal - baselineTotal)
+          );
+    return {
+      sidebar,
+      library: Math.max(MIN_LIBRARY_WIDTH, availableTotal - sidebar),
+    };
+  }
+
   let searchInput: HTMLInputElement | undefined = $state(undefined);
   let theme = $state(getTheme());
-  let detail: { save: () => Promise<void>; discardChanges: () => void } | undefined = $state(undefined);
+  let detail: {
+    save: () => Promise<void>;
+    discardChanges: () => void;
+    showHistory: () => void;
+  } | undefined = $state(undefined);
+  let sidebar:
+    | {
+        showAllProjectsWarning: () => Promise<void>;
+        showMissingProjectRecovery: () => Promise<void>;
+        hasShelfFocus: () => boolean;
+        focusShelfToggle: () => void;
+      }
+    | undefined = $state(undefined);
+  let shelfExpanded = $state(true);
+  let shelfMediaQuery: MediaQueryList | undefined;
+  let viewportWidth = $state(0);
+  let detailVisible = $state(true);
+  let detailMediaQuery: MediaQueryList | undefined;
+  let removeShelfMediaListener: (() => void) | undefined;
+  let removeDetailMediaListener: (() => void) | undefined;
+  let effectivePaneCaps = $derived(paneCapsForViewport(viewportWidth));
+  let effectiveSidebarWidth = $derived(
+    Math.min(library.sidebarWidth, effectivePaneCaps.sidebar)
+  );
+  let effectiveLibraryWidth = $derived(
+    Math.min(library.libraryWidth, effectivePaneCaps.library)
+  );
   let newPromptOpen = $state(false);
   let refreshPending = $state(false);
   let deleteTarget = $state<PromptDocument | null>(null);
@@ -75,6 +137,14 @@
 
   onMount(() => {
     setEditorDirtyProvider(() => detailDirty);
+    viewportWidth = window.innerWidth;
+    window.addEventListener('resize', onViewportResize);
+    shelfMediaQuery = window.matchMedia('(max-width: 980px)');
+    shelfExpanded = !shelfMediaQuery.matches;
+    removeShelfMediaListener = listenMediaQuery(shelfMediaQuery, onShelfViewportChange);
+    detailMediaQuery = window.matchMedia('(max-width: 720px)');
+    detailVisible = !detailMediaQuery.matches;
+    removeDetailMediaListener = listenMediaQuery(detailMediaQuery, onDetailViewportChange);
     void initLibrary();
     window.addEventListener('keydown', onGlobalKeydown);
     window.addEventListener('focus', onWindowFocus);
@@ -83,12 +153,51 @@
   onDestroy(() => {
     setEditorDirtyProvider(null);
     void stopFilesystemWatch();
+    removeShelfMediaListener?.();
+    removeDetailMediaListener?.();
+    window.removeEventListener('resize', onViewportResize);
     window.removeEventListener('keydown', onGlobalKeydown);
     window.removeEventListener('focus', onWindowFocus);
   });
 
   function notice(message: string): void {
     toasts.push(message);
+  }
+
+  function onShelfViewportChange(event: MediaQueryListEvent): void {
+    const shouldMoveFocus = event.matches && shelfExpanded && Boolean(sidebar?.hasShelfFocus());
+    shelfExpanded = !event.matches;
+    if (shouldMoveFocus) {
+      void tick().then(() => sidebar?.focusShelfToggle());
+    }
+  }
+
+  function onDetailViewportChange(event: MediaQueryListEvent): void {
+    detailVisible = !event.matches;
+  }
+
+  function onViewportResize(): void {
+    viewportWidth = window.innerWidth;
+  }
+
+  function listenMediaQuery(
+    query: MediaQueryList,
+    listener: (event: MediaQueryListEvent) => void
+  ): () => void {
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', listener);
+      return () => query.removeEventListener('change', listener);
+    }
+    if (typeof query.addListener === 'function') {
+      query.addListener(listener);
+      return () => query.removeListener(listener);
+    }
+    return () => {};
+  }
+
+  function focusSearch(): void {
+    searchInput?.focus();
+    searchInput?.select();
   }
 
   /** Pending confirmation, while the in-app dialog is open. macOS WKWebView
@@ -380,8 +489,7 @@
       void openNewPrompt();
     } else if (key === 'f') {
       event.preventDefault();
-      searchInput?.focus();
-      searchInput?.select();
+      focusSearch();
     } else if (key === 's') {
       if (!detailDirty) return;
       event.preventDefault();
@@ -423,9 +531,16 @@
   function startResize(which: 'sidebar' | 'library', event: PointerEvent): void {
     event.preventDefault();
     const startX = event.clientX;
-    const startValue = which === 'sidebar' ? library.sidebarWidth : library.libraryWidth;
+    const startValue = which === 'sidebar' ? effectiveSidebarWidth : effectiveLibraryWidth;
+    const startPreferred = which === 'sidebar' ? library.sidebarWidth : library.libraryWidth;
+    const minimum = which === 'sidebar' ? MIN_SIDEBAR_WIDTH : MIN_LIBRARY_WIDTH;
+    const maximum = which === 'sidebar' ? effectivePaneCaps.sidebar : effectivePaneCaps.library;
     const move = (moveEvent: PointerEvent) => {
-      const next = startValue + moveEvent.clientX - startX;
+      const raw = startValue + moveEvent.clientX - startX;
+      const next =
+        startPreferred > maximum && raw >= maximum
+          ? startPreferred
+          : Math.max(minimum, Math.min(maximum, raw));
       setPaneWidth(which, next);
     };
     const stop = () => {
@@ -471,21 +586,51 @@
     </div>
   {/if}
 
+  {#if isAllProjects() && library.allProjectsWarnings.length && !shelfExpanded}
+    <div class="library-warning" role="status" aria-live="polite">
+      <span>{tPlural('sidebar.failedRefresh', library.allProjectsWarnings.length)}</span>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => void sidebar?.showAllProjectsWarning()}>
+        {t('sidebar.warning.showDetails')}
+      </button>
+    </div>
+  {/if}
+
+  {#if selectedProjectMissing && !shelfExpanded}
+    <div class="library-warning library-warning--missing" role="status" aria-live="polite">
+      <strong>{t('error.projectFolderNotFound')}</strong>
+      <span>{library.activeProjectPath}</span>
+      <button type="button" class="btn btn--ghost btn--sm" onclick={() => void sidebar?.showMissingProjectRecovery()}>
+        {t('sidebar.missingProject.showDetails')}
+      </button>
+    </div>
+  {/if}
+
   <div
     class="library-workspace"
-    style={'--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth + 'px'}
+    class:library-workspace--shelf-collapsed={!shelfExpanded}
+    style={
+      '--sidebar-width:' + library.sidebarWidth + 'px;--library-width:' + library.libraryWidth +
+      'px;--sidebar-effective-width:' + effectiveSidebarWidth + 'px;--library-effective-width:' +
+      effectiveLibraryWidth + 'px'
+    }
   >
     <ProjectSidebar
+      bind:this={sidebar}
       onNewPrompt={openNewPrompt}
       {canNavigate}
       onNotice={notice}
+      {shelfExpanded}
+      onToggleShelf={() => (shelfExpanded = !shelfExpanded)}
+      onFocusSearch={focusSearch}
+      historyAvailable={Boolean(library.selected) && detailVisible}
+      onOpenHistory={() => detail?.showHistory()}
       requestName={askName}
       requestConfirm={askConfirm}
       onModalChange={(open) => (sidebarModalOpen = open)}
     />
-    <button type="button" class="pane-resizer" aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--sidebar" disabled={!shelfExpanded} aria-label={t('panes.resizeSidebar.aria')} onpointerdown={(event) => startResize('sidebar', event)}></button>
     <PromptLibrary onSelectPrompt={handleSelect} onNewPrompt={openNewPrompt} onBatch={handleBatch} />
-    <button type="button" class="pane-resizer" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
+    <button type="button" class="pane-resizer pane-resizer--library" aria-label={t('panes.resizeLibrary.aria')} onpointerdown={(event) => startResize('library', event)}></button>
     <PromptDetail
       bind:this={detail}
       document={library.selected}
