@@ -301,6 +301,77 @@ describe('responsive Floating Shelf contracts', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
   });
 
+  it('preserves capped preferred widths during outward drags and restores them after a round trip', async () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1180 });
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn(() => ({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }))
+    );
+    library.sidebarWidth = 360;
+    library.libraryWidth = 520;
+
+    const { container } = render(PromptsView);
+    const sidebarResizer = screen.getByRole('button', { name: 'Resize project sidebar' });
+    const libraryResizer = screen.getByRole('button', { name: 'Resize prompt library' });
+
+    await waitFor(() => {
+      const workspace = container.querySelector<HTMLElement>('.library-workspace');
+      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('272px');
+      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('384px');
+    });
+
+    await fireEvent.pointerDown(sidebarResizer, { clientX: 300 });
+    await fireEvent.pointerMove(window, { clientX: 310 });
+    await fireEvent.pointerUp(window, { clientX: 310 });
+    await waitFor(() => {
+      expect(library.sidebarWidth).toBe(360);
+      expect(JSON.parse(localStorage.getItem('prompt-library-ui') ?? '{}').sidebarWidth).toBe(360);
+    });
+
+    await fireEvent.pointerDown(libraryResizer, { clientX: 600 });
+    await fireEvent.pointerMove(window, { clientX: 610 });
+    await fireEvent.pointerUp(window, { clientX: 610 });
+    await waitFor(() => {
+      expect(library.libraryWidth).toBe(520);
+      expect(JSON.parse(localStorage.getItem('prompt-library-ui') ?? '{}').libraryWidth).toBe(520);
+    });
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1440 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      const workspace = container.querySelector<HTMLElement>('.library-workspace');
+      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('360px');
+      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('520px');
+    });
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1180 });
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => {
+      const workspace = container.querySelector<HTMLElement>('.library-workspace');
+      expect(workspace?.style.getPropertyValue('--sidebar-effective-width').trim()).toBe('272px');
+      expect(workspace?.style.getPropertyValue('--library-effective-width').trim()).toBe('384px');
+    });
+
+    await fireEvent.pointerDown(sidebarResizer, { clientX: 300 });
+    await fireEvent.pointerMove(window, { clientX: 290 });
+    await fireEvent.pointerMove(window, { clientX: 300 });
+    await fireEvent.pointerUp(window, { clientX: 300 });
+    await waitFor(() => expect(library.sidebarWidth).toBe(360));
+
+    await fireEvent.pointerDown(libraryResizer, { clientX: 600 });
+    await fireEvent.pointerMove(window, { clientX: 590 });
+    await fireEvent.pointerMove(window, { clientX: 600 });
+    await fireEvent.pointerUp(window, { clientX: 600 });
+    await waitFor(() => expect(library.libraryWidth).toBe(520));
+
+    Object.defineProperty(window, 'innerWidth', { configurable: true, value: previousWidth });
+  });
+
   it('keeps effective pane widths continuous around the 1280px boundary', async () => {
     const previousWidth = window.innerWidth;
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1180 });

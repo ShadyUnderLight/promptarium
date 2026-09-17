@@ -23,6 +23,7 @@
     setEditorDirtyProvider,
     setSearchQuery,
     setPaneWidth,
+    PANE_WIDTH_LIMITS,
     stopFilesystemWatch,
   } from '$lib/library.svelte';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
@@ -51,10 +52,10 @@
     destructive?: boolean;
   };
 
-  const MIN_SIDEBAR_WIDTH = 200;
-  const MAX_SIDEBAR_WIDTH = 360;
-  const MIN_LIBRARY_WIDTH = 280;
-  const MAX_LIBRARY_WIDTH = 520;
+  const MIN_SIDEBAR_WIDTH = PANE_WIDTH_LIMITS.sidebar.min;
+  const MAX_SIDEBAR_WIDTH = PANE_WIDTH_LIMITS.sidebar.max;
+  const MIN_LIBRARY_WIDTH = PANE_WIDTH_LIMITS.library.min;
+  const MAX_LIBRARY_WIDTH = PANE_WIDTH_LIMITS.library.max;
   const MIN_DETAIL_WIDTH = 456;
   const RAIL_AND_RESIZERS_WIDTH = 68;
   const BASELINE_SIDEBAR_CAP = 272;
@@ -531,13 +532,15 @@
     event.preventDefault();
     const startX = event.clientX;
     const startValue = which === 'sidebar' ? effectiveSidebarWidth : effectiveLibraryWidth;
+    const startPreferred = which === 'sidebar' ? library.sidebarWidth : library.libraryWidth;
     const minimum = which === 'sidebar' ? MIN_SIDEBAR_WIDTH : MIN_LIBRARY_WIDTH;
     const maximum = which === 'sidebar' ? effectivePaneCaps.sidebar : effectivePaneCaps.library;
     const move = (moveEvent: PointerEvent) => {
-      const next = Math.max(
-        minimum,
-        Math.min(maximum, startValue + moveEvent.clientX - startX)
-      );
+      const raw = startValue + moveEvent.clientX - startX;
+      const next =
+        startPreferred > maximum && raw >= maximum
+          ? startPreferred
+          : Math.max(minimum, Math.min(maximum, raw));
       setPaneWidth(which, next);
     };
     const stop = () => {
