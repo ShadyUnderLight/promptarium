@@ -39,6 +39,20 @@
         ? 'warning'
         : null
   );
+  const healthBadgeLabel = $derived(
+    healthSeverity === 'error'
+      ? t('library.healthSeverity.error')
+      : healthSeverity === 'warning'
+        ? t('library.healthSeverity.warning')
+        : ''
+  );
+  const healthBadgeAria = $derived(
+    healthSeverity === 'error'
+      ? t('library.healthBadge.error', { count: issues.length })
+      : healthSeverity === 'warning'
+        ? t('library.healthBadge.warning', { count: issues.length })
+        : ''
+  );
 </script>
 
 <div
@@ -62,9 +76,13 @@
           class="health-badge"
           class:health-badge--error={healthSeverity === 'error'}
           class:health-badge--warning={healthSeverity === 'warning'}
+          role="status"
+          aria-label={healthBadgeAria}
           title={healthTitle}
         >
-          <Icon name="warning" /> {issues.length}
+          <Icon name={healthSeverity === 'error' ? 'alert-circle' : 'warning'} />
+          <span class="health-badge__label">{healthBadgeLabel}</span>
+          <span class="health-badge__count" aria-hidden="true">{issues.length}</span>
         </span>
       {/if}
     </div>

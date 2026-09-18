@@ -111,7 +111,7 @@ describe('PromptListItem contract (Issue #64)', () => {
     expect(description?.classList.contains('prompt-list-item__description--excerpt')).toBe(true);
   });
 
-  it('applies error severity styling on the health badge', () => {
+  it('exposes error semantics beyond color on the health badge', () => {
     promptHealth.mockReturnValue([
       { code: 'INVALID_RELATED_PROMPT', severity: 'error', params: { path: 'missing' } },
     ]);
@@ -121,9 +121,12 @@ describe('PromptListItem contract (Issue #64)', () => {
     const badge = container.querySelector('.health-badge');
     expect(badge?.classList.contains('health-badge--error')).toBe(true);
     expect(badge?.classList.contains('health-badge--warning')).toBe(false);
+    expect(badge?.getAttribute('aria-label')).toBe('Error: 1 issues');
+    expect(badge?.querySelector('.health-badge__label')?.textContent).toBe('Error');
+    expect(badge?.innerHTML).toContain('<circle');
   });
 
-  it('applies warning severity styling when no error issues exist', () => {
+  it('exposes warning semantics beyond color on the health badge', () => {
     promptHealth.mockReturnValue([{ code: 'EMPTY_BODY', severity: 'warning' }]);
     const { container } = render(PromptListItem, {
       props: { ...listItemProps, prompt: summary() },
@@ -131,6 +134,9 @@ describe('PromptListItem contract (Issue #64)', () => {
     const badge = container.querySelector('.health-badge');
     expect(badge?.classList.contains('health-badge--warning')).toBe(true);
     expect(badge?.classList.contains('health-badge--error')).toBe(false);
+    expect(badge?.getAttribute('aria-label')).toBe('Warning: 1 issues');
+    expect(badge?.querySelector('.health-badge__label')?.textContent).toBe('Warn');
+    expect(badge?.innerHTML).toContain('3.86');
   });
 
   it('keeps name before description before meta in the DOM', () => {

@@ -119,6 +119,10 @@ export const zhCN = {
   // Prompt list items.
   'library.select.aria': '选择 {name}',
   'library.noDescription': '暂无描述',
+  'library.healthSeverity.warning': '警告',
+  'library.healthSeverity.error': '错误',
+  'library.healthBadge.warning': '警告：{count} 个问题',
+  'library.healthBadge.error': '错误：{count} 个问题',
   'library.projectRoot': '项目根目录',
   'library.variables.one': '{count} 个变量',
   'library.variables.other': '{count} 个变量',

@@ -1440,7 +1440,9 @@ body {
 .health-badge {
   display: inline-flex;
   align-items: center;
-  padding: 0.06rem 0.3rem;
+  gap: 0.18rem;
+  padding: 0.06rem 0.32rem;
+  border: 1px solid transparent;
   border-radius: 0.3rem;
   background: color-mix(in srgb, var(--accent-template) 14%, transparent);
   color: var(--warning);
@@ -1449,12 +1451,23 @@ body {
   white-space: nowrap;
 }
 
+.health-badge__label {
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.health-badge__count {
+  font-variant-numeric: tabular-nums;
+}
+
 .health-badge--warning {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
   background: color-mix(in srgb, var(--warning) 14%, transparent);
   color: var(--warning);
 }
 
 .health-badge--error {
+  border-color: color-mix(in srgb, var(--error) 40%, var(--border));
   background: color-mix(in srgb, var(--error) 14%, transparent);
   color: var(--error);
 }

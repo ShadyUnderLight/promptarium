@@ -122,6 +122,10 @@ export const en = {
   // Prompt list items.
   'library.select.aria': 'Select {name}',
   'library.noDescription': 'No description yet',
+  'library.healthSeverity.warning': 'Warn',
+  'library.healthSeverity.error': 'Error',
+  'library.healthBadge.warning': 'Warning: {count} issues',
+  'library.healthBadge.error': 'Error: {count} issues',
   'library.projectRoot': 'Project root',
   'library.variables.one': '{count} variable',
   'library.variables.other': '{count} variables',

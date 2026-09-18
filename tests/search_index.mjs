@@ -93,6 +93,14 @@ console.log('fenced code blocks keep inner text for excerpt');
   eq(bodyExcerptFromBody(fenced), 'const value = 42;', 'code-only prompt keeps body text');
   const entry = searchEntryFromDocument(document('code', 1000, fenced));
   eq(entry.bodyExcerpt, 'const value = 42;', 'search entry stores fenced-code excerpt');
+
+  const mixed =
+    'Intro text\n\n```python\ndef hello():\n    print("hello")\n```\n\nTail text';
+  eq(
+    bodyExcerptFromBody(mixed),
+    'Intro text def hello(): print("hello") Tail text',
+    'prose plus fenced code keeps both sides of the block'
+  );
 }
 
 console.log('bodyExcerpt truncates with an ellipsis');
