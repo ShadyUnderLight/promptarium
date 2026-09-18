@@ -149,6 +149,22 @@ console.log('fenced code blocks keep inner text for excerpt');
     'const s = "**literal**"; const link = "[x](y)";',
     'fenced code keeps markdown-like punctuation verbatim'
   );
+
+  eq(
+    bodyExcerptFromBody('[see `foo`](https://x.test)'),
+    'see foo',
+    'outer link markdown wraps inline code without leaving residue'
+  );
+  eq(
+    bodyExcerptFromBody('**use `__init__` here**'),
+    'use __init__ here',
+    'outer emphasis wraps inline code without leaving residue'
+  );
+  eq(
+    bodyExcerptFromBody('_around `code` text_'),
+    'around code text',
+    'outer underscore emphasis wraps inline code'
+  );
 }
 
 console.log('bodyExcerpt truncates with an ellipsis');

@@ -11,8 +11,9 @@ export function truncateExcerptText(text: string, maxLength: number): string {
 }
 
 const BACKTICK_FENCE = '```';
+const INLINE_CODE_PATTERN = /`([^`\n]*)`/g;
 
-export type ExcerptSegment =
+type ExcerptSegment =
   | { kind: 'text'; value: string }
   | { kind: 'code'; value: string };
 
@@ -23,34 +24,25 @@ function fenceMarkerAtLine(line: string): string | null {
   return null;
 }
 
-function splitInlineCodeSegments(segments: ExcerptSegment[]): ExcerptSegment[] {
-  const result: ExcerptSegment[] = [];
-  for (const segment of segments) {
-    if (segment.kind === 'code') {
-      result.push(segment);
-      continue;
-    }
-    const text = segment.value;
-    const pattern = /`([^`\n]*)`/g;
-    let lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        result.push({ kind: 'text', value: text.slice(lastIndex, match.index) });
-      }
-      result.push({ kind: 'code', value: match[1] });
-      lastIndex = match.index + match[0].length;
-    }
-    if (lastIndex < text.length) {
-      result.push({ kind: 'text', value: text.slice(lastIndex) });
-    }
-  }
-  return result;
+/** Temporarily replace inline code with sentinels so outer Markdown (links,
+ *  emphasis) can be stripped on the full prose string without mutating code
+ *  payloads — same placeholder idea as `markdown.ts` inline(). */
+function protectInlineCode(text: string): { text: string; values: string[] } {
+  const values: string[] = [];
+  const protectedText = text.replace(INLINE_CODE_PATTERN, (_, value: string) => {
+    values.push(value);
+    return `\u0001c${values.length - 1}\u0001`;
+  });
+  return { text: protectedText, values };
 }
 
-/** Split body into prose and code segments. Fenced blocks and inline backticks
- *  are code segments whose payload is never Markdown-stripped. */
-export function parseExcerptSegments(body: string): ExcerptSegment[] {
+function restoreInlineCode(text: string, values: string[]): string {
+  return text.replace(/\u0001c(\d+)\u0001/g, (_, index: string) => values[Number(index)] ?? '');
+}
+
+/** Split body into prose and fenced-code segments. Inline backticks stay in
+ *  prose and are protected during Markdown stripping. */
+function parseExcerptSegments(body: string): ExcerptSegment[] {
   const lines = body.replace(/\r\n?/g, '\n').split('\n');
   const segments: ExcerptSegment[] = [];
   let index = 0;
@@ -82,7 +74,7 @@ export function parseExcerptSegments(body: string): ExcerptSegment[] {
     index++;
   }
   flushProse();
-  return splitInlineCodeSegments(segments);
+  return segments;
 }
 
 function stripMarkdownFromProse(text: string): string {
@@ -99,16 +91,22 @@ function stripMarkdownFromProse(text: string): string {
   return stripped;
 }
 
-function flattenExcerptSegment(segment: ExcerptSegment): string {
-  const value =
-    segment.kind === 'code' ? segment.value : stripMarkdownFromProse(segment.value);
-  return value.replace(/\s+/g, ' ').trim();
+function stripProseExcerpt(text: string): string {
+  const protectedText = protectInlineCode(text);
+  const stripped = stripMarkdownFromProse(protectedText.text);
+  return restoreInlineCode(stripped, protectedText.values).replace(/\s+/g, ' ').trim();
+}
+
+function flattenFencedCode(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
 }
 
 /** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */
 export function stripMarkdownForExcerpt(body: string): string {
   const parts = parseExcerptSegments(body)
-    .map(flattenExcerptSegment)
+    .map((segment) =>
+      segment.kind === 'code' ? flattenFencedCode(segment.value) : stripProseExcerpt(segment.value)
+    )
     .filter((part) => part.length > 0);
   return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
