@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PromptDocument, PromptMetadata } from '$lib/prompts/types';
+  import type { PromptDocument, PromptMetadata, PromptStatus } from '$lib/prompts/types';
   import { cloneMetadata } from '$lib/prompts/duplicate';
   import { effectiveMetadataForSave } from '$lib/examples/editor-helpers';
   import {
@@ -25,6 +25,7 @@
   import NamePromptDialog from './NamePromptDialog.svelte';
   import { parseError } from '$lib/library/errors';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
+  import type { MessageKey } from '$lib/i18n/locales/en';
   import { parseVariables } from '$lib/variables/variables';
 
   interface Props {
@@ -132,6 +133,14 @@
   // and the Compare picker (both scoped to the same project, never cross-wired).
   const projectSummaries = $derived(
     library.allPrompts.filter((prompt) => prompt.projectPath === document?.projectPath)
+  );
+  const statusKeys: Record<PromptStatus, MessageKey> = {
+    active: 'newPrompt.status.active',
+    draft: 'newPrompt.status.draft',
+    archived: 'newPrompt.status.archived',
+  };
+  const statusLabel = $derived(
+    metadata ? t(statusKeys[metadata.status]) : ''
   );
 
   $effect(() => {
@@ -339,6 +348,10 @@
         </div>
         <span class="detail-path">{document.relativePath}</span>
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
+        <div class="detail-header__chips">
+          <span class={'status-chip status-chip--' + metadata.status}>{statusLabel}</span>
+          {#each metadata.tags as tag}<span class="tag-chip">#{tag}</span>{/each}
+        </div>
       </div>
       <div class="detail-header__actions">
         <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={actionCopy}>{t('detail.copy')}</button>

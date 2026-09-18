@@ -1,9 +1,152 @@
 import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
-import { parseVariables } from '$lib/variables/variables';
+import { parseVariables, variableSpans } from '$lib/variables/variables';
+
+export const BODY_EXCERPT_MAX_LENGTH = 120;
+
+/** Truncate by Unicode code point so astral symbols (emoji) are never split. */
+export function truncateExcerptText(text: string, maxLength: number): string {
+  const units = Array.from(text);
+  if (units.length <= maxLength) return text;
+  return units.slice(0, maxLength - 1).join('').trimEnd() + '…';
+}
+
+const BACKTICK_FENCE = '```';
+const INLINE_CODE_PATTERN = /`([^`\n]*)`/g;
+
+type ExcerptSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'code'; value: string };
+
+function fenceMarkerAtLine(line: string): string | null {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith(BACKTICK_FENCE)) return BACKTICK_FENCE;
+  if (trimmed.startsWith('~~~')) return '~~~';
+  return null;
+}
+
+/** Temporarily replace inline code with sentinels so outer Markdown (links,
+ *  emphasis) can be stripped on the full prose string without mutating code
+ *  payloads — same placeholder idea as `markdown.ts` inline(). */
+function protectInlineCode(text: string): { text: string; values: string[] } {
+  const values: string[] = [];
+  const protectedText = text.replace(INLINE_CODE_PATTERN, (_, value: string) => {
+    values.push(value);
+    return `\u0001c${values.length - 1}\u0001`;
+  });
+  return { text: protectedText, values };
+}
+
+function restoreInlineCode(text: string, values: string[]): string {
+  return text.replace(/\u0001c(\d+)\u0001/g, (_, index: string) => values[Number(index)] ?? '');
+}
+
+/** Temporarily replace variable tokens so Markdown emphasis regexes cannot
+ *  rewrite names like `{__name__}` or `{_x_}` — same order as `markdown.ts`. */
+function protectVariables(text: string): { text: string; values: string[] } {
+  const spans = variableSpans(text);
+  const values = spans.map((span) => text.slice(span.start, span.end));
+  let protectedText = text;
+  for (let index = spans.length - 1; index >= 0; index--) {
+    const span = spans[index];
+    protectedText =
+      protectedText.slice(0, span.start) + `\u0001v${index}\u0001` + protectedText.slice(span.end);
+  }
+  return { text: protectedText, values };
+}
+
+function restoreVariables(text: string, values: string[]): string {
+  return text.replace(/\u0001v(\d+)\u0001/g, (_, index: string) => values[Number(index)] ?? '');
+}
+
+/** Split body into prose and fenced-code segments. Inline backticks stay in
+ *  prose and are protected during Markdown stripping. */
+function parseExcerptSegments(body: string): ExcerptSegment[] {
+  const lines = body.replace(/\r\n?/g, '\n').split('\n');
+  const segments: ExcerptSegment[] = [];
+  let index = 0;
+  let proseBuffer: string[] = [];
+
+  function flushProse(): void {
+    if (!proseBuffer.length) return;
+    segments.push({ kind: 'text', value: proseBuffer.join('\n') });
+    proseBuffer = [];
+  }
+
+  while (index < lines.length) {
+    const marker = fenceMarkerAtLine(lines[index]);
+    if (marker) {
+      flushProse();
+      index++;
+      const blockLines: string[] = [];
+      while (index < lines.length && !lines[index].trimStart().startsWith(marker)) {
+        blockLines.push(lines[index]);
+        index++;
+      }
+      if (blockLines.length) {
+        segments.push({ kind: 'code', value: blockLines.join('\n') });
+      }
+      if (index < lines.length) index++;
+      continue;
+    }
+    proseBuffer.push(lines[index]);
+    index++;
+  }
+  flushProse();
+  return segments;
+}
+
+function stripMarkdownFromProse(text: string): string {
+  let stripped = text;
+  stripped = stripped.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  stripped = stripped.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  stripped = stripped.replace(/^#{1,6}\s+/gm, '');
+  stripped = stripped.replace(/^>\s?/gm, '');
+  stripped = stripped.replace(/^\s*[-*+]\s+/gm, '');
+  stripped = stripped.replace(/^\s*\d+\.\s+/gm, '');
+  stripped = stripped.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  stripped = stripped.replace(/(\*|_)(.*?)\1/g, '$2');
+  stripped = stripped.replace(/^[-*_]{3,}\s*$/gm, ' ');
+  return stripped;
+}
+
+function stripProseExcerpt(text: string): string {
+  const variables = protectVariables(text);
+  const code = protectInlineCode(variables.text);
+  const stripped = stripMarkdownFromProse(code.text);
+  const withCode = restoreInlineCode(stripped, code.values);
+  const restored = restoreVariables(withCode, variables.values);
+  return restored.replace(/\s+/g, ' ').trim();
+}
+
+function flattenFencedCode(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */
+export function stripMarkdownForExcerpt(body: string): string {
+  const parts = parseExcerptSegments(body)
+    .map((segment) =>
+      segment.kind === 'code' ? flattenFencedCode(segment.value) : stripProseExcerpt(segment.value)
+    )
+    .filter((part) => part.length > 0);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Plain-text excerpt for prompt list rows; undefined when the body is empty. */
+export function bodyExcerptFromBody(
+  body: string,
+  maxLength = BODY_EXCERPT_MAX_LENGTH
+): string | undefined {
+  const stripped = stripMarkdownForExcerpt(body);
+  if (!stripped) return undefined;
+  return truncateExcerptText(stripped, maxLength);
+}
 
 export interface SearchEntry {
   summary: PromptSummary;
   bodyLower: string;
+  /** Plain-text list excerpt from this round's body read; absent on scan fallback. */
+  bodyExcerpt?: string;
   variableCount?: number;
   /** Variable names in first-appearance order, produced by the one body parser.
    *  Present when the body was read; absent on the scan fallback. Prompt Health
@@ -27,9 +170,11 @@ export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
     frontmatterError: document.frontmatterError,
   };
   const variables = parseVariables(document.body);
+  const bodyExcerpt = bodyExcerptFromBody(document.body);
   return {
     summary,
     bodyLower: document.body.toLowerCase(),
+    ...(bodyExcerpt ? { bodyExcerpt } : {}),
     variableCount: variables.length,
     variableNames: variables.map((variable) => variable.name),
     bodyEmpty: document.body.trim().length === 0,

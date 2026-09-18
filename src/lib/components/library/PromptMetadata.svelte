@@ -331,7 +331,7 @@
   <dl class="metadata-inspector">
     <div><dt>{t('meta.description')}</dt><dd>{metadata.description || t('meta.noDescription')}</dd></div>
     <div><dt>{t('meta.status')}</dt><dd><span class={'status-chip status-chip--' + metadata.status}>{statusLabel}</span></dd></div>
-    <div><dt>{t('meta.tags')}</dt><dd>{#if metadata.tags.length}{#each metadata.tags as tag (tag)}<span class="tag-chip">#{tag}</span>{/each}{:else}<span class="detail-muted">{t('meta.none')}</span>{/if}</dd></div>
+    <div><dt>{t('meta.tags')}</dt><dd>{#if metadata.tags.length}{#each metadata.tags as tag}<span class="tag-chip">#{tag}</span>{/each}{:else}<span class="detail-muted">{t('meta.none')}</span>{/if}</dd></div>
     <div><dt>{t('newPrompt.models')}</dt><dd>{metadata.models.join(', ') || t('meta.anyModel')}</dd></div>
     <div><dt>{t('meta.created')}</dt><dd>{metadata.created ?? t('meta.unknown')}</dd></div>
   </dl>

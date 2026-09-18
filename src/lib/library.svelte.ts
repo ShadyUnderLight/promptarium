@@ -50,6 +50,7 @@ import { defaultPromptMetadata, getVariantOf, hasInvalidVariantOfType } from './
 import { cloneMetadata, duplicateMetadata, variantMetadata } from './prompts/duplicate';
 import { findVariantCycleMembers } from './variants/variants';
 import {
+  bodyExcerptFromBody,
   buildSearchIndex,
   buildUntilRevisionStable,
   searchEntryFromDocument,
@@ -155,6 +156,7 @@ const diffCache = new Map<string, GitFileDiff>();
 const searchIndexes = new Map<string, Map<string, SearchEntry>>();
 const searchIndexRevisions = new Map<string, number>();
 const variableCounts = new Map<string, number>();
+const bodyExcerpts = new Map<string, string>();
 /** Disposable derived index: promptKey -> deterministic structural issues. Like
  *  variableCounts, it is never written back to Markdown and is rebuilt from the
  *  same search-index rebuild pass (so Health never triggers a second body
@@ -256,9 +258,16 @@ function syncVariableCounts(projectPath: string, index: Map<string, SearchEntry>
   for (const key of variableCounts.keys()) {
     if (key.startsWith(prefix)) variableCounts.delete(key);
   }
+  for (const key of bodyExcerpts.keys()) {
+    if (key.startsWith(prefix)) bodyExcerpts.delete(key);
+  }
   for (const entry of index.values()) {
+    const key = promptKey(projectPath, entry.summary.name);
     if (entry.variableCount !== undefined) {
-      variableCounts.set(promptKey(projectPath, entry.summary.name), entry.variableCount);
+      variableCounts.set(key, entry.variableCount);
+    }
+    if (entry.bodyExcerpt) {
+      bodyExcerpts.set(key, entry.bodyExcerpt);
     }
   }
 }
@@ -313,7 +322,11 @@ function updateSearchEntry(document: PromptDocument): void {
   if (!index) return;
   const entry = searchEntryFromDocument(document);
   index.set(document.name, entry);
-  variableCounts.set(promptKey(document.projectPath, document.name), entry.variableCount ?? 0);
+  const key = promptKey(document.projectPath, document.name);
+  if (entry.variableCount !== undefined) variableCounts.set(key, entry.variableCount);
+  else variableCounts.delete(key);
+  if (entry.bodyExcerpt) bodyExcerpts.set(key, entry.bodyExcerpt);
+  else bodyExcerpts.delete(key);
   // Health depends on project-wide variantOf state: a cycle is a cross-prompt
   // derived relation, so after any save the whole project must be re-derived —
   // updating only this entry would leave the other cycle members (and prompts
@@ -1217,6 +1230,16 @@ export function promptVariableCount(prompt: PromptSummary): number | null {
   if (cached !== undefined) return cached;
   if (library.selected?.projectPath === prompt.projectPath && library.selected.name === prompt.name) {
     return parseVariables(library.selected.body).length;
+  }
+  return null;
+}
+
+export function promptBodyExcerpt(prompt: PromptSummary): string | null {
+  library.searchIndexVersion;
+  const cached = bodyExcerpts.get(promptKey(prompt.projectPath, prompt.name));
+  if (cached !== undefined) return cached;
+  if (library.selected?.projectPath === prompt.projectPath && library.selected.name === prompt.name) {
+    return bodyExcerptFromBody(library.selected.body) ?? null;
   }
   return null;
 }
