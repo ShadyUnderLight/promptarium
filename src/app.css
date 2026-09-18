@@ -1177,8 +1177,17 @@ body {
 .prompt-detail.prompt-detail--edit .detail-header,
 .prompt-detail.prompt-detail--edit .detail-toolbar,
 .prompt-detail.prompt-detail--edit .detail-error,
-.prompt-detail.prompt-detail--edit .frontmatter-warning {
+.prompt-detail.prompt-detail--edit .frontmatter-warning,
+.prompt-detail.prompt-detail--edit .detail-edit-actions {
   flex-shrink: 0;
+}
+
+.detail-edit-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
 }
 
 .detail-header {

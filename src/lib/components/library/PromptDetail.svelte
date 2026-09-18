@@ -111,7 +111,6 @@
     const mq = window.matchMedia('(min-width: 901px)');
     const sync = (): void => {
       inspectorWide = mq.matches;
-      if (mq.matches) inspectorOpen = true;
     };
     sync();
     if (typeof mq.addEventListener === 'function') {
@@ -435,6 +434,15 @@
             <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
           </div>
         {/each}
+      </div>
+    {/if}
+
+    {#if mode === 'edit' && rawVisible}
+      <div class="detail-edit-actions">
+        {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+        <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
+          {saving ? t('detail.saving') : t('detail.save')}
+        </button>
       </div>
     {/if}
 

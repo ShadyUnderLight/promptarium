@@ -47,18 +47,42 @@ const detailProps = {
   onNavigate: vi.fn(),
 };
 
-function stubMatchMedia(matchesWide: boolean): void {
+type MediaQueryListener = (event: MediaQueryListEvent) => void;
+
+function mediaQueryStub(initialMatches: boolean) {
+  let matches = initialMatches;
+  const listeners = new Set<MediaQueryListener>();
+  return {
+    get matches() {
+      return matches;
+    },
+    media: '(min-width: 901px)',
+    addEventListener: vi.fn((_event: string, listener: MediaQueryListener) => {
+      listeners.add(listener);
+    }),
+    removeEventListener: vi.fn((_event: string, listener: MediaQueryListener) => {
+      listeners.delete(listener);
+    }),
+    addListener: vi.fn((listener: MediaQueryListener) => {
+      listeners.add(listener);
+    }),
+    removeListener: vi.fn((listener: MediaQueryListener) => {
+      listeners.delete(listener);
+    }),
+    fire(next: boolean): void {
+      matches = next;
+      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+    },
+  };
+}
+
+function stubInspectorMediaQuery(initialWide: boolean): ReturnType<typeof mediaQueryStub> {
+  const inspectorMq = mediaQueryStub(initialWide);
   vi.stubGlobal(
     'matchMedia',
-    vi.fn((query: string) => ({
-      matches: query.includes('901px') ? matchesWide : false,
-      media: query,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-    }))
+    vi.fn((query: string) => (query.includes('901px') ? inspectorMq : mediaQueryStub(false)))
   );
+  return inspectorMq;
 }
 
 afterEach(() => {
@@ -69,7 +93,7 @@ afterEach(() => {
 
 describe('PromptDetail edit layout (Issue #65)', () => {
   beforeEach(() => {
-    stubMatchMedia(true);
+    stubInspectorMediaQuery(true);
   });
 
   it('keeps metadata in the inspector and drops preview footer sections in Edit', async () => {
@@ -121,7 +145,7 @@ describe('PromptDetail edit layout (Issue #65)', () => {
   });
 
   it('exposes Save on the canvas toolbar when the inspector sheet is closed at 900px', async () => {
-    stubMatchMedia(false);
+    stubInspectorMediaQuery(false);
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
@@ -131,5 +155,37 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     expect(canvasToolbar).toBeTruthy();
     expect(within(canvasToolbar as HTMLElement).getByRole('button', { name: 'Save changes' })).toBeTruthy();
     expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
+  });
+
+  it('keeps Save visible while showing the raw file in Edit', async () => {
+    const document: PromptDocument = {
+      ...documentFixture(),
+      frontmatterError: 'invalid yaml',
+      raw: '---\nbad\n---\nBody',
+    };
+    render(PromptDetail, {
+      props: { ...detailProps, document },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    await fireEvent.input(screen.getByLabelText('Prompt Markdown'), { target: { value: 'Changed body' } });
+    await fireEvent.click(screen.getByRole('button', { name: 'Show raw file' }));
+
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
+    expect(screen.queryByLabelText('Prompt Markdown')).toBeNull();
+  });
+
+  it('preserves a closed narrow inspector sheet after a wide → narrow resize round trip', async () => {
+    const inspectorMq = stubInspectorMediaQuery(false);
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
+
+    inspectorMq.fire(true);
+    await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeTruthy());
+
+    inspectorMq.fire(false);
+    await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy());
   });
 });
