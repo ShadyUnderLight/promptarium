@@ -100,8 +100,9 @@ function stripMarkdownFromProse(text: string): string {
 }
 
 function flattenExcerptSegment(segment: ExcerptSegment): string {
-  const flattened = segment.value.replace(/\s+/g, ' ').trim();
-  return segment.kind === 'code' ? flattened : stripMarkdownFromProse(flattened);
+  const value =
+    segment.kind === 'code' ? segment.value : stripMarkdownFromProse(segment.value);
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 /** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */

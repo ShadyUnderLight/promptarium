@@ -80,6 +80,16 @@ console.log('bodyExcerpt preserves case and strips Markdown');
   );
   eq(entry.bodyExcerpt, 'Title Hello World with code and link', 'excerpt keeps readable text');
   eq(
+    bodyExcerptFromBody('# Title\n- first\n- second'),
+    'Title first second',
+    'multi-line list markers are stripped before whitespace flattening'
+  );
+  eq(
+    bodyExcerptFromBody('Intro\n> quoted text\n1. first\n2. second'),
+    'Intro quoted text first second',
+    'blockquote and ordered-list markers are stripped per line'
+  );
+  eq(
     stripMarkdownForExcerpt('UPPER lower MiXeD'),
     'UPPER lower MiXeD',
     'excerpt does not lowercase'
