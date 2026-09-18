@@ -16,6 +16,7 @@ const {
   buildSearchIndex,
   searchEntryFromDocument,
   stripMarkdownForExcerpt,
+  truncateExcerptText,
 } = await import(join(root, 'src/lib/library/search-index.ts'));
 
 let failures = 0;
@@ -86,12 +87,37 @@ console.log('bodyExcerpt preserves case and strips Markdown');
   eq(bodyExcerptFromBody('   '), undefined, 'whitespace-only body has no excerpt');
 }
 
+console.log('fenced code blocks keep inner text for excerpt');
+{
+  const fenced = '```ts\nconst value = 42;\n```';
+  eq(bodyExcerptFromBody(fenced), 'const value = 42;', 'code-only prompt keeps body text');
+  const entry = searchEntryFromDocument(document('code', 1000, fenced));
+  eq(entry.bodyExcerpt, 'const value = 42;', 'search entry stores fenced-code excerpt');
+}
+
 console.log('bodyExcerpt truncates with an ellipsis');
 {
   const long = 'word '.repeat(40).trim();
   const excerpt = bodyExcerptFromBody(long);
   assert(excerpt && excerpt.endsWith('…'), 'long body is truncated');
-  assert(excerpt.length <= BODY_EXCERPT_MAX_LENGTH, 'excerpt respects max length');
+  assert(
+    Array.from(excerpt).length <= BODY_EXCERPT_MAX_LENGTH,
+    'excerpt respects max length in code points'
+  );
+}
+
+console.log('bodyExcerpt truncates without splitting emoji code points');
+{
+  const boundary = 'a'.repeat(117) + '😀zz';
+  const excerpt = bodyExcerptFromBody(boundary, 119);
+  eq(excerpt, 'a'.repeat(117) + '😀…', 'emoji at the truncation boundary stays intact');
+  assert(!excerpt.includes('\uFFFD'), 'no replacement character from split surrogates');
+  eq(Array.from(excerpt).length, 119, 'truncated excerpt stays within the code-point budget');
+  eq(
+    truncateExcerptText('中文😀混合', 4),
+    '中文😀…',
+    'mixed CJK and emoji truncate on code-point boundaries'
+  );
 }
 
 console.log('failed body read keeps summary-only entry without excerpt');

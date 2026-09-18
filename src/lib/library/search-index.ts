@@ -3,10 +3,23 @@ import { parseVariables } from '$lib/variables/variables';
 
 export const BODY_EXCERPT_MAX_LENGTH = 120;
 
+/** Truncate by Unicode code point so astral symbols (emoji) are never split. */
+export function truncateExcerptText(text: string, maxLength: number): string {
+  const units = Array.from(text);
+  if (units.length <= maxLength) return text;
+  return units.slice(0, maxLength - 1).join('').trimEnd() + '…';
+}
+
+/** Remove fenced-code delimiters while keeping the block body (code-only prompts). */
+function unwrapFencedCodeBlocks(text: string): string {
+  let result = text.replace(/```[^\n`]*\n?/g, ' ');
+  result = result.replace(/```/g, ' ');
+  return result;
+}
+
 /** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */
 export function stripMarkdownForExcerpt(body: string): string {
-  let text = body;
-  text = text.replace(/```[\s\S]*?```/g, ' ');
+  let text = unwrapFencedCodeBlocks(body);
   text = text.replace(/`([^`\n]*)`/g, '$1');
   text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
   text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
@@ -27,8 +40,7 @@ export function bodyExcerptFromBody(
 ): string | undefined {
   const stripped = stripMarkdownForExcerpt(body);
   if (!stripped) return undefined;
-  if (stripped.length <= maxLength) return stripped;
-  return stripped.slice(0, maxLength - 1).trimEnd() + '…';
+  return truncateExcerptText(stripped, maxLength);
 }
 
 export interface SearchEntry {
