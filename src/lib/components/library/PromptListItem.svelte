@@ -81,7 +81,7 @@
     <div class="prompt-list-item__meta">
       {#if projectLabel}<span class="prompt-list-item__project">{projectLabel}</span>{/if}
       <span class="prompt-list-item__path">{prompt.folder || t('library.projectRoot')}</span>
-      {#each prompt.metadata.tags.slice(0, 3) as tag (tag)}<span class="tag-chip">#{tag}</span>{/each}
+      {#each prompt.metadata.tags.slice(0, 3) as tag}<span class="tag-chip">#{tag}</span>{/each}
       <span class={'status-chip status-chip--' + prompt.metadata.status}>{statusLabel}</span>
       {#if variableCount !== null}<span>{tPlural('library.variables', variableCount)}</span>{/if}
       <span>{formatModifiedAt(prompt.modifiedAt)}</span>

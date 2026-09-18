@@ -183,4 +183,30 @@ describe('PromptDetail header contract (Issue #64)', () => {
     expect(chips?.textContent).toContain('#coding');
     expect(container.querySelector('.detail-header .status-chip--draft')).toBeTruthy();
   });
+
+  it('renders duplicate tags without keyed-each conflicts', () => {
+    const document: PromptDocument = {
+      ...summary({
+        metadata: {
+          description: 'Desc',
+          tags: ['review', 'coding', 'review'],
+          status: 'draft',
+          favorite: false,
+          models: [],
+          related: [],
+          extra: {},
+        },
+      }),
+      body: 'Body',
+      raw: 'Body',
+    };
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document },
+    });
+    const tagChips = container.querySelectorAll('.detail-header__chips .tag-chip');
+    expect(tagChips).toHaveLength(3);
+    expect(tagChips[0]?.textContent).toBe('#review');
+    expect(tagChips[1]?.textContent).toBe('#coding');
+    expect(tagChips[2]?.textContent).toBe('#review');
+  });
 });

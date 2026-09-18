@@ -350,7 +350,7 @@
         <span class="detail-folder">{document.folder || t('library.projectRoot')} · {formatModifiedAt(document.modifiedAt)}</span>
         <div class="detail-header__chips">
           <span class={'status-chip status-chip--' + metadata.status}>{statusLabel}</span>
-          {#each metadata.tags as tag (tag)}<span class="tag-chip">#{tag}</span>{/each}
+          {#each metadata.tags as tag}<span class="tag-chip">#{tag}</span>{/each}
         </div>
       </div>
       <div class="detail-header__actions">
