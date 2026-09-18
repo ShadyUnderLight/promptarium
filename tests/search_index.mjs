@@ -17,6 +17,7 @@ const {
   searchEntryFromDocument,
   stripMarkdownForExcerpt,
   truncateExcerptText,
+  unwrapFencedCodeBlocks,
 } = await import(join(root, 'src/lib/library/search-index.ts'));
 
 let failures = 0;
@@ -101,6 +102,29 @@ console.log('fenced code blocks keep inner text for excerpt');
     'Intro text def hello(): print("hello") Tail text',
     'prose plus fenced code keeps both sides of the block'
   );
+
+  eq(
+    bodyExcerptFromBody('Use ```literal``` delimiters'),
+    'Use literal delimiters',
+    'inline triple-backtick prose is not treated as a fence'
+  );
+
+  const tildeFence = '~~~python\nprint("hello")\n~~~';
+  eq(bodyExcerptFromBody(tildeFence), 'print("hello")', 'tilde fences unwrap like backtick fences');
+
+  const tildeMixed = 'Before\n\n~~~js\nconst x = 1;\n~~~\n\nAfter';
+  eq(
+    bodyExcerptFromBody(tildeMixed),
+    'Before const x = 1; After',
+    'prose plus tilde fence keeps surrounding text'
+  );
+
+  eq(
+    stripMarkdownForExcerpt('Use ```literal``` delimiters'),
+    'Use literal delimiters',
+    'unwrap leaves inline backticks for the inline-code pass'
+  );
+  eq(unwrapFencedCodeBlocks(tildeFence), 'print("hello")', 'unwrap helper strips only fence lines');
 }
 
 console.log('bodyExcerpt truncates with an ellipsis');

@@ -121,9 +121,10 @@ describe('PromptListItem contract (Issue #64)', () => {
     const badge = container.querySelector('.health-badge');
     expect(badge?.classList.contains('health-badge--error')).toBe(true);
     expect(badge?.classList.contains('health-badge--warning')).toBe(false);
-    expect(badge?.getAttribute('aria-label')).toBe('Error: 1 issues');
+    expect(badge?.getAttribute('role')).toBeNull();
+    expect(badge?.textContent?.trim()).toBe('Error 1');
     expect(badge?.querySelector('.health-badge__label')?.textContent).toBe('Error');
-    expect(badge?.innerHTML).toContain('<circle');
+    expect(badge?.querySelector('[data-icon="alert-circle"]')).toBeTruthy();
   });
 
   it('exposes warning semantics beyond color on the health badge', () => {
@@ -134,9 +135,10 @@ describe('PromptListItem contract (Issue #64)', () => {
     const badge = container.querySelector('.health-badge');
     expect(badge?.classList.contains('health-badge--warning')).toBe(true);
     expect(badge?.classList.contains('health-badge--error')).toBe(false);
-    expect(badge?.getAttribute('aria-label')).toBe('Warning: 1 issues');
-    expect(badge?.querySelector('.health-badge__label')?.textContent).toBe('Warn');
-    expect(badge?.innerHTML).toContain('3.86');
+    expect(badge?.getAttribute('role')).toBeNull();
+    expect(badge?.textContent?.trim()).toBe('Warning 1');
+    expect(badge?.querySelector('.health-badge__label')?.textContent).toBe('Warning');
+    expect(badge?.querySelector('[data-icon="warning"]')).toBeTruthy();
   });
 
   it('keeps name before description before meta in the DOM', () => {

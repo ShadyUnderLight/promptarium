@@ -10,11 +10,41 @@ export function truncateExcerptText(text: string, maxLength: number): string {
   return units.slice(0, maxLength - 1).join('').trimEnd() + '…';
 }
 
-/** Remove fenced-code delimiters while keeping the block body (code-only prompts). */
-function unwrapFencedCodeBlocks(text: string): string {
-  let result = text.replace(/```[^\n`]*\n?/g, ' ');
-  result = result.replace(/```/g, ' ');
-  return result;
+const BACKTICK_FENCE = '```';
+
+function fenceMarkerAtLine(line: string): string | null {
+  const trimmed = line.trimStart();
+  if (trimmed.startsWith(BACKTICK_FENCE)) return BACKTICK_FENCE;
+  if (trimmed.startsWith('~~~')) return '~~~';
+  return null;
+}
+
+/** Remove fenced-code delimiter lines while keeping block bodies. Matches the
+ *  preview renderer: only line-leading ``` or ~~~ open/close fences; inline
+ *  triple-backtick prose is left for the inline-code pass. */
+export function unwrapFencedCodeBlocks(text: string): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const parts: string[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const marker = fenceMarkerAtLine(lines[index]);
+    if (marker) {
+      index++;
+      const blockLines: string[] = [];
+      while (index < lines.length && !lines[index].trimStart().startsWith(marker)) {
+        blockLines.push(lines[index]);
+        index++;
+      }
+      if (blockLines.length) parts.push(blockLines.join(' '));
+      if (index < lines.length) index++;
+      continue;
+    }
+    parts.push(lines[index]);
+    index++;
+  }
+
+  return parts.join(' ');
 }
 
 /** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */

@@ -72,6 +72,7 @@
 
 <svg
   class="icon"
+  data-icon={name}
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
