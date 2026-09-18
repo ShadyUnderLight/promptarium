@@ -1,5 +1,5 @@
 import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
-import { parseVariables } from '$lib/variables/variables';
+import { parseVariables, variableSpans } from '$lib/variables/variables';
 
 export const BODY_EXCERPT_MAX_LENGTH = 120;
 
@@ -38,6 +38,24 @@ function protectInlineCode(text: string): { text: string; values: string[] } {
 
 function restoreInlineCode(text: string, values: string[]): string {
   return text.replace(/\u0001c(\d+)\u0001/g, (_, index: string) => values[Number(index)] ?? '');
+}
+
+/** Temporarily replace variable tokens so Markdown emphasis regexes cannot
+ *  rewrite names like `{__name__}` or `{_x_}` — same order as `markdown.ts`. */
+function protectVariables(text: string): { text: string; values: string[] } {
+  const spans = variableSpans(text);
+  const values = spans.map((span) => text.slice(span.start, span.end));
+  let protectedText = text;
+  for (let index = spans.length - 1; index >= 0; index--) {
+    const span = spans[index];
+    protectedText =
+      protectedText.slice(0, span.start) + `\u0001v${index}\u0001` + protectedText.slice(span.end);
+  }
+  return { text: protectedText, values };
+}
+
+function restoreVariables(text: string, values: string[]): string {
+  return text.replace(/\u0001v(\d+)\u0001/g, (_, index: string) => values[Number(index)] ?? '');
 }
 
 /** Split body into prose and fenced-code segments. Inline backticks stay in
@@ -92,9 +110,12 @@ function stripMarkdownFromProse(text: string): string {
 }
 
 function stripProseExcerpt(text: string): string {
-  const protectedText = protectInlineCode(text);
-  const stripped = stripMarkdownFromProse(protectedText.text);
-  return restoreInlineCode(stripped, protectedText.values).replace(/\s+/g, ' ').trim();
+  const variables = protectVariables(text);
+  const code = protectInlineCode(variables.text);
+  const stripped = stripMarkdownFromProse(code.text);
+  const withCode = restoreInlineCode(stripped, code.values);
+  const restored = restoreVariables(withCode, variables.values);
+  return restored.replace(/\s+/g, ' ').trim();
 }
 
 function flattenFencedCode(text: string): string {

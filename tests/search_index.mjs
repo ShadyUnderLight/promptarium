@@ -165,6 +165,20 @@ console.log('fenced code blocks keep inner text for excerpt');
     'around code text',
     'outer underscore emphasis wraps inline code'
   );
+
+  eq(bodyExcerptFromBody('Use {__name__}'), 'Use {__name__}', 'dunder variable names stay verbatim');
+  eq(bodyExcerptFromBody('Use {_x_}'), 'Use {_x_}', 'underscore variable names stay verbatim');
+  eq(
+    bodyExcerptFromBody('**Value {__name__}**'),
+    'Value {__name__}',
+    'outer emphasis does not rewrite variable tokens'
+  );
+
+  const variableEntry = searchEntryFromDocument(
+    document('vars', 1000, 'Fill in {__name__} and {_x_}')
+  );
+  eq(variableEntry.bodyExcerpt, 'Fill in {__name__} and {_x_}', 'search entry excerpt keeps variable tokens');
+  eq(variableEntry.variableNames, ['__name__', '_x_'], 'variable names match excerpt tokens');
 }
 
 console.log('bodyExcerpt truncates with an ellipsis');
