@@ -631,7 +631,8 @@ describe('responsive Floating Shelf contracts', () => {
       expect(rail.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
     });
     expect(shelfQuery.addListener).toHaveBeenCalledOnce();
-    expect(detailQuery.addListener).toHaveBeenCalledOnce();
+    // PromptsView (720px detail rail) and PromptDetail (901px inspector) share the legacy stub.
+    expect(detailQuery.addListener).toHaveBeenCalledTimes(2);
 
     shelfQuery.fire(true);
     await waitFor(() => {
@@ -640,6 +641,6 @@ describe('responsive Floating Shelf contracts', () => {
 
     cleanup();
     expect(shelfQuery.removeListener).toHaveBeenCalledOnce();
-    expect(detailQuery.removeListener).toHaveBeenCalledOnce();
+    expect(detailQuery.removeListener).toHaveBeenCalledTimes(2);
   });
 });

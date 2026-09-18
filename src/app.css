@@ -512,6 +512,10 @@ body {
   overflow: auto;
 }
 
+.library-workspace > .prompt-detail.prompt-detail--edit {
+  overflow: hidden;
+}
+
 .library-rail {
   display: flex;
   flex-direction: column;
@@ -1163,6 +1167,20 @@ body {
   background: var(--surface-content);
 }
 
+.prompt-detail.prompt-detail--edit {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 1rem;
+}
+
+.prompt-detail.prompt-detail--edit .detail-header,
+.prompt-detail.prompt-detail--edit .detail-toolbar,
+.prompt-detail.prompt-detail--edit .detail-error,
+.prompt-detail.prompt-detail--edit .frontmatter-warning {
+  flex-shrink: 0;
+}
+
 .detail-header {
   display: flex;
   align-items: flex-start;
@@ -1657,10 +1675,11 @@ body {
 .editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(12rem, 17rem);
+  grid-template-rows: minmax(0, 1fr);
   gap: 1.25rem;
   min-height: 0;
-  flex: 1;
-  align-items: stretch;
+  flex: 1 1 auto;
+  overflow: hidden;
 }
 
 .editor-canvas {
@@ -1669,11 +1688,16 @@ body {
   display: flex;
   flex-direction: column;
   max-width: 54rem;
+  overflow: hidden;
 }
 
 .editor-canvas__toolbar {
   display: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
   margin-bottom: 0.35rem;
+  flex-shrink: 0;
 }
 
 .editor-inspector {
@@ -1716,9 +1740,13 @@ body {
   margin-left: auto;
 }
 
+.metadata-inspector-section__slot {
+  margin-top: 0.65rem;
+}
+
 .editor-inspector__notes-health {
-  margin-top: 0.75rem;
-  padding-top: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.65rem;
   border-top: 1px solid var(--border);
 }
 
@@ -1783,6 +1811,7 @@ body {
   color: var(--text-muted);
   font-size: 0.68rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .field small {
@@ -1810,6 +1839,10 @@ body {
 .field textarea:focus,
 .field select:focus {
   border-color: color-mix(in srgb, var(--accent-user) 70%, var(--border));
+}
+
+.editor-hint {
+  flex-shrink: 0;
 }
 
 .editor-hint,
@@ -2889,10 +2922,6 @@ body {
 }
 
 @media (min-width: 901px) {
-  .editor-inspector {
-    display: flex;
-  }
-
   .editor-inspector-toggle,
   .editor-inspector__close {
     display: none;

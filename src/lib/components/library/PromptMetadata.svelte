@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { PromptMetadata as Metadata, PromptStatus, PromptSummary, VariableDoc, PromptExample } from '$lib/prompts/types';
   import { getVariantOf, getVariantOfRaw, withVariantOf } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
@@ -32,6 +33,10 @@
       options?: { confirmLabel?: string; cancelLabel?: string; destructive?: boolean }
     ) => Promise<boolean>;
     onChange: (metadata: Metadata) => void;
+    /** Read-only relation/family blocks slotted into the Relations section. */
+    relationsReadonly?: Snippet;
+    /** Health and preserved extras slotted into the Notes section. */
+    notesReadonly?: Snippet;
   }
 
   let {
@@ -45,6 +50,8 @@
     refreshVersion = 0,
     requestConfirm,
     onChange,
+    relationsReadonly,
+    notesReadonly,
   }: Props = $props();
 
   // Display label for the status chip; the machine value in metadata.status
@@ -184,7 +191,7 @@
 </script>
 
 {#if editing}
-  <div class="metadata-editor">
+  <div class="metadata-editor" data-testid="metadata-inspector-sections">
     <MetadataInspectorSection title={t('detail.inspector.section.status')}>
       <div class="metadata-grid metadata-grid--inspector">
         <label class="field">
@@ -337,6 +344,11 @@
           <p class="detail-muted">{t('meta.noVariantCandidates')}</p>
         {/if}
       </div>
+      {#if relationsReadonly}
+        <div class="metadata-inspector-section__slot">
+          {@render relationsReadonly()}
+        </div>
+      {/if}
     </MetadataInspectorSection>
 
     <MetadataInspectorSection title={t('detail.inspector.section.notes')}>
@@ -344,6 +356,11 @@
         <span>{t('meta.usageNotes')} <small>{t('meta.usageNotesHint')}</small></span>
         <textarea class="notes-editor" value={metadata.notes ?? ''} oninput={(event) => setField('notes', event.currentTarget.value || undefined)} placeholder={t('meta.notes.placeholder')}></textarea>
       </label>
+      {#if notesReadonly}
+        <div class="metadata-inspector-section__slot">
+          {@render notesReadonly()}
+        </div>
+      {/if}
     </MetadataInspectorSection>
   </div>
 {:else}

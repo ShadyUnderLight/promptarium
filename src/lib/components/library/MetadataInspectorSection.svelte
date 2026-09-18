@@ -10,7 +10,7 @@
   let open = $state(true);
 </script>
 
-<section class="metadata-inspector-section">
+<section class="metadata-inspector-section" data-collapsed={!open}>
   <button
     type="button"
     class="metadata-inspector-section__toggle"

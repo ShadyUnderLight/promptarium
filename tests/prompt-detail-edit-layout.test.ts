@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import PromptDetail from '../src/lib/components/library/PromptDetail.svelte';
 import type { PromptDocument } from '../src/lib/prompts/types';
@@ -21,7 +21,7 @@ function documentFixture(): PromptDocument {
       status: 'active',
       favorite: false,
       models: [],
-      related: [],
+      related: ['other'],
       extra: {},
     },
   };
@@ -47,12 +47,31 @@ const detailProps = {
   onNavigate: vi.fn(),
 };
 
+function stubMatchMedia(matchesWide: boolean): void {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn((query: string) => ({
+      matches: query.includes('901px') ? matchesWide : false,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+    }))
+  );
+}
+
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
 describe('PromptDetail edit layout (Issue #65)', () => {
+  beforeEach(() => {
+    stubMatchMedia(true);
+  });
+
   it('keeps metadata in the inspector and drops preview footer sections in Edit', async () => {
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
@@ -63,6 +82,7 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     expect(inspector).toBeTruthy();
     expect(within(inspector as HTMLElement).getByRole('button', { name: 'Save changes' })).toBeTruthy();
     expect(container.querySelector('.detail-footer')).toBeNull();
+    expect(container.querySelector('.prompt-detail--edit')).toBeTruthy();
     expect(container.querySelector('.editor-canvas .prompt-editor')).toBeTruthy();
     expect(container.querySelectorAll('.variable-inspector').length).toBe(0);
   });
@@ -85,5 +105,31 @@ describe('PromptDetail edit layout (Issue #65)', () => {
       'Related & variants',
       'Notes & health',
     ]);
+  });
+
+  it('collapses the Relations section together with read-only relation blocks', async () => {
+    render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    expect(screen.getByLabelText('Related prompts')).toBeTruthy();
+
+    const relToggle = screen.getByRole('button', { name: /Related & variants/ });
+    await fireEvent.click(relToggle);
+    expect(relToggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByLabelText('Related prompts')).toBeNull();
+  });
+
+  it('exposes Save on the canvas toolbar when the inspector sheet is closed at 900px', async () => {
+    stubMatchMedia(false);
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+
+    const canvasToolbar = container.querySelector('.editor-canvas__toolbar');
+    expect(canvasToolbar).toBeTruthy();
+    expect(within(canvasToolbar as HTMLElement).getByRole('button', { name: 'Save changes' })).toBeTruthy();
+    expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
   });
 });
