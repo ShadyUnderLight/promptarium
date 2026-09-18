@@ -10,9 +10,13 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { buildSearchIndex, searchEntryFromDocument } = await import(
-  join(root, 'src/lib/library/search-index.ts')
-);
+const {
+  BODY_EXCERPT_MAX_LENGTH,
+  bodyExcerptFromBody,
+  buildSearchIndex,
+  searchEntryFromDocument,
+  stripMarkdownForExcerpt,
+} = await import(join(root, 'src/lib/library/search-index.ts'));
 
 let failures = 0;
 
@@ -66,6 +70,39 @@ console.log('searchEntryFromDocument derives search fields from the body');
   eq(entry.variableCount, 2, 'variable count from one body pass');
   eq(entry.variableNames, ['var1', 'var2'], 'variable names in first-appearance order');
   eq(entry.bodyEmpty, false, 'non-empty body');
+}
+
+console.log('bodyExcerpt preserves case and strips Markdown');
+{
+  const entry = searchEntryFromDocument(
+    document('a', 1000, '# Title\n\nHello **World** with `code` and [link](https://x.test)')
+  );
+  eq(entry.bodyExcerpt, 'Title Hello World with code and link', 'excerpt keeps readable text');
+  eq(
+    stripMarkdownForExcerpt('UPPER lower MiXeD'),
+    'UPPER lower MiXeD',
+    'excerpt does not lowercase'
+  );
+  eq(bodyExcerptFromBody('   '), undefined, 'whitespace-only body has no excerpt');
+}
+
+console.log('bodyExcerpt truncates with an ellipsis');
+{
+  const long = 'word '.repeat(40).trim();
+  const excerpt = bodyExcerptFromBody(long);
+  assert(excerpt && excerpt.endsWith('…'), 'long body is truncated');
+  assert(excerpt.length <= BODY_EXCERPT_MAX_LENGTH, 'excerpt respects max length');
+}
+
+console.log('failed body read keeps summary-only entry without excerpt');
+{
+  const { index } = await buildSearchIndex([summary('a')], {
+    readBody: async () => {
+      throw new Error('read failed');
+    },
+  });
+  eq(index.get('a')?.bodyExcerpt, undefined, 'no excerpt without a body read');
+  eq(index.get('a')?.bodyLower, '', 'summary-only entry');
 }
 
 console.log('empty body is flagged by the parser pass');

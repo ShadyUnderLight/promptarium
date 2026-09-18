@@ -1,9 +1,41 @@
 import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
 import { parseVariables } from '$lib/variables/variables';
 
+export const BODY_EXCERPT_MAX_LENGTH = 120;
+
+/** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */
+export function stripMarkdownForExcerpt(body: string): string {
+  let text = body;
+  text = text.replace(/```[\s\S]*?```/g, ' ');
+  text = text.replace(/`([^`\n]*)`/g, '$1');
+  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  text = text.replace(/^#{1,6}\s+/gm, '');
+  text = text.replace(/^>\s?/gm, '');
+  text = text.replace(/^\s*[-*+]\s+/gm, '');
+  text = text.replace(/^\s*\d+\.\s+/gm, '');
+  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  text = text.replace(/(\*|_)(.*?)\1/g, '$2');
+  text = text.replace(/^[-*_]{3,}\s*$/gm, ' ');
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Plain-text excerpt for prompt list rows; undefined when the body is empty. */
+export function bodyExcerptFromBody(
+  body: string,
+  maxLength = BODY_EXCERPT_MAX_LENGTH
+): string | undefined {
+  const stripped = stripMarkdownForExcerpt(body);
+  if (!stripped) return undefined;
+  if (stripped.length <= maxLength) return stripped;
+  return stripped.slice(0, maxLength - 1).trimEnd() + '…';
+}
+
 export interface SearchEntry {
   summary: PromptSummary;
   bodyLower: string;
+  /** Plain-text list excerpt from this round's body read; absent on scan fallback. */
+  bodyExcerpt?: string;
   variableCount?: number;
   /** Variable names in first-appearance order, produced by the one body parser.
    *  Present when the body was read; absent on the scan fallback. Prompt Health
@@ -27,9 +59,11 @@ export function searchEntryFromDocument(document: PromptDocument): SearchEntry {
     frontmatterError: document.frontmatterError,
   };
   const variables = parseVariables(document.body);
+  const bodyExcerpt = bodyExcerptFromBody(document.body);
   return {
     summary,
     bodyLower: document.body.toLowerCase(),
+    ...(bodyExcerpt ? { bodyExcerpt } : {}),
     variableCount: variables.length,
     variableNames: variables.map((variable) => variable.name),
     bodyEmpty: document.body.trim().length === 0,

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatModifiedAt, promptHealth, promptTitle } from '$lib/library.svelte';
+  import { formatModifiedAt, promptBodyExcerpt, promptHealth, promptTitle } from '$lib/library.svelte';
   import type { PromptSummary } from '$lib/prompts/types';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import type { MessageKey } from '$lib/i18n/locales/en';
@@ -27,6 +27,18 @@
     archived: 'newPrompt.status.archived',
   };
   const statusLabel = $derived(t(statusKey[prompt.metadata.status] ?? 'newPrompt.status.active'));
+  const bodyExcerpt = $derived(promptBodyExcerpt(prompt));
+  const summaryText = $derived(
+    prompt.metadata.description.trim() || bodyExcerpt || t('library.noDescription')
+  );
+  const summaryFromBody = $derived(!prompt.metadata.description.trim() && Boolean(bodyExcerpt));
+  const healthSeverity = $derived(
+    issues.some((issue) => issue.severity === 'error')
+      ? 'error'
+      : issues.length
+        ? 'warning'
+        : null
+  );
 </script>
 
 <div
@@ -45,9 +57,18 @@
     <div class="prompt-list-item__title-row">
       <span class:prompt-list-item__favorite={prompt.metadata.favorite} class="prompt-list-item__star"><Icon name={prompt.metadata.favorite ? 'star' : 'star-outline'} /></span>
       <span class="prompt-list-item__title">{promptTitle(prompt.name)}</span>
-      {#if issues.length}<span class="health-badge" title={healthTitle}><Icon name="warning" /> {issues.length}</span>{/if}
+      {#if healthSeverity}
+        <span
+          class="health-badge"
+          class:health-badge--error={healthSeverity === 'error'}
+          class:health-badge--warning={healthSeverity === 'warning'}
+          title={healthTitle}
+        >
+          <Icon name="warning" /> {issues.length}
+        </span>
+      {/if}
     </div>
-    <p class="prompt-list-item__description">{prompt.metadata.description || t('library.noDescription')}</p>
+    <p class="prompt-list-item__description" class:prompt-list-item__description--excerpt={summaryFromBody}>{summaryText}</p>
     <div class="prompt-list-item__meta">
       {#if projectLabel}<span class="prompt-list-item__project">{projectLabel}</span>{/if}
       <span class="prompt-list-item__path">{prompt.folder || t('library.projectRoot')}</span>
