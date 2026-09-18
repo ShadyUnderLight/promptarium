@@ -101,6 +101,8 @@
     initial: string;
     resolve: (value: string | null) => void;
   } | null>(null);
+  /** Narrow layouts tuck the metadata inspector into a sheet; UI-only. */
+  let inspectorOpen = $state(true);
 
   function askName(title: string, initial: string): Promise<string | null> {
     return new Promise((resolve) => {
@@ -308,6 +310,12 @@
 
   function setMode(next: 'preview' | 'edit' | 'history'): void {
     mode = next;
+    if (next === 'edit') {
+      inspectorOpen =
+        typeof window.matchMedia === 'function'
+          ? window.matchMedia('(min-width: 901px)').matches
+          : true;
+    }
     if (next === 'history' && document) {
       void loadPromptHistory(document.projectPath, document.name);
     }
@@ -325,6 +333,10 @@
   function handleLoadMoreHistory(): void {
     if (!document) return;
     void loadMorePromptHistory(document.projectPath, document.name);
+  }
+
+  function toggleInspector(): void {
+    inspectorOpen = !inspectorOpen;
   }
 </script>
 
@@ -366,9 +378,6 @@
         <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>{t('detail.tab.history')}</button>
       </div>
       <div class="detail-actions">
-        {#if mode === 'edit'}
-          <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? t('detail.saving') : t('detail.save')}</button>
-        {/if}
         <div class="detail-action-group">
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>{t('detail.compare')}</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>{t('detail.duplicate')}</button>
@@ -429,29 +438,76 @@
       <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
-      <div class="editor-layout">
-        <div class="editor-main">
+      <div
+        class="editor-layout"
+        class:editor-layout--inspector-open={inspectorOpen}
+      >
+        <div class="editor-canvas">
+          <div class="editor-canvas__toolbar">
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm editor-inspector-toggle"
+              aria-expanded={inspectorOpen}
+              aria-controls="prompt-metadata-inspector"
+              onclick={toggleInspector}
+            >
+              {inspectorOpen ? t('detail.inspector.hide') : t('detail.inspector.show')}
+            </button>
+          </div>
           <label class="editor-label" for="prompt-body">{t('detail.editor.label')}</label>
           <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
           <span class="editor-hint">{t('detail.editor.hint')}</span>
         </div>
-        <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
-        </div>
+        <aside
+          id="prompt-metadata-inspector"
+          class="editor-inspector"
+          aria-label={t('detail.inspector.aria')}
+        >
+          <div class="editor-inspector__actions">
+            {#if dirty}<span class="dirty-dot editor-inspector__dirty" title={t('detail.dirty.title')}></span>{/if}
+            <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
+              {saving ? t('detail.saving') : t('detail.save')}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm editor-inspector__close" onclick={toggleInspector}>
+              {t('detail.inspector.hide')}
+            </button>
+          </div>
+          <div class="editor-inspector__scroll">
+            <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
+            <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
+            <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
+            <div class="editor-inspector__notes-health">
+              <p class="detail-muted editor-inspector__health-hint">{t('detail.health.savedOnly')}</p>
+              {#if healthIssues.length}
+                <div class="health-section health-section--inspector">
+                  <div class="health-section__heading">{t('detail.healthHeading')}</div>
+                  {#each healthIssues as issue (issue.code + '\u0000' + JSON.stringify(issue.params ?? {}))}
+                    <div class="health-issue health-issue--{issue.severity}">
+                      <span class="health-issue__mark"><Icon name="warning" /></span>
+                      <span class="health-issue__text">{t(`health.${issue.code}`, issue.params)}</span>
+                      <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+              {#if Object.keys(metadata.extra).length}
+                <span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata.extra).length)}</span>
+              {/if}
+            </div>
+          </div>
+        </aside>
       </div>
     {/if}
 
-    <div class="detail-footer">
-      {#if mode !== 'history'}
+    {#if mode === 'preview'}
+      <div class="detail-footer">
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
-        {#if mode === 'preview'}
-          <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
-        {/if}
+        <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
         <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata.extra).length)}</span>{/if}
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/if}
 </section>
 

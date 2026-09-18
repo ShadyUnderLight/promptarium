@@ -268,6 +268,16 @@ export const zhCN = {
   'detail.editor.label': '提示词 Markdown',
   'detail.editor.hint': 'Markdown 按原样存储。Cmd/Ctrl+S 保存文件。',
   'detail.emptyBody': '此提示词的正文为空。',
+  'detail.inspector.aria': '元数据检查器',
+  'detail.inspector.show': '显示元数据',
+  'detail.inspector.hide': '隐藏元数据',
+  'detail.inspector.section.status': '状态与收藏',
+  'detail.inspector.section.fields': '标签、模型与日期',
+  'detail.inspector.section.variables': '变量',
+  'detail.inspector.section.examples': '示例与资源',
+  'detail.inspector.section.relations': '关联与变体',
+  'detail.inspector.section.notes': '备注与健康',
+  'detail.health.savedOnly': '基于上次保存的文件；未保存的编辑不会反映在此。',
 
   // Prompt 变量填写对话框。
   'variableFill.eyebrow': '提示词变量',
