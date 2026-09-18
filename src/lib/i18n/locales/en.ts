@@ -272,6 +272,16 @@ export const en = {
   'detail.editor.label': 'Prompt Markdown',
   'detail.editor.hint': 'Markdown is stored as written. Cmd/Ctrl+S saves the file.',
   'detail.emptyBody': 'This prompt has an empty body.',
+  'detail.inspector.aria': 'Metadata inspector',
+  'detail.inspector.show': 'Show metadata',
+  'detail.inspector.hide': 'Hide metadata',
+  'detail.inspector.section.status': 'Status & favorite',
+  'detail.inspector.section.fields': 'Tags, models & dates',
+  'detail.inspector.section.variables': 'Variables',
+  'detail.inspector.section.examples': 'Examples & assets',
+  'detail.inspector.section.relations': 'Related & variants',
+  'detail.inspector.section.notes': 'Notes & health',
+  'detail.health.savedOnly': 'Based on the last saved file; unsaved edits are not reflected.',
 
   // Prompt variable fill dialog.
   'variableFill.eyebrow': 'Prompt variables',

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from 'svelte';
   import type { PromptMetadata as Metadata, PromptStatus, PromptSummary, VariableDoc, PromptExample } from '$lib/prompts/types';
   import { getVariantOf, getVariantOfRaw, withVariantOf } from '$lib/prompts/types';
   import { parseVariables } from '$lib/variables/variables';
@@ -7,6 +8,7 @@
   import { wouldCreateVariantCycle } from '$lib/variants/variants';
   import { cloneExample } from '$lib/prompts/duplicate';
   import ExamplesEditor from './ExamplesEditor.svelte';
+  import MetadataInspectorSection from './MetadataInspectorSection.svelte';
   import { t } from '$lib/i18n/i18n.svelte';
 
   interface Props {
@@ -31,6 +33,10 @@
       options?: { confirmLabel?: string; cancelLabel?: string; destructive?: boolean }
     ) => Promise<boolean>;
     onChange: (metadata: Metadata) => void;
+    /** Read-only relation/family blocks slotted into the Relations section. */
+    relationsReadonly?: Snippet;
+    /** Health and preserved extras slotted into the Notes section. */
+    notesReadonly?: Snippet;
   }
 
   let {
@@ -44,6 +50,8 @@
     refreshVersion = 0,
     requestConfirm,
     onChange,
+    relationsReadonly,
+    notesReadonly,
   }: Props = $props();
 
   // Display label for the status chip; the machine value in metadata.status
@@ -183,70 +191,52 @@
 </script>
 
 {#if editing}
-  <div class="metadata-editor">
-    <label class="field field--wide">
-      <span>{t('meta.description')}</span>
-      <textarea value={metadata.description} oninput={(event) => setField('description', event.currentTarget.value)} placeholder={t('meta.description.placeholder')}></textarea>
-    </label>
-    <div class="metadata-grid">
-      <label class="field">
-        <span>{t('meta.status')}</span>
-        <select value={metadata.status} onchange={(event) => setField('status', event.currentTarget.value as PromptStatus)}>
-          <option value="active">{t('newPrompt.status.active')}</option>
-          <option value="draft">{t('newPrompt.status.draft')}</option>
-          <option value="archived">{t('newPrompt.status.archived')}</option>
-        </select>
-      </label>
-      <label class="check-field">
-        <input type="checkbox" checked={metadata.favorite} onchange={(event) => setField('favorite', event.currentTarget.checked)} />
-        <span>{t('meta.favorite')}</span>
-      </label>
+  <div class="metadata-editor" data-testid="metadata-inspector-sections">
+    <MetadataInspectorSection title={t('detail.inspector.section.status')}>
+      <div class="metadata-grid metadata-grid--inspector">
+        <label class="field">
+          <span>{t('meta.status')}</span>
+          <select value={metadata.status} onchange={(event) => setField('status', event.currentTarget.value as PromptStatus)}>
+            <option value="active">{t('newPrompt.status.active')}</option>
+            <option value="draft">{t('newPrompt.status.draft')}</option>
+            <option value="archived">{t('newPrompt.status.archived')}</option>
+          </select>
+        </label>
+        <label class="check-field">
+          <input type="checkbox" checked={metadata.favorite} onchange={(event) => setField('favorite', event.currentTarget.checked)} />
+          <span>{t('meta.favorite')}</span>
+        </label>
+      </div>
+    </MetadataInspectorSection>
+
+    <MetadataInspectorSection title={t('detail.inspector.section.fields')}>
       <label class="field field--wide">
-        <span>{t('meta.tags')} <small>{t('newPrompt.commaSeparated')}</small></span>
-        <input value={metadata.tags.join(', ')} oninput={(event) => setField('tags', listValue(event.currentTarget.value))} placeholder="coding, review" />
+        <span>{t('meta.description')}</span>
+        <textarea value={metadata.description} oninput={(event) => setField('description', event.currentTarget.value)} placeholder={t('meta.description.placeholder')}></textarea>
       </label>
-      <label class="field field--wide">
-        <span>{t('meta.modelHints')} <small>{t('newPrompt.commaSeparated')}</small></span>
-        <input value={metadata.models.join(', ')} oninput={(event) => setField('models', listValue(event.currentTarget.value))} placeholder="ChatGPT, Claude" />
-      </label>
-      <label class="field">
-        <span>{t('meta.created')}</span>
-        <input type="date" value={metadata.created ?? ''} oninput={(event) => setField('created', event.currentTarget.value || undefined)} />
-      </label>
-    </div>
-    <label class="field field--wide">
-      <span>{t('meta.usageNotes')} <small>{t('meta.usageNotesHint')}</small></span>
-      <textarea class="notes-editor" value={metadata.notes ?? ''} oninput={(event) => setField('notes', event.currentTarget.value || undefined)} placeholder={t('meta.notes.placeholder')}></textarea>
-    </label>
-    <div class="variables-editor">
-      <span class="variables-editor__heading">{t('meta.variables')}</span>
-      {#each variableNames as name (name)}
-        <div class="variable-doc-edit">
-          <div class="variable-doc-edit__name">
-            <span class="variable-token">{name}</span>
-            {#if !docFor(name)}<span class="variable-doc-edit__status">{t('meta.undocumented')}</span>{/if}
-          </div>
-          <div class="variable-doc-edit__fields">
-            <input
-              value={docFor(name)?.description ?? ''}
-              oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
-              placeholder={t('meta.variableDescription')}
-            />
-            <input
-              value={docFor(name)?.example ?? ''}
-              oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
-              placeholder={t('meta.variableExample')}
-            />
-          </div>
-        </div>
-      {/each}
-      {#if staleNames.length}
-        <span class="variables-editor__heading">{t('meta.staleDocs')}</span>
-        {#each staleNames as name (name)}
+      <div class="metadata-grid metadata-grid--inspector">
+        <label class="field field--wide">
+          <span>{t('meta.tags')} <small>{t('newPrompt.commaSeparated')}</small></span>
+          <input value={metadata.tags.join(', ')} oninput={(event) => setField('tags', listValue(event.currentTarget.value))} placeholder="coding, review" />
+        </label>
+        <label class="field field--wide">
+          <span>{t('meta.modelHints')} <small>{t('newPrompt.commaSeparated')}</small></span>
+          <input value={metadata.models.join(', ')} oninput={(event) => setField('models', listValue(event.currentTarget.value))} placeholder="ChatGPT, Claude" />
+        </label>
+        <label class="field">
+          <span>{t('meta.created')}</span>
+          <input type="date" value={metadata.created ?? ''} oninput={(event) => setField('created', event.currentTarget.value || undefined)} />
+        </label>
+      </div>
+    </MetadataInspectorSection>
+
+    <MetadataInspectorSection title={t('detail.inspector.section.variables')}>
+      <div class="variables-editor variables-editor--section">
+        {#each variableNames as name (name)}
           <div class="variable-doc-edit">
             <div class="variable-doc-edit__name">
               <span class="variable-token">{name}</span>
-              <button type="button" class="variable-doc-edit__remove" onclick={() => removeStaleDoc(name)}>{t('meta.removeDoc')}</button>
+              {#if !docFor(name)}<span class="variable-doc-edit__status">{t('meta.undocumented')}</span>{/if}
             </div>
             <div class="variable-doc-edit__fields">
               <input
@@ -262,70 +252,116 @@
             </div>
           </div>
         {/each}
-      {/if}
-      {#if !variableNames.length && !staleNames.length}
-        <p class="detail-muted">{t('meta.noVariables.body')}</p>
-      {/if}
-    </div>
-    <div class="related-editor">
-      <span class="variables-editor__heading">{t('meta.related')}</span>
-      {#if metadata.related.length}
-        <div class="related-edit-list">
-          {#each metadata.related as path, index (index)}
+        {#if staleNames.length}
+          <span class="variables-editor__heading">{t('meta.staleDocs')}</span>
+          {#each staleNames as name (name)}
             <div class="variable-doc-edit">
               <div class="variable-doc-edit__name">
-                <span class="variable-token">{path}</span>
-                <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(index)}>{t('meta.remove')}</button>
+                <span class="variable-token">{name}</span>
+                <button type="button" class="variable-doc-edit__remove" onclick={() => removeStaleDoc(name)}>{t('meta.removeDoc')}</button>
+              </div>
+              <div class="variable-doc-edit__fields">
+                <input
+                  value={docFor(name)?.description ?? ''}
+                  oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
+                  placeholder={t('meta.variableDescription')}
+                />
+                <input
+                  value={docFor(name)?.example ?? ''}
+                  oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
+                  placeholder={t('meta.variableExample')}
+                />
               </div>
             </div>
           {/each}
-        </div>
-      {/if}
-      {#if addableRelated.length}
-        <div class="related-picker">
-          <select bind:value={relatedPick} onchange={addRelated} aria-label={t('meta.addRelated.aria')}>
-            <option value="" disabled>{t('meta.addRelated.placeholder')}</option>
-            {#each addableRelated as name (name)}
-              <option value={name}>{name}</option>
+        {/if}
+        {#if !variableNames.length && !staleNames.length}
+          <p class="detail-muted">{t('meta.noVariables.body')}</p>
+        {/if}
+      </div>
+    </MetadataInspectorSection>
+
+    <MetadataInspectorSection title={t('detail.inspector.section.examples')}>
+      <ExamplesEditor
+        examples={metadata.examples ?? []}
+        projectPath={projectPath}
+        refreshVersion={refreshVersion}
+        {requestConfirm}
+        onChange={updateExamples}
+      />
+    </MetadataInspectorSection>
+
+    <MetadataInspectorSection title={t('detail.inspector.section.relations')}>
+      <div class="related-editor">
+        <span class="variables-editor__heading">{t('meta.related')}</span>
+        {#if metadata.related.length}
+          <div class="related-edit-list">
+            {#each metadata.related as path, index (index)}
+              <div class="variable-doc-edit">
+                <div class="variable-doc-edit__name">
+                  <span class="variable-token">{path}</span>
+                  <button type="button" class="variable-doc-edit__remove" onclick={() => removeRelated(index)}>{t('meta.remove')}</button>
+                </div>
+              </div>
             {/each}
-          </select>
-        </div>
-      {:else}
-        <p class="detail-muted">{t('meta.noRelatedCandidates')}</p>
-      {/if}
-    </div>
-    <div class="related-editor">
-      <span class="variables-editor__heading">{t('meta.variantOf')}</span>
-      {#if currentVariantRaw !== undefined}
-        <div class="related-edit-list">
-          <div class="variable-doc-edit">
-            <div class="variable-doc-edit__name">
-              <span class="variable-token">{variantDisplay}</span>
-              <button type="button" class="variable-doc-edit__remove" onclick={clearVariant}>{t('meta.remove')}</button>
+          </div>
+        {/if}
+        {#if addableRelated.length}
+          <div class="related-picker">
+            <select bind:value={relatedPick} onchange={addRelated} aria-label={t('meta.addRelated.aria')}>
+              <option value="" disabled>{t('meta.addRelated.placeholder')}</option>
+              {#each addableRelated as name (name)}
+                <option value={name}>{name}</option>
+              {/each}
+            </select>
+          </div>
+        {:else}
+          <p class="detail-muted">{t('meta.noRelatedCandidates')}</p>
+        {/if}
+      </div>
+      <div class="related-editor">
+        <span class="variables-editor__heading">{t('meta.variantOf')}</span>
+        {#if currentVariantRaw !== undefined}
+          <div class="related-edit-list">
+            <div class="variable-doc-edit">
+              <div class="variable-doc-edit__name">
+                <span class="variable-token">{variantDisplay}</span>
+                <button type="button" class="variable-doc-edit__remove" onclick={clearVariant}>{t('meta.remove')}</button>
+              </div>
             </div>
           </div>
+        {/if}
+        {#if addableVariant.length}
+          <div class="related-picker">
+            <select bind:value={variantPick} onchange={setVariant} aria-label={t('meta.setVariant.aria')}>
+              <option value="" disabled>{currentVariant ? t('meta.changeVariant.placeholder') : t('meta.setVariant.placeholder')}</option>
+              {#each addableVariant as name (name)}
+                <option value={name}>{name}</option>
+              {/each}
+            </select>
+          </div>
+        {:else if currentVariantRaw === undefined}
+          <p class="detail-muted">{t('meta.noVariantCandidates')}</p>
+        {/if}
+      </div>
+      {#if relationsReadonly}
+        <div class="metadata-inspector-section__slot">
+          {@render relationsReadonly()}
         </div>
       {/if}
-      {#if addableVariant.length}
-        <div class="related-picker">
-          <select bind:value={variantPick} onchange={setVariant} aria-label={t('meta.setVariant.aria')}>
-            <option value="" disabled>{currentVariant ? t('meta.changeVariant.placeholder') : t('meta.setVariant.placeholder')}</option>
-            {#each addableVariant as name (name)}
-              <option value={name}>{name}</option>
-            {/each}
-          </select>
+    </MetadataInspectorSection>
+
+    <MetadataInspectorSection title={t('detail.inspector.section.notes')}>
+      <label class="field field--wide">
+        <span>{t('meta.usageNotes')} <small>{t('meta.usageNotesHint')}</small></span>
+        <textarea class="notes-editor" value={metadata.notes ?? ''} oninput={(event) => setField('notes', event.currentTarget.value || undefined)} placeholder={t('meta.notes.placeholder')}></textarea>
+      </label>
+      {#if notesReadonly}
+        <div class="metadata-inspector-section__slot">
+          {@render notesReadonly()}
         </div>
-      {:else if currentVariantRaw === undefined}
-        <p class="detail-muted">{t('meta.noVariantCandidates')}</p>
       {/if}
-    </div>
-    <ExamplesEditor
-      examples={metadata.examples ?? []}
-      projectPath={projectPath}
-      refreshVersion={refreshVersion}
-      {requestConfirm}
-      onChange={updateExamples}
-    />
+    </MetadataInspectorSection>
   </div>
 {:else}
   <dl class="metadata-inspector">
