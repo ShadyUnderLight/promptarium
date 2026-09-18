@@ -12,6 +12,10 @@ export function truncateExcerptText(text: string, maxLength: number): string {
 
 const BACKTICK_FENCE = '```';
 
+export type ExcerptSegment =
+  | { kind: 'text'; value: string }
+  | { kind: 'code'; value: string };
+
 function fenceMarkerAtLine(line: string): string | null {
   const trimmed = line.trimStart();
   if (trimmed.startsWith(BACKTICK_FENCE)) return BACKTICK_FENCE;
@@ -19,48 +23,93 @@ function fenceMarkerAtLine(line: string): string | null {
   return null;
 }
 
-/** Remove fenced-code delimiter lines while keeping block bodies. Matches the
- *  preview renderer: only line-leading ``` or ~~~ open/close fences; inline
- *  triple-backtick prose is left for the inline-code pass. */
-export function unwrapFencedCodeBlocks(text: string): string {
-  const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const parts: string[] = [];
+function splitInlineCodeSegments(segments: ExcerptSegment[]): ExcerptSegment[] {
+  const result: ExcerptSegment[] = [];
+  for (const segment of segments) {
+    if (segment.kind === 'code') {
+      result.push(segment);
+      continue;
+    }
+    const text = segment.value;
+    const pattern = /`([^`\n]*)`/g;
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        result.push({ kind: 'text', value: text.slice(lastIndex, match.index) });
+      }
+      result.push({ kind: 'code', value: match[1] });
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+      result.push({ kind: 'text', value: text.slice(lastIndex) });
+    }
+  }
+  return result;
+}
+
+/** Split body into prose and code segments. Fenced blocks and inline backticks
+ *  are code segments whose payload is never Markdown-stripped. */
+export function parseExcerptSegments(body: string): ExcerptSegment[] {
+  const lines = body.replace(/\r\n?/g, '\n').split('\n');
+  const segments: ExcerptSegment[] = [];
   let index = 0;
+  let proseBuffer: string[] = [];
+
+  function flushProse(): void {
+    if (!proseBuffer.length) return;
+    segments.push({ kind: 'text', value: proseBuffer.join('\n') });
+    proseBuffer = [];
+  }
 
   while (index < lines.length) {
     const marker = fenceMarkerAtLine(lines[index]);
     if (marker) {
+      flushProse();
       index++;
       const blockLines: string[] = [];
       while (index < lines.length && !lines[index].trimStart().startsWith(marker)) {
         blockLines.push(lines[index]);
         index++;
       }
-      if (blockLines.length) parts.push(blockLines.join(' '));
+      if (blockLines.length) {
+        segments.push({ kind: 'code', value: blockLines.join('\n') });
+      }
       if (index < lines.length) index++;
       continue;
     }
-    parts.push(lines[index]);
+    proseBuffer.push(lines[index]);
     index++;
   }
+  flushProse();
+  return splitInlineCodeSegments(segments);
+}
 
-  return parts.join(' ');
+function stripMarkdownFromProse(text: string): string {
+  let stripped = text;
+  stripped = stripped.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  stripped = stripped.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
+  stripped = stripped.replace(/^#{1,6}\s+/gm, '');
+  stripped = stripped.replace(/^>\s?/gm, '');
+  stripped = stripped.replace(/^\s*[-*+]\s+/gm, '');
+  stripped = stripped.replace(/^\s*\d+\.\s+/gm, '');
+  stripped = stripped.replace(/(\*\*|__)(.*?)\1/g, '$2');
+  stripped = stripped.replace(/(\*|_)(.*?)\1/g, '$2');
+  stripped = stripped.replace(/^[-*_]{3,}\s*$/gm, ' ');
+  return stripped;
+}
+
+function flattenExcerptSegment(segment: ExcerptSegment): string {
+  const flattened = segment.value.replace(/\s+/g, ' ').trim();
+  return segment.kind === 'code' ? flattened : stripMarkdownFromProse(flattened);
 }
 
 /** Strip common Markdown syntax for a one-line list excerpt. Preserves case. */
 export function stripMarkdownForExcerpt(body: string): string {
-  let text = unwrapFencedCodeBlocks(body);
-  text = text.replace(/`([^`\n]*)`/g, '$1');
-  text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
-  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1');
-  text = text.replace(/^#{1,6}\s+/gm, '');
-  text = text.replace(/^>\s?/gm, '');
-  text = text.replace(/^\s*[-*+]\s+/gm, '');
-  text = text.replace(/^\s*\d+\.\s+/gm, '');
-  text = text.replace(/(\*\*|__)(.*?)\1/g, '$2');
-  text = text.replace(/(\*|_)(.*?)\1/g, '$2');
-  text = text.replace(/^[-*_]{3,}\s*$/gm, ' ');
-  return text.replace(/\s+/g, ' ').trim();
+  const parts = parseExcerptSegments(body)
+    .map(flattenExcerptSegment)
+    .filter((part) => part.length > 0);
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 }
 
 /** Plain-text excerpt for prompt list rows; undefined when the body is empty. */

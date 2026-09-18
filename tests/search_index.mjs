@@ -17,7 +17,6 @@ const {
   searchEntryFromDocument,
   stripMarkdownForExcerpt,
   truncateExcerptText,
-  unwrapFencedCodeBlocks,
 } = await import(join(root, 'src/lib/library/search-index.ts'));
 
 let failures = 0;
@@ -122,9 +121,24 @@ console.log('fenced code blocks keep inner text for excerpt');
   eq(
     stripMarkdownForExcerpt('Use ```literal``` delimiters'),
     'Use literal delimiters',
-    'unwrap leaves inline backticks for the inline-code pass'
+    'inline triple-backtick prose is not treated as a fence'
   );
-  eq(unwrapFencedCodeBlocks(tildeFence), 'print("hello")', 'unwrap helper strips only fence lines');
+
+  const dunderInit = '```python\ndef __init__(self):\n    pass\n```';
+  eq(
+    bodyExcerptFromBody(dunderInit),
+    'def __init__(self): pass',
+    'fenced code keeps dunder names out of markdown emphasis stripping'
+  );
+
+  eq(bodyExcerptFromBody('Call `__init__`'), 'Call __init__', 'inline code keeps dunder names');
+
+  const jsLiterals = '```js\nconst s = "**literal**";\nconst link = "[x](y)";\n```';
+  eq(
+    bodyExcerptFromBody(jsLiterals),
+    'const s = "**literal**"; const link = "[x](y)";',
+    'fenced code keeps markdown-like punctuation verbatim'
+  );
 }
 
 console.log('bodyExcerpt truncates with an ellipsis');
