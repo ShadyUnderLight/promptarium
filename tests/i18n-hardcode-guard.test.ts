@@ -37,36 +37,56 @@ const sources = import.meta.glob('../src/**/*.{ts,svelte,html}', {
 const EXCLUDED = '/i18n/locales/';
 
 /**
- * Representative already-migrated keys per surface named in Issue #38 §2.
- * One entry per surface is the floor; a few carry two where the surface has
- * several distinct copy clusters (empty states vs. field labels).
+ * Representative already-migrated keys per surface named in Issue #38 §2, plus
+ * the surfaces the Floating Shelf phases added (Issue #67). One entry per
+ * surface is the floor; a few carry two where the surface has several distinct
+ * copy clusters (empty states vs. field labels).
  */
 const GUARDED_SURFACES: Readonly<Record<string, ReadonlyArray<MessageKey>>> = {
   ProjectSidebar: ['sidebar.empty', 'sidebar.folders.empty'],
+  // Phase 2 — the Rail is icon-only, so its labels are the whole surface.
+  LibraryRail: ['sidebar.rail.aria', 'sidebar.rail.collapseShelf'],
   PromptLibrary: ['library.noPromptsYet', 'library.emptyNoProjects'],
   PromptToolbar: ['toolbar.selectAll', 'toolbar.sort.modifiedDesc'],
   PromptDetail: ['detail.select.hint', 'detail.editor.hint'],
   PromptMetadata: ['meta.noVariables.body', 'meta.noRelatedCandidates'],
+  // Phase 4 — the Inspector section chrome lives outside PromptMetadata.
+  MetadataInspectorSection: ['detail.inspector.aria', 'detail.inspector.section.relations'],
   PromptHistory: ['history.loadMore', 'history.empty.untracked'],
   PromptCompare: ['compare.noTargets', 'compare.noBodyDiff'],
   ExamplesEditor: ['examples.editor.chooseFile', 'examples.editor.hint'],
   ExamplesSection: ['examples.confirm.replaceInput'],
+  ProjectMenu: ['menu.revealInFinder', 'menu.projectColor'],
+  // Dialogs own almost no multi-word copy of their own (`Cancel` / `Confirm` /
+  // `Working…` are single words the guard rejects), so these point at the copy
+  // the dialogs actually render from their callers.
+  ConfirmDialog: ['dialog.forgetProject.title', 'confirm.unsaved.title'],
+  NamePromptDialog: ['newPrompt.filenameHint', 'dialog.renamePrompt'],
   UpdateBanner: ['update.banner.checking', 'update.banner.install'],
   // Toast copy is a surface of its own — this is where #38's own example lives.
   Notices: ['notice.addProjectFirst', 'notice.projectAdded'],
 };
 
-/** Every surface Issue #38 §2 requires the guard to cover. */
+/**
+ * Every surface the guard must actually carry entries for: Issue #38 §2's list
+ * plus the Floating Shelf surfaces added in Issue #67. Without this, dropping a
+ * surface from `GUARDED_SURFACES` would only shrink `it.each` and still pass.
+ */
 const REQUIRED_SURFACES = [
   'ProjectSidebar',
+  'LibraryRail',
   'PromptLibrary',
   'PromptToolbar',
   'PromptDetail',
   'PromptMetadata',
+  'MetadataInspectorSection',
   'PromptHistory',
   'PromptCompare',
   'ExamplesEditor',
   'ExamplesSection',
+  'ProjectMenu',
+  'ConfirmDialog',
+  'NamePromptDialog',
   'UpdateBanner',
 ];
 
@@ -97,7 +117,7 @@ describe('hardcoded App-owned copy guard (Issue #38)', () => {
     expect(scanned.length).toBeGreaterThan(20);
   });
 
-  it('covers every surface named in Issue #38 §2', () => {
+  it('covers every guarded surface', () => {
     const missing = REQUIRED_SURFACES.filter(
       (surface) => !GUARDED_SURFACES[surface]?.length
     );
