@@ -102,29 +102,30 @@
     resolve: (value: string | null) => void;
   } | null>(null);
   let bodyEditor = $state<HTMLTextAreaElement | null>(null);
+  let detailPane = $state<HTMLElement | null>(null);
   let editSelection = $state<{
     key: string;
     start: number;
     end: number;
   } | null>(null);
+  const INSPECTOR_SPLIT_MIN_WIDTH = 640;
   /** Narrow layouts tuck the metadata inspector into a sheet; UI-only. */
   let inspectorOpen = $state(true);
   let inspectorWide = $state(true);
   const inspectorVisible = $derived(inspectorWide || inspectorOpen);
 
   $effect(() => {
-    if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(min-width: 1281px)');
-    const sync = (): void => {
-      inspectorWide = mq.matches;
+    if (!detailPane || typeof ResizeObserver !== 'function') return;
+    let previousWide = true;
+    const sync = (width: number): void => {
+      const nextWide = width >= INSPECTOR_SPLIT_MIN_WIDTH;
+      if (previousWide && !nextWide && mode === 'edit') inspectorOpen = false;
+      previousWide = nextWide;
+      inspectorWide = nextWide;
     };
-    sync();
-    if (typeof mq.addEventListener === 'function') {
-      mq.addEventListener('change', sync);
-      return () => mq.removeEventListener('change', sync);
-    }
-    mq.addListener(sync);
-    return () => mq.removeListener(sync);
+    const observer = new ResizeObserver(([entry]) => sync(entry.contentRect.width));
+    observer.observe(detailPane);
+    return () => observer.disconnect();
   });
 
   function askName(title: string, initial: string): Promise<string | null> {
@@ -391,6 +392,7 @@
 </script>
 
 <section
+  bind:this={detailPane}
   class="prompt-detail"
   class:prompt-detail--edit={mode === 'edit'}
   aria-label={t('detail.aria')}

@@ -48,42 +48,28 @@ const detailProps = {
   onNavigate: vi.fn(),
 };
 
-type MediaQueryListener = (event: MediaQueryListEvent) => void;
+type ResizeObserverCallback = (entries: ResizeObserverEntry[]) => void;
 
-function mediaQueryStub(initialMatches: boolean) {
-  let matches = initialMatches;
-  const listeners = new Set<MediaQueryListener>();
-  return {
-    get matches() {
-      return matches;
-    },
-    media: '(min-width: 1281px)',
-    addEventListener: vi.fn((_event: string, listener: MediaQueryListener) => {
-      listeners.add(listener);
-    }),
-    removeEventListener: vi.fn((_event: string, listener: MediaQueryListener) => {
-      listeners.delete(listener);
-    }),
-    addListener: vi.fn((listener: MediaQueryListener) => {
-      listeners.add(listener);
-    }),
-    removeListener: vi.fn((listener: MediaQueryListener) => {
-      listeners.delete(listener);
-    }),
-    fire(next: boolean): void {
-      matches = next;
-      for (const listener of listeners) listener({ matches: next } as MediaQueryListEvent);
+function stubInspectorResizeObserver(initialWidth: number) {
+  let callback: ResizeObserverCallback | undefined;
+  const observer = {
+    observe: vi.fn(() => emit(initialWidth)),
+    disconnect: vi.fn(),
+    fire(width: number): void {
+      emit(width);
     },
   };
-}
-
-function stubInspectorMediaQuery(initialWide: boolean): ReturnType<typeof mediaQueryStub> {
-  const inspectorMq = mediaQueryStub(initialWide);
+  function emit(width: number): void {
+    callback?.([{ contentRect: { width } } as ResizeObserverEntry]);
+  }
   vi.stubGlobal(
-    'matchMedia',
-    vi.fn((query: string) => (query.includes('1281px') ? inspectorMq : mediaQueryStub(false)))
+    'ResizeObserver',
+    vi.fn(function (nextCallback: ResizeObserverCallback) {
+      callback = nextCallback;
+      return observer;
+    })
   );
-  return inspectorMq;
+  return observer;
 }
 
 afterEach(() => {
@@ -94,7 +80,7 @@ afterEach(() => {
 
 describe('PromptDetail edit layout (Issue #65)', () => {
   beforeEach(() => {
-    stubInspectorMediaQuery(true);
+    stubInspectorResizeObserver(720);
   });
 
   it('keeps metadata in the inspector and drops preview footer sections in Edit', async () => {
@@ -132,21 +118,25 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     ]);
   });
 
-  it('collapses the Relations section together with read-only relation blocks', async () => {
+  it('keeps collapsed section regions addressable for aria-controls', async () => {
     render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
     await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
-    expect(screen.getByLabelText('Related prompts')).toBeTruthy();
+    const relationRegion = screen.getByRole('region', { name: 'Related prompts', hidden: true });
+    const relationBody = document.getElementById('metadata-section-relations-body') as HTMLDivElement;
+    expect(relationRegion.hasAttribute('hidden')).toBe(false);
+    expect(relationBody.hidden).toBe(false);
 
     const relToggle = screen.getByRole('button', { name: /Related & variants/ });
     await fireEvent.click(relToggle);
     expect(relToggle.getAttribute('aria-expanded')).toBe('false');
-    expect(screen.queryByLabelText('Related prompts')).toBeNull();
+    expect(relToggle.getAttribute('aria-controls')).toBe('metadata-section-relations-body');
+    expect(relationBody.hidden).toBe(true);
   });
 
-  it('exposes Save on the canvas toolbar when the inspector sheet is closed at 900px', async () => {
-    stubInspectorMediaQuery(false);
+  it('exposes Save on the canvas toolbar when the narrow Detail sheet is closed', async () => {
+    stubInspectorResizeObserver(456);
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
@@ -220,18 +210,33 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     expect(container.textContent).not.toContain('parent a');
   });
 
-  it('preserves a closed narrow inspector sheet after a wide → narrow resize round trip', async () => {
-    const inspectorMq = stubInspectorMediaQuery(false);
+  it('switches the Inspector mode from the actual Detail width', async () => {
+    const inspectorObserver = stubInspectorResizeObserver(639);
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
     await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
     expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
 
-    inspectorMq.fire(true);
+    inspectorObserver.fire(640);
     await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeTruthy());
 
-    inspectorMq.fire(false);
+    inspectorObserver.fire(639);
+    await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy());
+  });
+
+  it('preserves a closed narrow inspector sheet after a wide → narrow resize round trip', async () => {
+    const inspectorObserver = stubInspectorResizeObserver(456);
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
+
+    inspectorObserver.fire(720);
+    await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeTruthy());
+
+    inspectorObserver.fire(456);
     await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy());
   });
 });

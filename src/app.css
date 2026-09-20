@@ -1165,6 +1165,7 @@ body {
   z-index: var(--z-detail);
   padding: 1.25rem 1.35rem 2rem;
   background: var(--surface-content);
+  container: prompt-detail / inline-size;
 }
 
 .prompt-detail.prompt-detail--edit {
@@ -1683,11 +1684,12 @@ body {
 
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 17rem);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 1.25rem;
   min-height: 0;
   flex: 1 1 auto;
+  position: relative;
   overflow: hidden;
 }
 
@@ -1697,11 +1699,11 @@ body {
   display: flex;
   flex-direction: column;
   max-width: 54rem;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .editor-canvas__toolbar {
-  display: none;
+  display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.45rem;
@@ -1831,7 +1833,7 @@ body {
 
 .prompt-editor {
   width: 100%;
-  min-height: 16rem;
+  min-height: 0;
   flex: 1;
   resize: none;
   padding: 0.85rem;
@@ -2923,39 +2925,37 @@ body {
   }
 }
 
-@media (min-width: 981px) and (max-width: 1440px) {
-  /* Keep the editor body usable after the persisted panes have been capped. */
-  .editor-layout {
-    grid-template-columns: minmax(0, 1fr) 12rem;
-  }
-}
-
 /* The persistent Rail/Shelf/Prompt List can leave a much narrower Detail pane
-   than the viewport suggests. Keep the Inspector as a sheet until the window
-   is wide enough for a usable Markdown column beside it. */
-@media (min-width: 1281px) {
+   than the viewport suggests. Keep the Inspector as a sheet until the Detail
+   content box is wide enough for a usable Markdown column beside it. */
+@container prompt-detail (min-width: 40rem) {
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 17rem);
+    position: static;
+  }
+
+  .editor-canvas__toolbar {
+    display: none;
+  }
+
   .editor-inspector-toggle,
   .editor-inspector__close {
     display: none;
   }
 }
 
-@media (max-width: 1280px) {
+@container prompt-detail (min-width: 40rem) and (max-width: 60rem) {
+  /* Keep the inspector compact while the Detail pane is only just wide
+     enough for the persistent two-column layout. */
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr) 12rem;
+  }
+}
+
+@container prompt-detail (max-width: 39.999rem) {
   .editor-layout {
     grid-template-columns: minmax(0, 1fr);
     position: relative;
-  }
-
-  .editor-canvas {
-    overflow: auto;
-  }
-
-  .editor-canvas__toolbar {
-    display: flex;
-  }
-
-  .prompt-editor {
-    min-height: 0;
   }
 
   .editor-layout--inspector-open .editor-inspector {

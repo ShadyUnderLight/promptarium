@@ -13,7 +13,7 @@
  * self values instead of hiding or normalizing them. Backlinks / children are
  * derived state and are never written back to any Markdown file.
  */
-import type { PromptSummary } from '$lib/prompts/types';
+import type { PromptMetadata, PromptSummary } from '$lib/prompts/types';
 import { getVariantOf, getVariantOfRaw, hasInvalidVariantOfType } from '$lib/prompts/types';
 import { isCanonicalRelationPath } from '$lib/relations/relations';
 
@@ -48,18 +48,19 @@ export interface VariantFamily {
  */
 export function classifyVariantParent(
   summaries: PromptSummary[],
-  target: { projectPath: string; name: string }
+  target: { projectPath: string; name: string },
+  metadataOverride?: PromptMetadata
 ): VariantLink | null {
   const own = summaries.find(
     (summary) => summary.projectPath === target.projectPath && summary.name === target.name
   );
   if (!own) return null;
-  const raw = getVariantOf(own.metadata);
+  const raw = getVariantOf(metadataOverride ?? own.metadata);
   if (!raw) {
     // Present but wrong YAML type (number / array / …) is an invalid parent,
     // not an absent one — surface it so Health and the family UI can flag it.
-    if (hasInvalidVariantOfType(own.metadata)) {
-      const rawValue = getVariantOfRaw(own.metadata);
+    if (hasInvalidVariantOfType(metadataOverride ?? own.metadata)) {
+      const rawValue = getVariantOfRaw(metadataOverride ?? own.metadata);
       return { path: `${typeof rawValue}: ${JSON.stringify(rawValue)}`, status: 'invalid' };
     }
     return null;
@@ -86,17 +87,16 @@ export function classifyVariantParent(
  */
 export function resolveVariantFamily(
   summaries: PromptSummary[],
-  target: { projectPath: string; name: string }
+  target: { projectPath: string; name: string },
+  metadataOverride?: PromptMetadata
 ): VariantFamily {
-  const project = new Map<string, PromptSummary>();
   const sources: PromptSummary[] = [];
   for (const summary of summaries) {
     if (summary.projectPath !== target.projectPath) continue;
-    project.set(summary.name, summary);
     if (summary.name !== target.name) sources.push(summary);
   }
 
-  const parent = classifyVariantParent(summaries, target);
+  const parent = classifyVariantParent(summaries, target, metadataOverride);
 
   const children = sources
     .filter((source) => {

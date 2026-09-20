@@ -16,18 +16,12 @@
 
   let { document, summaries, metadataOverride, onNavigate }: Props = $props();
 
-  const effectiveSummaries = $derived(
-    metadataOverride
-      ? summaries.map((summary) =>
-          summary.projectPath === document.projectPath && summary.name === document.name
-            ? { ...summary, metadata: metadataOverride }
-            : summary
-        )
-      : summaries
-  );
-
   const family = $derived(
-    resolveVariantFamily(effectiveSummaries, { projectPath: document.projectPath, name: document.name })
+    resolveVariantFamily(
+      summaries,
+      { projectPath: document.projectPath, name: document.name },
+      metadataOverride
+    )
   );
 
   function linkLabel(link: VariantLink): string {

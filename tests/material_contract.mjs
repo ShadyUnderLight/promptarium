@@ -190,20 +190,19 @@ assert(
   'sub-wide viewports allow Detail toolbar actions to wrap'
 );
 assert(
-  /@media \(min-width:\s*981px\)\s+and\s+\(max-width:\s*1440px\)[\s\S]*?\.editor-layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+12rem/s.test(
-    appCss
-  ),
-  'medium Detail keeps a usable editor column beside the inspector'
+  appCss.includes('container: prompt-detail / inline-size'),
+  'Detail exposes its actual content width as a layout container'
 );
 assert(
-  /@media \(min-width:\s*1281px\)[\s\S]*?\.editor-inspector-toggle[\s\S]*?display:\s*none/s.test(appCss),
-  'only wide Detail panes hide the Inspector sheet controls'
-);
-assert(
-  /@media \(max-width:\s*1280px\)[\s\S]*?\.editor-canvas\s*\{[^}]*overflow:\s*auto[\s\S]*?\.prompt-editor\s*\{[^}]*min-height:\s*0/s.test(
+  /@container prompt-detail \(min-width:\s*40rem\)[\s\S]*?\.editor-layout[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s+minmax\(12rem,\s*17rem\)/s.test(
     appCss
   ),
-  'narrow Edit panes let the canvas and editor shrink and scroll'
+  'wide Detail containers use the persistent two-column editor'
+);
+assert(
+  /\.editor-canvas\s*\{[^}]*overflow:\s*auto/s.test(appCss) &&
+    /\.prompt-editor\s*\{[^}]*min-height:\s*0/s.test(appCss),
+  'Edit panes let the canvas and editor shrink and scroll at every height'
 );
 assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
