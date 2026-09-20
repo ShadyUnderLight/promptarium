@@ -411,7 +411,7 @@
         <div class="detail-title-line">
           <button type="button" class:favorite-button--active={metadata.favorite} class="favorite-button" aria-label={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} title={metadata.favorite ? t('detail.favorite.remove') : t('detail.favorite.add')} onclick={toggleFavorite}><Icon name={metadata.favorite ? 'star' : 'star-outline'} /></button>
           <h2>{promptTitle(document.name)}</h2>
-          {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+          {#if dirty}<span class="dirty-dot" role="img" aria-label={t('detail.dirty.title')} title={t('detail.dirty.title')}></span>{/if}
           {#if document.frontmatterError}<span class="warning-badge warning-badge--large" title={document.frontmatterError}><Icon name="warning" /></span>{/if}
         </div>
         <span class="detail-path">{document.relativePath}</span>
@@ -477,7 +477,7 @@
 
     {#if mode === 'edit' && rawVisible}
       <div class="detail-edit-actions">
-        {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+        {#if dirty}<span class="dirty-dot" role="img" aria-label={t('detail.dirty.title')} title={t('detail.dirty.title')}></span>{/if}
         <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
           {saving ? t('detail.saving') : t('detail.save')}
         </button>
@@ -510,7 +510,7 @@
         <div class="editor-canvas">
           <div class="editor-canvas__toolbar">
             {#if !inspectorVisible}
-              {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+              {#if dirty}<span class="dirty-dot" role="img" aria-label={t('detail.dirty.title')} title={t('detail.dirty.title')}></span>{/if}
               <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
                 {saving ? t('detail.saving') : t('detail.save')}
               </button>
@@ -535,7 +535,7 @@
           aria-label={t('detail.inspector.aria')}
         >
           <div class="editor-inspector__actions">
-            {#if dirty}<span class="dirty-dot editor-inspector__dirty" title={t('detail.dirty.title')}></span>{/if}
+            {#if dirty}<span class="dirty-dot editor-inspector__dirty" role="img" aria-label={t('detail.dirty.title')} title={t('detail.dirty.title')}></span>{/if}
             <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
               {saving ? t('detail.saving') : t('detail.save')}
             </button>

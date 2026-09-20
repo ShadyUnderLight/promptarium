@@ -354,7 +354,6 @@ export const zhCN = {
   'history.empty.no-commits': '当前提示词尚无 Git 历史。',
 
   // 比较查看器。正文/元数据差异内容与提示词名保持原样。
-  'compare.aria': '比较提示词',
   'compare.title': '比较…',
   'compare.picker.aria': '要比较的提示词',
   'compare.picker.placeholder': '选择一个提示词…',

@@ -183,6 +183,30 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     });
   });
 
+  it('marks the unsaved state with more than a colour', async () => {
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+    expect(container.querySelectorAll('.dirty-dot').length).toBe(0);
+
+    await fireEvent.input(screen.getByLabelText('Prompt Markdown'), {
+      target: { value: 'Changed body' },
+    });
+
+    const dots = await vi.waitFor(() => {
+      const found = [...container.querySelectorAll('.dirty-dot')];
+      if (!found.length) throw new Error('no unsaved marker rendered');
+      return found;
+    });
+    // A 0.42rem colour swatch is nothing to a screen reader, and nothing to a
+    // user who cannot tell the warning hue from the surface behind it.
+    for (const dot of dots) {
+      expect(dot.getAttribute('role')).toBe('img');
+      expect(dot.getAttribute('aria-label')).toBe('Unsaved changes');
+    }
+  });
+
   it('derives the variant family from the current draft metadata', () => {
     const current = documentFixture();
     const summary = (name: string, extra: Record<string, unknown> = {}) => ({

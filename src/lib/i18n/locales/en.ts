@@ -365,7 +365,6 @@ export const en = {
   'history.empty.no-commits': 'This prompt has no Git history yet.',
 
   // Compare viewer. Body/metadata diff content and prompt names stay raw.
-  'compare.aria': 'Compare prompts',
   'compare.title': 'Compare with…',
   'compare.picker.aria': 'Prompt to compare with',
   'compare.picker.placeholder': 'Choose a prompt…',
