@@ -57,7 +57,7 @@ function mediaQueryStub(initialMatches: boolean) {
     get matches() {
       return matches;
     },
-    media: '(min-width: 901px)',
+    media: '(min-width: 1281px)',
     addEventListener: vi.fn((_event: string, listener: MediaQueryListener) => {
       listeners.add(listener);
     }),
@@ -81,7 +81,7 @@ function stubInspectorMediaQuery(initialWide: boolean): ReturnType<typeof mediaQ
   const inspectorMq = mediaQueryStub(initialWide);
   vi.stubGlobal(
     'matchMedia',
-    vi.fn((query: string) => (query.includes('901px') ? inspectorMq : mediaQueryStub(false)))
+    vi.fn((query: string) => (query.includes('1281px') ? inspectorMq : mediaQueryStub(false)))
   );
   return inspectorMq;
 }

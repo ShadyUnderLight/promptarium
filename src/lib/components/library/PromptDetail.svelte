@@ -114,7 +114,7 @@
 
   $effect(() => {
     if (typeof window.matchMedia !== 'function') return;
-    const mq = window.matchMedia('(min-width: 901px)');
+    const mq = window.matchMedia('(min-width: 1281px)');
     const sync = (): void => {
       inspectorWide = mq.matches;
     };

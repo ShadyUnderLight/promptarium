@@ -2930,21 +2930,32 @@ body {
   }
 }
 
-@media (min-width: 901px) {
+/* The persistent Rail/Shelf/Prompt List can leave a much narrower Detail pane
+   than the viewport suggests. Keep the Inspector as a sheet until the window
+   is wide enough for a usable Markdown column beside it. */
+@media (min-width: 1281px) {
   .editor-inspector-toggle,
   .editor-inspector__close {
     display: none;
   }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1280px) {
   .editor-layout {
     grid-template-columns: minmax(0, 1fr);
     position: relative;
   }
 
+  .editor-canvas {
+    overflow: auto;
+  }
+
   .editor-canvas__toolbar {
     display: flex;
+  }
+
+  .prompt-editor {
+    min-height: 0;
   }
 
   .editor-layout--inspector-open .editor-inspector {

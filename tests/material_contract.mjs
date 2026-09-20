@@ -196,6 +196,16 @@ assert(
   'medium Detail keeps a usable editor column beside the inspector'
 );
 assert(
+  /@media \(min-width:\s*1281px\)[\s\S]*?\.editor-inspector-toggle[\s\S]*?display:\s*none/s.test(appCss),
+  'only wide Detail panes hide the Inspector sheet controls'
+);
+assert(
+  /@media \(max-width:\s*1280px\)[\s\S]*?\.editor-canvas\s*\{[^}]*overflow:\s*auto[\s\S]*?\.prompt-editor\s*\{[^}]*min-height:\s*0/s.test(
+    appCss
+  ),
+  'narrow Edit panes let the canvas and editor shrink and scroll'
+);
+assert(
   /\.prompt-library\s*\{[^}]*background:\s*var\(--surface-content\)/s.test(appCss),
   'Prompt Library uses the content surface'
 );
