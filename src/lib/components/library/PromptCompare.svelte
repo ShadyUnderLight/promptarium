@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { focusTrap } from '$lib/attachments/focusTrap';
   import { readPrompt } from '$lib/api';
   import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import {
@@ -130,9 +131,9 @@
 </script>
 
 <div class="modal-backdrop" role="presentation" onclick={(event) => event.target === event.currentTarget && onClose()}>
-  <dialog open class="modal compare-modal" aria-label={t('compare.aria')} onkeydown={handleKeydown} tabindex="-1">
+  <dialog open class="modal compare-modal" aria-labelledby="compare-title" onkeydown={handleKeydown} tabindex="-1" {@attach focusTrap}>
     <div class="compare-modal__head">
-      <h3>{t('compare.title')}</h3>
+      <h3 id="compare-title">{t('compare.title')}</h3>
       <div class="compare-modal__controls">
         <select class="compare-picker" aria-label={t('compare.picker.aria')} value={targetName} onchange={(event) => (targetName = event.currentTarget.value)}>
           <option value="" disabled>{t('compare.picker.placeholder')}</option>

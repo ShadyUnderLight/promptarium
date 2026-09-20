@@ -21,6 +21,10 @@
     onConfirm,
     onCancel,
   }: Props = $props();
+  // The button order in the markup is load-bearing. `focusTrap` moves focus to
+  // the first focusable child, which is the Cancel button, so a bare Enter takes
+  // the safe path — keep editing, cancel, or keep the project — and never lands
+  // on Delete / Forget / Discard. Keep Cancel first; this is not a bug to fix.
   let busy = $state(false);
 
   async function confirm(): Promise<void> {
