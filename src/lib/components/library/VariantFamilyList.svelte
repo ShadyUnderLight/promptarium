@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { PromptDocument, PromptSummary } from '$lib/prompts/types';
+  import type { PromptDocument, PromptMetadata, PromptSummary } from '$lib/prompts/types';
   import { promptTitle } from '$lib/library.svelte';
   import { resolveVariantFamily, type VariantLink } from '$lib/variants/variants';
   import { t } from '$lib/i18n/i18n.svelte';
@@ -9,13 +9,25 @@
   interface Props {
     document: PromptDocument;
     summaries: PromptSummary[];
+    /** Current editor metadata for the selected prompt; other summaries remain disk-derived. */
+    metadataOverride?: PromptMetadata;
     onNavigate: (projectPath: string, name: string) => void;
   }
 
-  let { document, summaries, onNavigate }: Props = $props();
+  let { document, summaries, metadataOverride, onNavigate }: Props = $props();
+
+  const effectiveSummaries = $derived(
+    metadataOverride
+      ? summaries.map((summary) =>
+          summary.projectPath === document.projectPath && summary.name === document.name
+            ? { ...summary, metadata: metadataOverride }
+            : summary
+        )
+      : summaries
+  );
 
   const family = $derived(
-    resolveVariantFamily(summaries, { projectPath: document.projectPath, name: document.name })
+    resolveVariantFamily(effectiveSummaries, { projectPath: document.projectPath, name: document.name })
   );
 
   function linkLabel(link: VariantLink): string {

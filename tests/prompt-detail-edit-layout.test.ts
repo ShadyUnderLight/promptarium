@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import PromptDetail from '../src/lib/components/library/PromptDetail.svelte';
+import VariantFamilyList from '../src/lib/components/library/VariantFamilyList.svelte';
 import type { PromptDocument } from '../src/lib/prompts/types';
 
 function documentFixture(): PromptDocument {
@@ -172,6 +173,51 @@ describe('PromptDetail edit layout (Issue #65)', () => {
 
     expect(screen.getByRole('button', { name: 'Save changes' })).toBeTruthy();
     expect(screen.queryByLabelText('Prompt Markdown')).toBeNull();
+  });
+
+  it('restores the body selection after a Preview/Edit round trip', async () => {
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+
+    const editor = container.querySelector('#prompt-body') as HTMLTextAreaElement;
+    editor.setSelectionRange(1, 6);
+    await fireEvent.click(screen.getByRole('tab', { name: 'Preview' }));
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+
+    await vi.waitFor(() => {
+      const restored = container.querySelector('#prompt-body') as HTMLTextAreaElement;
+      expect(restored.selectionStart).toBe(1);
+      expect(restored.selectionEnd).toBe(6);
+    });
+  });
+
+  it('derives the variant family from the current draft metadata', () => {
+    const current = documentFixture();
+    const summary = (name: string, extra: Record<string, unknown> = {}) => ({
+      ...current,
+      name,
+      relativePath: `${name}.md`,
+      metadata: { ...current.metadata, extra },
+    });
+    const draftMetadata = { ...current.metadata, extra: { variantOf: 'parent-b' } };
+    const { container } = render(VariantFamilyList, {
+      props: {
+        document: { ...current, metadata: { ...current.metadata, extra: { variantOf: 'parent-a' } } },
+        summaries: [
+          summary('sample', { variantOf: 'parent-a' }),
+          summary('parent-a'),
+          summary('parent-b'),
+          summary('sibling-b', { variantOf: 'parent-b' }),
+        ],
+        metadataOverride: draftMetadata,
+        onNavigate: vi.fn(),
+      },
+    });
+
+    expect(container.textContent).toContain('parent b');
+    expect(container.textContent).not.toContain('parent a');
   });
 
   it('preserves a closed narrow inspector sheet after a wide → narrow resize round trip', async () => {

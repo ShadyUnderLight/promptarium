@@ -101,6 +101,12 @@
     initial: string;
     resolve: (value: string | null) => void;
   } | null>(null);
+  let bodyEditor = $state<HTMLTextAreaElement | null>(null);
+  let editSelection = $state<{
+    key: string;
+    start: number;
+    end: number;
+  } | null>(null);
   /** Narrow layouts tuck the metadata inspector into a sheet; UI-only. */
   let inspectorOpen = $state(true);
   let inspectorWide = $state(true);
@@ -166,6 +172,7 @@
     const current = document;
     if (!current) {
       loadedKey = '';
+      editSelection = null;
       fillDialogOpen = false;
       metadata = null;
       originalMetadata = null;
@@ -179,6 +186,7 @@
     const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
+    editSelection = null;
     fillDialogOpen = false;
     body = current.body;
     originalBody = current.body;
@@ -194,6 +202,19 @@
 
   $effect(() => {
     onDirtyChange(dirty);
+  });
+
+  $effect(() => {
+    const current = document;
+    const editor = bodyEditor;
+    const saved = editSelection;
+    if (mode !== 'edit' || !current || !editor || !saved) return;
+    const key = current.projectPath + '\u0000' + current.name;
+    if (saved.key !== key) return;
+    const start = Math.max(0, Math.min(saved.start, editor.value.length));
+    const end = Math.max(start, Math.min(saved.end, editor.value.length));
+    editor.setSelectionRange(start, end);
+    editSelection = null;
   });
 
   function updateMetadata(value: PromptMetadata): void {
@@ -325,7 +346,22 @@
     void onCopy(body);
   }
 
+  function captureEditSelection(): void {
+    if (mode !== 'edit' || !bodyEditor || !document) return;
+    editSelection = {
+      key: document.projectPath + '\u0000' + document.name,
+      start: bodyEditor.selectionStart,
+      end: bodyEditor.selectionEnd,
+    };
+  }
+
+  function toggleRaw(): void {
+    if (!rawVisible) captureEditSelection();
+    rawVisible = !rawVisible;
+  }
+
   function setMode(next: 'preview' | 'edit' | 'history'): void {
+    if (mode === 'edit' && next !== 'edit') captureEditSelection();
     mode = next;
     if (next === 'edit' && !inspectorWide) {
       inspectorOpen = false;
@@ -420,7 +456,7 @@
     {#if document.frontmatterError}
       <div class="frontmatter-warning">
         <span>{t('detail.frontmatterWarning', { detail: document.frontmatterError })}</span>
-        <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? t('detail.hideRaw') : t('detail.showRaw')}</button>
+        <button type="button" class="text-button" onclick={toggleRaw}>{rawVisible ? t('detail.hideRaw') : t('detail.showRaw')}</button>
       </div>
     {/if}
 
@@ -488,7 +524,7 @@
             </button>
           </div>
           <label class="editor-label" for="prompt-body">{t('detail.editor.label')}</label>
-          <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
+          <textarea id="prompt-body" class="prompt-editor" bind:this={bodyEditor} bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
           <span class="editor-hint">{t('detail.editor.hint')}</span>
         </div>
         <aside
@@ -520,7 +556,7 @@
             >
               {#snippet relationsReadonly()}
                 <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata!.related} onNavigate={onNavigate} />
-                <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
+                <VariantFamilyList document={document} summaries={projectSummaries} metadataOverride={metadata!} onNavigate={onNavigate} />
               {/snippet}
               {#snippet notesReadonly()}
                 <div class="editor-inspector__notes-health">
@@ -553,7 +589,7 @@
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
         <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
-        <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
+        <VariantFamilyList document={document} summaries={projectSummaries} metadataOverride={metadata!} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata.extra).length)}</span>{/if}
       </div>
     {/if}

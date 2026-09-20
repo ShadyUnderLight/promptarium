@@ -192,7 +192,7 @@
 
 {#if editing}
   <div class="metadata-editor" data-testid="metadata-inspector-sections">
-    <MetadataInspectorSection title={t('detail.inspector.section.status')}>
+    <MetadataInspectorSection id="metadata-section-status" title={t('detail.inspector.section.status')}>
       <div class="metadata-grid metadata-grid--inspector">
         <label class="field">
           <span>{t('meta.status')}</span>
@@ -209,7 +209,7 @@
       </div>
     </MetadataInspectorSection>
 
-    <MetadataInspectorSection title={t('detail.inspector.section.fields')}>
+    <MetadataInspectorSection id="metadata-section-fields" title={t('detail.inspector.section.fields')}>
       <label class="field field--wide">
         <span>{t('meta.description')}</span>
         <textarea value={metadata.description} oninput={(event) => setField('description', event.currentTarget.value)} placeholder={t('meta.description.placeholder')}></textarea>
@@ -230,7 +230,7 @@
       </div>
     </MetadataInspectorSection>
 
-    <MetadataInspectorSection title={t('detail.inspector.section.variables')}>
+    <MetadataInspectorSection id="metadata-section-variables" title={t('detail.inspector.section.variables')}>
       <div class="variables-editor variables-editor--section">
         {#each variableNames as name (name)}
           <div class="variable-doc-edit">
@@ -281,7 +281,7 @@
       </div>
     </MetadataInspectorSection>
 
-    <MetadataInspectorSection title={t('detail.inspector.section.examples')}>
+    <MetadataInspectorSection id="metadata-section-examples" title={t('detail.inspector.section.examples')}>
       <ExamplesEditor
         examples={metadata.examples ?? []}
         projectPath={projectPath}
@@ -291,7 +291,7 @@
       />
     </MetadataInspectorSection>
 
-    <MetadataInspectorSection title={t('detail.inspector.section.relations')}>
+    <MetadataInspectorSection id="metadata-section-relations" title={t('detail.inspector.section.relations')}>
       <div class="related-editor">
         <span class="variables-editor__heading">{t('meta.related')}</span>
         {#if metadata.related.length}
@@ -351,7 +351,7 @@
       {/if}
     </MetadataInspectorSection>
 
-    <MetadataInspectorSection title={t('detail.inspector.section.notes')}>
+    <MetadataInspectorSection id="metadata-section-notes" title={t('detail.inspector.section.notes')}>
       <label class="field field--wide">
         <span>{t('meta.usageNotes')} <small>{t('meta.usageNotesHint')}</small></span>
         <textarea class="notes-editor" value={metadata.notes ?? ''} oninput={(event) => setField('notes', event.currentTarget.value || undefined)} placeholder={t('meta.notes.placeholder')}></textarea>
