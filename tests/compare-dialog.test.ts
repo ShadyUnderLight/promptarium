@@ -3,8 +3,13 @@
  * `src/lib/components/library`, but it shipped without the shared focus trap:
  * it covered the whole window while Tab kept walking the page behind it, and it
  * named itself with `aria-label` instead of its own visible heading. These tests
- * pin the trap, the accessible name and the focus hand-back on close, so the
- * overlay cannot silently regress to a keyboard dead end again.
+ * pin the trap, the accessible name, Escape, and Tab containment, so the overlay
+ * cannot silently regress to a keyboard dead end again.
+ *
+ * Focus hand-back on close is *not* here: unmounting the component directly
+ * only proves the attachment's teardown, not that closing the overlay restores
+ * focus. It lives in `prompt-detail-edit-layout.test.ts`, which drives the real
+ * Compare button on the real PromptDetail and lets Escape unmount the overlay.
  *
  * jsdom does not implement `offsetParent` (it is always null) while the trap
  * filters invisible focusables with exactly that property. Without the stub
@@ -145,21 +150,5 @@ describe('PromptCompare overlay (Issue #66)', () => {
     await fireEvent.keyDown(element, { key: 'Escape' });
 
     expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it('hands focus back to whatever opened it', async () => {
-    const trigger = document.createElement('button');
-    trigger.textContent = 'Compare';
-    document.body.append(trigger);
-    trigger.focus();
-
-    render(PromptCompare, { props: { ...compareProps, onClose: vi.fn() } });
-    const element = await dialog();
-    await waitFor(() => expect(element.contains(document.activeElement)).toBe(true));
-
-    cleanup();
-
-    expect(document.activeElement).toBe(trigger);
-    trigger.remove();
   });
 });

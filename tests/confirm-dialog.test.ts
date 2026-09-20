@@ -10,6 +10,14 @@
  * jsdom does not implement `offsetParent` (always null) while the trap filters
  * invisibles with exactly that property, so it is stubbed here; without it the
  * trap would find no focusable and focus the dialog container instead.
+ *
+ * jsdom also implements no keyboard activation for buttons at all: keydown and
+ * keyup Enter on a focused `<button>`, and on a `<button type="submit">` inside
+ * a form, each dispatch zero clicks. `@testing-library/user-event` — which would
+ * model it — cannot be added here (pnpm is unavailable in this checkout, so the
+ * lockfile cannot move). The Enter test therefore applies the platform's
+ * activation explicitly, to whatever currently holds focus, and says so; what it
+ * pins is the whole path (focused element → its handler), not jsdom's plumbing.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -33,6 +41,22 @@ function confirmProps(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Press Enter on whatever holds focus, the way a browser does it.
+ *
+ * jsdom dispatches no click for a key press (see the file header), so the
+ * activation is applied by hand to the *same* element the key went to. That
+ * keeps the assertion honest: if the trap ever lands somewhere else, this
+ * presses Enter on that element instead, and the destructive spy catches it.
+ */
+function pressEnter(): void {
+  const active = document.activeElement;
+  if (!(active instanceof HTMLElement)) throw new Error('nothing is focused');
+  fireEvent.keyDown(active, { key: 'Enter' });
+  fireEvent.click(active);
+  fireEvent.keyUp(active, { key: 'Enter' });
+}
+
 beforeEach(() => {
   setPreference('en');
   Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
@@ -54,7 +78,22 @@ afterEach(() => {
 });
 
 describe('ConfirmDialog Enter contract (Issue #66)', () => {
-  it('focuses Cancel, so a bare Enter can never take the destructive action', async () => {
+  it('sends a bare Enter to Cancel, never to the destructive action', async () => {
+    const onCancel = vi.fn();
+    const onConfirm = vi.fn();
+    render(ConfirmDialog, { props: confirmProps({ onCancel, onConfirm }) });
+
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Cancel' }))
+    );
+
+    pressEnter();
+
+    expect(onCancel).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps Cancel ahead of the destructive button in focus order', async () => {
     render(ConfirmDialog, { props: confirmProps() });
 
     const dialog = screen.getByRole('dialog', { name: 'Delete prompt?' });
@@ -63,13 +102,15 @@ describe('ConfirmDialog Enter contract (Issue #66)', () => {
 
     await waitFor(() => expect(document.activeElement).toBe(cancel));
 
-    // What makes Enter safe is only the focus order, so assert the order itself:
-    // if Cancel stops being the first focusable, Enter lands on Delete again.
+    // The contract above holds only because the trap lands on the first
+    // focusable and that is Cancel. If Cancel stops being first, Enter starts
+    // arming Delete, and the test above is what goes red — this one localises
+    // the cause to the markup order.
     const focusables = Array.from(
-      dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])')
+      dialog.querySelectorAll<HTMLElement>('button:not([disabled])')
     );
     expect(focusables[0]).toBe(cancel);
-    expect(focusables).toContain(confirm);
+    expect(focusables.indexOf(confirm)).toBeGreaterThan(0);
   });
 
   it('cancels on Escape', async () => {

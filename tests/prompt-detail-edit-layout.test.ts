@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi, beforeEach } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/svelte';
 import PromptDetail from '../src/lib/components/library/PromptDetail.svelte';
 import VariantFamilyList from '../src/lib/components/library/VariantFamilyList.svelte';
 import type { PromptDocument } from '../src/lib/prompts/types';
@@ -70,6 +70,25 @@ function stubInspectorResizeObserver(initialWidth: number) {
     })
   );
   return observer;
+}
+
+/**
+ * Issue #66 — the unsaved marker has to carry meaning, not only a colour.
+ * A 0.42rem colour swatch is nothing to a screen reader, and nothing to a user
+ * who cannot tell the warning hue from the surface behind it.
+ */
+function expectAccessibleDirtyMarker(container: HTMLElement, selector: string): void {
+  const dot = container.querySelector(selector);
+  expect(dot, `no unsaved marker rendered at ${selector}`).not.toBeNull();
+  expect(dot!.getAttribute('role')).toBe('img');
+  expect(dot!.getAttribute('aria-label')).toBe('Unsaved changes');
+}
+
+async function editAndDirty(): Promise<void> {
+  await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+  await fireEvent.input(screen.getByLabelText('Prompt Markdown'), {
+    target: { value: 'Changed body' },
+  });
 }
 
 afterEach(() => {
@@ -183,7 +202,10 @@ describe('PromptDetail edit layout (Issue #65)', () => {
     });
   });
 
-  it('marks the unsaved state with more than a colour', async () => {
+  // The marker is rendered from four separate call sites. Each one is asserted
+  // through its own container, so dropping the semantics from any single site
+  // fails here instead of hiding behind the sites that still render.
+  it('marks the unsaved state with more than a colour in the header and the inspector', async () => {
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
@@ -194,17 +216,35 @@ describe('PromptDetail edit layout (Issue #65)', () => {
       target: { value: 'Changed body' },
     });
 
-    const dots = await vi.waitFor(() => {
-      const found = [...container.querySelectorAll('.dirty-dot')];
-      if (!found.length) throw new Error('no unsaved marker rendered');
-      return found;
+    await waitFor(() => expect(container.querySelector('.dirty-dot')).not.toBeNull());
+    expectAccessibleDirtyMarker(container, '.detail-title-line .dirty-dot');
+    expectAccessibleDirtyMarker(container, '.editor-inspector__actions .dirty-dot');
+  });
+
+  it('marks the unsaved state in the raw-file actions', async () => {
+    // The raw toggle only appears next to a frontmatter warning, which is also
+    // the state the raw edit actions are for.
+    const { container } = render(PromptDetail, {
+      props: {
+        ...detailProps,
+        document: { ...documentFixture(), frontmatterError: 'invalid yaml' },
+      },
     });
-    // A 0.42rem colour swatch is nothing to a screen reader, and nothing to a
-    // user who cannot tell the warning hue from the surface behind it.
-    for (const dot of dots) {
-      expect(dot.getAttribute('role')).toBe('img');
-      expect(dot.getAttribute('aria-label')).toBe('Unsaved changes');
-    }
+    await editAndDirty();
+    await fireEvent.click(screen.getByRole('button', { name: 'Show raw file' }));
+
+    expectAccessibleDirtyMarker(container, '.detail-edit-actions .dirty-dot');
+  });
+
+  it('marks the unsaved state on the narrow canvas toolbar', async () => {
+    stubInspectorResizeObserver(456);
+    const { container } = render(PromptDetail, {
+      props: { ...detailProps, document: documentFixture() },
+    });
+    await editAndDirty();
+
+    expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy();
+    expectAccessibleDirtyMarker(container, '.editor-canvas__toolbar .dirty-dot');
   });
 
   it('derives the variant family from the current draft metadata', () => {
@@ -262,5 +302,40 @@ describe('PromptDetail edit layout (Issue #65)', () => {
 
     inspectorObserver.fire(456);
     await vi.waitFor(() => expect(container.querySelector('.editor-layout--inspector-open')).toBeFalsy());
+  });
+});
+
+/**
+ * Issue #66 — "focus must return to the button that opened the overlay".
+ *
+ * Unmounting PromptCompare directly only proves the attachment's teardown, so
+ * this drives the real path instead: the real Compare button on the real
+ * PromptDetail, Escape closing the overlay through `onClose`, and PromptDetail
+ * dropping `compareOpen` so the overlay unmounts. If that wiring breaks, this
+ * fails even though a direct-unmount test would still pass.
+ */
+describe('PromptCompare focus hand-back (Issue #66)', () => {
+  beforeEach(() => {
+    stubInspectorResizeObserver(720);
+  });
+
+  it('returns focus to the Compare button when Escape closes the overlay', async () => {
+    render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
+
+    const trigger = screen.getByRole('button', { name: 'Compare…' });
+    trigger.focus();
+    await fireEvent.click(trigger);
+
+    const overlay = await waitFor(() => {
+      const found = document.querySelector<HTMLElement>('.compare-modal');
+      if (!found) throw new Error('compare overlay did not open');
+      return found;
+    });
+    await waitFor(() => expect(overlay.contains(document.activeElement)).toBe(true));
+
+    await fireEvent.keyDown(overlay, { key: 'Escape' });
+
+    await waitFor(() => expect(document.querySelector('.compare-modal')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
   });
 });
