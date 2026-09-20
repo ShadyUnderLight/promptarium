@@ -69,8 +69,10 @@ const GUARDED_SURFACES: Readonly<Record<string, ReadonlyArray<MessageKey>>> = {
 
 /**
  * Every surface the guard must actually carry entries for: Issue #38 §2's list
- * plus the Floating Shelf surfaces added in Issue #67. Without this, dropping a
- * surface from `GUARDED_SURFACES` would only shrink `it.each` and still pass.
+ * plus the Floating Shelf surfaces added in Issue #67. This is checked to be the
+ * exact same set as `GUARDED_SURFACES` in both directions — dropping a surface
+ * would otherwise only shrink `it.each` and still pass, and adding one without
+ * registering it here would leave the same hole.
  */
 const REQUIRED_SURFACES = [
   'ProjectSidebar',
@@ -88,6 +90,7 @@ const REQUIRED_SURFACES = [
   'ConfirmDialog',
   'NamePromptDialog',
   'UpdateBanner',
+  'Notices',
 ];
 
 /** Narrow escapes: [source path, phrase]. Keep empty if you can. */
@@ -117,11 +120,15 @@ describe('hardcoded App-owned copy guard (Issue #38)', () => {
     expect(scanned.length).toBeGreaterThan(20);
   });
 
-  it('covers every guarded surface', () => {
+  it('guards exactly the required surfaces', () => {
     const missing = REQUIRED_SURFACES.filter(
       (surface) => !GUARDED_SURFACES[surface]?.length
     );
     expect(missing).toEqual([]);
+    // Set equality, not just containment: a surface that is guarded but missing
+    // from REQUIRED_SURFACES could be deleted outright, because `it.each` would
+    // only shrink and every assertion here would still pass.
+    expect(Object.keys(GUARDED_SURFACES).sort()).toEqual([...REQUIRED_SURFACES].sort());
   });
 
   it('the scanner itself detects a planted phrase', () => {
