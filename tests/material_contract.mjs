@@ -271,14 +271,170 @@ for (const token of ['--warning-contrast', '--success-contrast', '--error-contra
   assert(light !== dark, `${token} is theme-aware`);
 }
 assert(
-  tokenInBlock(':root {', '--error-fill-contrast') !== undefined &&
-    tokenInBlock("[data-theme='dark'] {", '--error-fill-contrast') === undefined,
-  '--error-fill-contrast stays theme-independent because it only backs white text'
-);
-assert(
   !/--warning:\s*var\(--warning-strong\)/.test(contrastRules),
   'Increase Contrast lifts --warning through a dedicated contrast token, not the -strong variant'
 );
+
+/* ---------------------------------------------------------------------------
+ * Increase Contrast has to reach the pixels, not just the token table.
+ *
+ * Several consumers tint their own background with the very token they use as
+ * text (.health-badge--warning is `var(--warning)` 14% over the page,
+ * .frontmatter-warning layers the -strong tint, the error strips use 8%), so
+ * deepening a token deepens what its text sits on and the two move towards each
+ * other. Measuring the token against --bg-subtle in isolation reported a pass
+ * where the badge composited to 3.98:1 — which is exactly the gap this section
+ * exists to close.
+ *
+ * Rules are collected from the stylesheet rather than hand-listed, so a new
+ * `.foo { color: var(--warning); background: color-mix(... var(--warning) 30%) }`
+ * widens the net by itself.
+ * ------------------------------------------------------------------------- */
+const stylesheet = appCss.replace(/\/\*[\s\S]*?\*\//g, '');
+
+const CONTRAST_REDIRECT = {
+  '--warning': '--warning-contrast',
+  '--success': '--success-contrast',
+  '--error': '--error-contrast',
+  '--error-fill': '--error-fill-contrast',
+};
+
+function themeBlock(theme) {
+  const id = theme === 'dark' ? "[data-theme='dark'] {" : ':root {';
+  const start = stylesheet.indexOf(id);
+  assert(start !== -1, `${id} is declared`);
+  return stylesheet.slice(stylesheet.indexOf('{', start), stylesheet.indexOf('\n}', start));
+}
+
+/** The literal a token resolves to, following the Increase Contrast redirect. */
+function resolveToken(theme, token, mode = 'contrast') {
+  const name = mode === 'contrast' ? CONTRAST_REDIRECT[token] ?? token : token;
+  const find = (scope) =>
+    themeBlock(scope).match(new RegExp(`${name}:\\s*([^;]+);`))?.[1]?.trim();
+  const value = find(theme) ?? find('light');
+  assert(value !== undefined, `${name} is declared for ${theme} or light`);
+  const literal = /^#([0-9a-f]{6})$/i.exec(value);
+  assert(
+    literal !== null,
+    `${name} resolves to a literal hex colour so it can be measured (got "${value}")`
+  );
+  return literal[1];
+}
+
+function channels(color) {
+  return [0, 2, 4].map((i) => parseInt(color.slice(i, i + 2), 16));
+}
+
+function relativeLuminance(color) {
+  const [r, g, b] = channels(color).map((value) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+function contrast(a, b) {
+  const [hi, lo] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/** `color-mix(in srgb, color N%, transparent)` composited over `base`. */
+function composite(color, alpha, base) {
+  return channels(color)
+    .map((value, i) => Math.round(alpha * value + (1 - alpha) * channels(base)[i]))
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function ruleBody(selector) {
+  const start = stylesheet.indexOf(`${selector} {`);
+  assert(start !== -1, `${selector} is declared`);
+  const open = stylesheet.indexOf('{', start);
+  return stylesheet.slice(open + 1, stylesheet.indexOf('}', open));
+}
+
+const STATUS_TEXT_RULES = [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .map(([, selector, body]) => {
+    const fg = /(?:^|[;\s])color:\s*var\((--warning|--success|--error)\)/.exec(body)?.[1];
+    if (!fg) return null;
+    const tint =
+      /background:\s*color-mix\(in srgb,\s*var\((--[a-z-]+)\)\s*([\d.]+)%,\s*transparent\)/.exec(
+        body
+      );
+    const solid = /background:\s*var\((--[a-z-]+)\)/.exec(body);
+    return {
+      selector: selector.trim(),
+      fg,
+      tint: tint ? { token: tint[1], alpha: Number(tint[2]) / 100 } : null,
+      solid: solid ? solid[1] : null,
+    };
+  })
+  .filter(Boolean);
+
+assert(
+  STATUS_TEXT_RULES.length >= 10,
+  `status tokens are painted as text by several rules (found ${STATUS_TEXT_RULES.length})`
+);
+
+// Both page surfaces, because a rule can land on either; the worse one governs.
+const SURFACES = ['--bg-card', '--bg-subtle'];
+
+for (const rule of STATUS_TEXT_RULES) {
+  const placement = rule.solid ?? (rule.tint ? `${rule.tint.token} ${rule.tint.alpha * 100}%` : 'page');
+  for (const theme of ['light', 'dark']) {
+    const fg = resolveToken(theme, rule.fg);
+    const worst = Math.min(
+      ...SURFACES.map((surface) => {
+        let base = resolveToken(theme, surface);
+        if (rule.solid) base = resolveToken(theme, rule.solid);
+        else if (rule.tint) {
+          base = composite(resolveToken(theme, rule.tint.token), rule.tint.alpha, base);
+        }
+        return contrast(fg, base);
+      })
+    );
+    assert(
+      worst >= 4.5,
+      `Increase Contrast keeps ${rule.selector} readable in ${theme} ` +
+        `(${rule.fg} on ${placement} = ${worst.toFixed(2)}:1, needs 4.5)`
+    );
+  }
+}
+
+// The fill is not "white text only": .btn--danger:disabled tints the same fill
+// and keeps an --error-strong label on top of it. Both compositions are
+// measured, so one value serving both themes is a result of the arithmetic
+// rather than a structural rule a future dark step would have to break.
+assert(
+  /color:\s*#fff/.test(ruleBody('.btn--danger')),
+  'the enabled danger button paints a white label on the fill'
+);
+for (const theme of ['light', 'dark']) {
+  const fill = resolveToken(theme, '--error-fill');
+  assert(
+    contrast('ffffff', fill) >= 4.5,
+    `Increase Contrast keeps the danger button label readable in ${theme} ` +
+      `(white on --error-fill = ${contrast('ffffff', fill).toFixed(2)}:1)`
+  );
+  const disabledBody = ruleBody('.btn--danger:disabled');
+  // The leading boundary matters: without it `border-color: var(--border)` reads
+  // as the label declaration and the assertion measures the wrong pair.
+  const label = /(?:^|[;\s])color:\s*var\((--[a-z-]+)\)/.exec(disabledBody)?.[1];
+  assert(label !== undefined, 'the disabled danger button declares its label token');
+  const worst = Math.min(
+    ...SURFACES.map((surface) =>
+      contrast(
+        resolveToken(theme, label),
+        composite(fill, 0.12, resolveToken(theme, surface))
+      )
+    )
+  );
+  assert(
+    worst >= 4.5,
+    `Increase Contrast keeps the disabled danger button readable in ${theme} ` +
+      `(${label} on the --error-fill tint = ${worst.toFixed(2)}:1)`
+  );
+}
 
 console.log(failures === 0 ? 'material contract: ok' : `material contract: ${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

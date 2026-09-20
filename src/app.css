@@ -98,10 +98,18 @@
      these four, the same way it lifts --border through --border-strong. They are
      explicit steps rather than aliases to the existing -strong variants: those
      are already spent on borders and tints, and their values are not contrast
-     levels. Light --warning-strong (#d97706) clears 3.19:1 on white and 2.91:1
-     on --bg-subtle, where the 0.62rem status-chip text needs 4.5:1. Every value
-     below clears that on its own theme's --bg-subtle. */
-  --warning-contrast: #9a5f0f;
+     levels (light --warning-strong #d97706 clears 3.19:1 on white).
+
+     Every step is chosen against the *composited* surface rather than the bare
+     text ratio. Several consumers tint their own background with the same token
+     (`--warning` 14% under `.health-badge--warning`, the -strong tint under
+     `.frontmatter-warning`, `--error` 8% under the error strips), so deepening a
+     token also deepens what its text sits on and the two move towards each
+     other. Light --warning is the binding case: #9a5f0f clears 4.77:1 on plain
+     --bg-subtle but only 3.98:1 once the badge's own 14% tint is underneath.
+     These values clear 4.5:1 on every surface they actually land on; the
+     consumer list and the arithmetic live in tests/material_contract.mjs. */
+  --warning-contrast: #845007;
   --success-contrast: #0f6e52;
   --error-contrast: #a71d1d;
   --error-fill-contrast: #b91c1c;
@@ -3154,8 +3162,9 @@ body {
     --selection-tint: color-mix(in srgb, var(--accent-user) 14%, var(--bg-card));
     --selection-border: color-mix(in srgb, var(--accent-user) 52%, var(--border-strong));
     /* Status colours carry the same job as --border above: they must stay
-       readable as text (status chips, health badges) and as white-on-fill
-       (the danger button), so Increase Contrast strengthens all four. */
+       readable as text (status chips, health badges) and carry the danger
+       button — white on the enabled fill, --error-strong on the disabled tint —
+       so Increase Contrast strengthens all four. */
     --warning: var(--warning-contrast);
     --success: var(--success-contrast);
     --error: var(--error-contrast);
