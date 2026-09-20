@@ -14,10 +14,15 @@
  * jsdom also implements no keyboard activation for buttons at all: keydown and
  * keyup Enter on a focused `<button>`, and on a `<button type="submit">` inside
  * a form, each dispatch zero clicks. `@testing-library/user-event` — which would
- * model it — cannot be added here (pnpm is unavailable in this checkout, so the
- * lockfile cannot move). The Enter test therefore applies the platform's
- * activation explicitly, to whatever currently holds focus, and says so; what it
+ * model it — is not a dependency of this project, and adding one just for this
+ * test is not worth it. So the platform's activation is applied explicitly, to
+ * whatever currently holds focus, honouring `preventDefault()`. What the test
  * pins is the whole path (focused element → its handler), not jsdom's plumbing.
+ *
+ * Focus hand-back on close is deliberately absent: unmounting the dialog here
+ * would only prove the attachment's teardown, not that a real parent clears its
+ * pending confirm and restores focus. That lives in `unsaved-navigation.test.ts`,
+ * which cancels a real guard raised from a real list row inside `PromptsView`.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
@@ -48,13 +53,26 @@ function confirmProps(overrides: Record<string, unknown> = {}) {
  * activation is applied by hand to the *same* element the key went to. That
  * keeps the assertion honest: if the trap ever lands somewhere else, this
  * presses Enter on that element instead, and the destructive spy catches it.
+ *
+ * A handler that calls `preventDefault()` takes the key over, and a browser then
+ * skips the button's default activation — so the synthetic click only happens
+ * when nothing claimed the event. Without that, adding `preventDefault()` to a
+ * future Enter handler would silently disable Enter and this test would still
+ * pass.
  */
 function pressEnter(): void {
   const active = document.activeElement;
   if (!(active instanceof HTMLElement)) throw new Error('nothing is focused');
-  fireEvent.keyDown(active, { key: 'Enter' });
-  fireEvent.click(active);
-  fireEvent.keyUp(active, { key: 'Enter' });
+  const keydown = new KeyboardEvent('keydown', {
+    key: 'Enter',
+    bubbles: true,
+    cancelable: true,
+  });
+  active.dispatchEvent(keydown);
+  if (!keydown.defaultPrevented) fireEvent.click(active);
+  active.dispatchEvent(
+    new KeyboardEvent('keyup', { key: 'Enter', bubbles: true, cancelable: true })
+  );
 }
 
 beforeEach(() => {
@@ -145,21 +163,5 @@ describe('ConfirmDialog Enter contract (Issue #66)', () => {
       expect(screen.getByRole('button', { name: 'Delete' }).hasAttribute('disabled')).toBe(false)
     );
     expect(screen.getByRole('button', { name: 'Cancel' }).hasAttribute('disabled')).toBe(false);
-  });
-
-  it('hands focus back to whatever opened it', async () => {
-    const trigger = document.createElement('button');
-    trigger.textContent = 'Delete';
-    document.body.append(trigger);
-    trigger.focus();
-
-    render(ConfirmDialog, { props: confirmProps() });
-    const dialog = screen.getByRole('dialog', { name: 'Delete prompt?' });
-    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
-
-    cleanup();
-
-    expect(document.activeElement).toBe(trigger);
-    trigger.remove();
   });
 });

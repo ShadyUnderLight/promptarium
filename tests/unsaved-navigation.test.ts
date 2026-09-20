@@ -185,6 +185,29 @@ afterEach(() => {
 });
 
 describe('unsaved-changes guard (window.confirm is unusable on macOS)', () => {
+  // `focusTrap` filters focusables with `offsetParent !== null`, and jsdom never
+  // implements it — so without this stub the trap finds nothing to focus and a
+  // focus assertion would pass because focus never left where it was.
+  const originalOffsetParent = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'offsetParent'
+  );
+  beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'offsetParent', {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.parentElement;
+      },
+    });
+  });
+  afterEach(() => {
+    if (originalOffsetParent) {
+      Object.defineProperty(HTMLElement.prototype, 'offsetParent', originalOffsetParent);
+    } else {
+      delete (HTMLElement.prototype as { offsetParent?: unknown }).offsetParent;
+    }
+  });
+
   it('dirty navigation opens the in-app ConfirmDialog instead of silently cancelling', async () => {
     const confirmSpy = vi.spyOn(window, 'confirm');
     const { container } = render(PromptsView);
@@ -203,12 +226,24 @@ describe('unsaved-changes guard (window.confirm is unusable on macOS)', () => {
     const { container } = render(PromptsView);
     await makeEditorDirty(container);
 
-    await fireEvent.click(rowFor(container, 'b'));
-    await fireEvent.click(await screen.findByText('继续编辑'));
+    const row = rowFor(container, 'b');
+    // A keyboard user tabs to the row, so focus is on it when the guard opens.
+    row.focus();
+    await fireEvent.click(row);
+
+    const dialog = (await screen.findByText(unsavedTitle)).closest('dialog')!;
+    await waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+
+    await fireEvent.click(screen.getByText('继续编辑'));
 
     await waitFor(() => expect(screen.queryByText(unsavedTitle)).toBeNull());
     expect(selectPromptMock).not.toHaveBeenCalled();
     expect(container.querySelector('.dirty-dot')).not.toBeNull();
+
+    // The whole close path, not just the trap's teardown: PromptsView clears its
+    // pending confirm, the dialog unmounts, and focus comes back to the row the
+    // user came from.
+    await waitFor(() => expect(document.activeElement).toBe(row));
   });
 
   it('Discard navigates', async () => {
