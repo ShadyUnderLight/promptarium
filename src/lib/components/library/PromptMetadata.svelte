@@ -242,11 +242,13 @@
               <input
                 value={docFor(name)?.description ?? ''}
                 oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
+                aria-label={t('meta.variableDescription.aria', { name })}
                 placeholder={t('meta.variableDescription')}
               />
               <input
                 value={docFor(name)?.example ?? ''}
                 oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
+                aria-label={t('meta.variableExample.aria', { name })}
                 placeholder={t('meta.variableExample')}
               />
             </div>
@@ -264,11 +266,13 @@
                 <input
                   value={docFor(name)?.description ?? ''}
                   oninput={(event) => setDocField(name, 'description', event.currentTarget.value)}
+                  aria-label={t('meta.variableDescription.aria', { name })}
                   placeholder={t('meta.variableDescription')}
                 />
                 <input
                   value={docFor(name)?.example ?? ''}
                   oninput={(event) => setDocField(name, 'example', event.currentTarget.value)}
+                  aria-label={t('meta.variableExample.aria', { name })}
                   placeholder={t('meta.variableExample')}
                 />
               </div>

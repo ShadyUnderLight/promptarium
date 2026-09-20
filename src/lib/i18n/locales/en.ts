@@ -409,6 +409,8 @@ export const en = {
   'meta.undocumented': 'Undocumented',
   'meta.variableDescription': 'Description',
   'meta.variableExample': 'Example',
+  'meta.variableDescription.aria': 'Description for variable {name}',
+  'meta.variableExample.aria': 'Example for variable {name}',
   'meta.staleDocs': 'Stale documentation',
   'meta.removeDoc': 'Remove documentation',
   'meta.noVariables.body': 'No variables detected in the prompt body.',

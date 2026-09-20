@@ -306,6 +306,39 @@ describe('PromptDetail edit layout (Issue #65)', () => {
 });
 
 /**
+ * Issue #67 — a variable row is identified by the token above it, which is a
+ * `<span>`, not a label. The two inputs therefore had no accessible name at
+ * all: only a placeholder, which is a hint, not a name.
+ */
+describe('Metadata Inspector variable inputs (Issue #67)', () => {
+  beforeEach(() => {
+    stubInspectorResizeObserver(720);
+  });
+
+  it('names the description and example inputs after their variable', async () => {
+    render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+
+    // `Hello {name}` in the body is the only variable, and it has no docs yet.
+    expect(screen.getByLabelText('Description for variable name')).toBeTruthy();
+    expect(screen.getByLabelText('Example for variable name')).toBeTruthy();
+  });
+
+  it('names the inputs of a stale variable too', async () => {
+    const document = documentFixture();
+    const stale: PromptDocument = {
+      ...document,
+      metadata: { ...document.metadata, variables: { retired: { description: 'old' } } },
+    };
+    render(PromptDetail, { props: { ...detailProps, document: stale } });
+    await fireEvent.click(screen.getByRole('tab', { name: 'Edit' }));
+
+    expect(screen.getByLabelText('Description for variable retired')).toBeTruthy();
+    expect(screen.getByLabelText('Example for variable retired')).toBeTruthy();
+  });
+});
+
+/**
  * Issue #66 — "focus must return to the button that opened the overlay".
  *
  * Unmounting PromptCompare directly only proves the attachment's teardown, so

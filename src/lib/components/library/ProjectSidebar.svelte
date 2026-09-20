@@ -19,7 +19,7 @@
     tagCounts,
   } from '$lib/library.svelte';
   import type { FolderNode, Project } from '$lib/prompts/types';
-  import { applyNavigationAction, type NavigationAction } from '$lib/library/navigation-state';
+  import { applyNavigationAction, type NavigationAction, type SmartView } from '$lib/library/navigation-state';
   import { t, tPlural } from '$lib/i18n/i18n.svelte';
   import { errorDetail } from '$lib/library/errors';
   import Icon from '$lib/components/Icon.svelte';
@@ -110,11 +110,18 @@
     return nodes.flatMap((node) => [{ ...node, depth }, ...flattenFolders(node.children, depth + 1)]);
   }
 
-  function viewCount(view: 'all' | 'favorites' | 'draft' | 'archived' | 'needs-attention'): number {
+  function viewCount(view: SmartView): number {
     if (view === 'all') return library.allPrompts.length;
     if (view === 'favorites') return library.allPrompts.filter((item) => item.metadata.favorite).length;
     if (view === 'needs-attention') return library.allPrompts.filter((item) => promptHealth(item).length > 0).length;
     return library.allPrompts.filter((item) => item.metadata.status === view).length;
+  }
+
+  /** `all` only stays "current" while no folder or tag filter narrows it, so the
+   *  condition has to agree with the class below it — keep it in one place. */
+  function smartViewActive(view: SmartView): boolean {
+    if (library.smartView !== view) return false;
+    return view !== 'all' || (!library.folderFilter && !library.tagFilter);
   }
 
   function basename(path: string): string {
@@ -484,19 +491,19 @@
     <div class="sidebar-section">
       <div class="sidebar-section__heading"><span>{t('sidebar.smartViews')}</span></div>
       <nav class="sidebar-nav">
-        <button type="button" class:sidebar-nav__item--active={library.smartView === 'all' && !library.folderFilter && !library.tagFilter} class="sidebar-nav__item" onclick={() => selectView('all')}>
+        <button type="button" class:sidebar-nav__item--active={smartViewActive('all')} aria-current={smartViewActive('all') ? 'true' : undefined} class="sidebar-nav__item" onclick={() => selectView('all')}>
           <span>{t('sidebar.allPrompts')}</span><span>{viewCount('all')}</span>
         </button>
-        <button type="button" class:sidebar-nav__item--active={library.smartView === 'needs-attention'} class="sidebar-nav__item" onclick={() => selectView('needs-attention')}>
+        <button type="button" class:sidebar-nav__item--active={smartViewActive('needs-attention')} aria-current={smartViewActive('needs-attention') ? 'true' : undefined} class="sidebar-nav__item" onclick={() => selectView('needs-attention')}>
           <span>{t('sidebar.needsAttention')}</span><span>{viewCount('needs-attention')}</span>
         </button>
-        <button type="button" class:sidebar-nav__item--active={library.smartView === 'favorites'} class="sidebar-nav__item" onclick={() => selectView('favorites')}>
+        <button type="button" class:sidebar-nav__item--active={smartViewActive('favorites')} aria-current={smartViewActive('favorites') ? 'true' : undefined} class="sidebar-nav__item" onclick={() => selectView('favorites')}>
           <span>{t('sidebar.favorites')}</span><span>{viewCount('favorites')}</span>
         </button>
-        <button type="button" class:sidebar-nav__item--active={library.smartView === 'draft'} class="sidebar-nav__item" onclick={() => selectView('draft')}>
+        <button type="button" class:sidebar-nav__item--active={smartViewActive('draft')} aria-current={smartViewActive('draft') ? 'true' : undefined} class="sidebar-nav__item" onclick={() => selectView('draft')}>
           <span>{t('sidebar.draft')}</span><span>{viewCount('draft')}</span>
         </button>
-        <button type="button" class:sidebar-nav__item--active={library.smartView === 'archived'} class="sidebar-nav__item" onclick={() => selectView('archived')}>
+        <button type="button" class:sidebar-nav__item--active={smartViewActive('archived')} aria-current={smartViewActive('archived') ? 'true' : undefined} class="sidebar-nav__item" onclick={() => selectView('archived')}>
           <span>{t('sidebar.archived')}</span><span>{viewCount('archived')}</span>
         </button>
       </nav>
@@ -513,6 +520,7 @@
             <button
               type="button"
               class:sidebar-nav__item--active={library.folderFilter === folder.path}
+              aria-current={library.folderFilter === folder.path ? 'true' : undefined}
               class="sidebar-nav__item"
               style={'--depth:' + folder.depth}
               onclick={() => applyNav({ kind: 'select-folder', folder: folder.path })}
@@ -532,7 +540,7 @@
       <div class="sidebar-section__heading"><span id="project-shelf-tags-label">{t('sidebar.tags')}</span></div>
       <nav class="sidebar-nav">
         {#each tags as item (item.tag)}
-          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} class="sidebar-nav__item" title={'#' + item.tag} onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
+          <button type="button" class:sidebar-nav__item--active={library.tagFilter === item.tag} aria-current={library.tagFilter === item.tag ? 'true' : undefined} class="sidebar-nav__item" title={'#' + item.tag} onclick={() => applyNav({ kind: 'select-tag', tag: item.tag })}>
             <span class="tag-label">#{item.tag}</span><span>{item.count}</span>
           </button>
         {:else}
