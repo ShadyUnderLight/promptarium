@@ -233,5 +233,52 @@ assert(
   'Toolbar filters restore the regular surface for reduced transparency'
 );
 
+console.log('increase contrast status colours (Issue #67)');
+const contrastBlock = appCss.match(/@media \(prefers-contrast: more\)\s*\{[\s\S]*?\n\}/);
+assert(contrastBlock !== null, 'the Increase Contrast block is declared');
+const contrastRules = contrastBlock?.[0] ?? '';
+
+for (const [token, replacement] of [
+  ['--warning', '--warning-contrast'],
+  ['--success', '--success-contrast'],
+  ['--error', '--error-contrast'],
+  ['--error-fill', '--error-fill-contrast'],
+]) {
+  assert(
+    new RegExp(`${token}:\\s*var\\(${replacement}\\)`).test(contrastRules),
+    `Increase Contrast lifts ${token} through ${replacement}`
+  );
+}
+
+/** The value `token` resolves to inside the first block opened by `selector`. */
+function tokenInBlock(selector, token) {
+  const start = appCss.indexOf(selector);
+  if (start === -1) return undefined;
+  const open = appCss.indexOf('{', start);
+  const body = appCss.slice(open, appCss.indexOf('\n}', open));
+  return body.match(new RegExp(`${token}:\\s*([^;]+);`))?.[1].trim();
+}
+
+// "More contrast" needs an explicit, verified step: the existing -strong variants
+// are not contrast levels (light --warning-strong clears 3.19:1 on white), so the
+// alias has to point at the dedicated --*-contrast token instead of absorbing the
+// old one.
+for (const token of ['--warning-contrast', '--success-contrast', '--error-contrast']) {
+  const light = tokenInBlock(':root {', token);
+  const dark = tokenInBlock("[data-theme='dark'] {", token);
+  assert(light !== undefined, `${token} is declared for light`);
+  assert(dark !== undefined, `${token} is declared for dark`);
+  assert(light !== dark, `${token} is theme-aware`);
+}
+assert(
+  tokenInBlock(':root {', '--error-fill-contrast') !== undefined &&
+    tokenInBlock("[data-theme='dark'] {", '--error-fill-contrast') === undefined,
+  '--error-fill-contrast stays theme-independent because it only backs white text'
+);
+assert(
+  !/--warning:\s*var\(--warning-strong\)/.test(contrastRules),
+  'Increase Contrast lifts --warning through a dedicated contrast token, not the -strong variant'
+);
+
 console.log(failures === 0 ? 'material contract: ok' : `material contract: ${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);
