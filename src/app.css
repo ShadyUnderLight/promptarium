@@ -512,6 +512,10 @@ body {
   overflow: auto;
 }
 
+.library-workspace > .prompt-detail.prompt-detail--edit {
+  overflow: hidden;
+}
+
 .library-rail {
   display: flex;
   flex-direction: column;
@@ -1161,6 +1165,30 @@ body {
   z-index: var(--z-detail);
   padding: 1.25rem 1.35rem 2rem;
   background: var(--surface-content);
+  container: prompt-detail / inline-size;
+}
+
+.prompt-detail.prompt-detail--edit {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 1rem;
+}
+
+.prompt-detail.prompt-detail--edit .detail-header,
+.prompt-detail.prompt-detail--edit .detail-toolbar,
+.prompt-detail.prompt-detail--edit .detail-error,
+.prompt-detail.prompt-detail--edit .frontmatter-warning,
+.prompt-detail.prompt-detail--edit .detail-edit-actions {
+  flex-shrink: 0;
+}
+
+.detail-edit-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.65rem;
 }
 
 .detail-header {
@@ -1656,14 +1684,133 @@ body {
 
 .editor-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(12rem, 17rem);
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 1.25rem;
+  min-height: 0;
+  flex: 1 1 auto;
+  position: relative;
+  overflow: hidden;
 }
 
-.editor-main {
+.editor-canvas {
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  max-width: 54rem;
+  overflow: auto;
+}
+
+.editor-canvas__toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+
+.editor-inspector {
+  min-width: 0;
+  min-height: 0;
+  display: none;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  padding-left: 1rem;
+  background: var(--surface-content);
+}
+
+.editor-layout--inspector-open .editor-inspector {
+  display: flex;
+}
+
+.editor-inspector__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding-bottom: 0.65rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.editor-inspector__dirty {
+  flex-shrink: 0;
+}
+
+.editor-inspector__scroll {
+  min-height: 0;
+  overflow: auto;
+  flex: 1;
+  padding-bottom: 0.5rem;
+}
+
+.editor-inspector__close {
+  margin-left: auto;
+}
+
+.metadata-inspector-section__slot {
+  margin-top: 0.65rem;
+}
+
+.editor-inspector__notes-health {
+  margin-top: 0.5rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid var(--border);
+}
+
+.editor-inspector__health-hint {
+  margin: 0 0 0.5rem;
+}
+
+.health-section--inspector {
+  margin: 0;
+}
+
+.metadata-inspector-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.metadata-inspector-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+.metadata-inspector-section__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.metadata-inspector-section__chevron {
+  color: var(--text-faint);
+  font-size: 0.62rem;
+}
+
+.metadata-inspector-section__body {
+  padding-top: 0.35rem;
+}
+
+.metadata-grid--inspector {
+  margin-top: 0;
+}
+
+.variables-editor--section .variables-editor__heading:first-child {
+  margin-top: 0;
 }
 
 .editor-label,
@@ -1675,6 +1822,7 @@ body {
   color: var(--text-muted);
   font-size: 0.68rem;
   font-weight: 600;
+  flex-shrink: 0;
 }
 
 .field small {
@@ -1685,14 +1833,16 @@ body {
 
 .prompt-editor {
   width: 100%;
-  min-height: 28rem;
-  resize: vertical;
+  min-height: 0;
+  flex: 1;
+  resize: none;
   padding: 0.85rem;
   border: 1px solid var(--border);
   border-radius: 0.45rem;
   background: var(--surface-content);
   color: var(--text);
   font: 0.78rem/1.65 var(--font-mono);
+  overflow: auto;
 }
 
 .prompt-editor:focus,
@@ -1700,6 +1850,10 @@ body {
 .field textarea:focus,
 .field select:focus {
   border-color: color-mix(in srgb, var(--accent-user) 70%, var(--border));
+}
+
+.editor-hint {
+  flex-shrink: 0;
 }
 
 .editor-hint,
@@ -2771,10 +2925,51 @@ body {
   }
 }
 
-@media (min-width: 981px) and (max-width: 1440px) {
-  /* Keep the editor body usable after the persisted panes have been capped. */
+/* The persistent Rail/Shelf/Prompt List can leave a much narrower Detail pane
+   than the viewport suggests. Keep the Inspector as a sheet until the Detail
+   content box is wide enough for a usable Markdown column beside it. */
+@container prompt-detail (min-width: 40rem) {
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(12rem, 17rem);
+    position: static;
+  }
+
+  .editor-canvas__toolbar {
+    display: none;
+  }
+
+  .editor-inspector-toggle,
+  .editor-inspector__close {
+    display: none;
+  }
+}
+
+@container prompt-detail (min-width: 40rem) and (max-width: 60rem) {
+  /* Keep the inspector compact while the Detail pane is only just wide
+     enough for the persistent two-column layout. */
   .editor-layout {
     grid-template-columns: minmax(0, 1fr) 12rem;
+  }
+}
+
+@container prompt-detail (max-width: 39.999rem) {
+  .editor-layout {
+    grid-template-columns: minmax(0, 1fr);
+    position: relative;
+  }
+
+  .editor-layout--inspector-open .editor-inspector {
+    position: absolute;
+    inset: 0 0 0 auto;
+    width: min(18rem, 92vw);
+    z-index: 2;
+    padding: 0.75rem;
+    border-left: 1px solid var(--border);
+    box-shadow: -4px 0 16px color-mix(in srgb, var(--text) 8%, transparent);
+  }
+
+  .editor-inspector__close {
+    display: inline-flex;
   }
 }
 
@@ -2834,6 +3029,9 @@ body {
   }
   .language-select__label { display: none; }
   .editor-layout { grid-template-columns: 1fr; }
+  .editor-layout--inspector-open .editor-inspector {
+    width: min(16rem, 94vw);
+  }
 }
 
 /* -------------------------------------------------------------------------- */

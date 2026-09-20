@@ -101,6 +101,32 @@
     initial: string;
     resolve: (value: string | null) => void;
   } | null>(null);
+  let bodyEditor = $state<HTMLTextAreaElement | null>(null);
+  let detailPane = $state<HTMLElement | null>(null);
+  let editSelection = $state<{
+    key: string;
+    start: number;
+    end: number;
+  } | null>(null);
+  const INSPECTOR_SPLIT_MIN_WIDTH = 640;
+  /** Narrow layouts tuck the metadata inspector into a sheet; UI-only. */
+  let inspectorOpen = $state(true);
+  let inspectorWide = $state(true);
+  const inspectorVisible = $derived(inspectorWide || inspectorOpen);
+
+  $effect(() => {
+    if (!detailPane || typeof ResizeObserver !== 'function') return;
+    let previousWide = true;
+    const sync = (width: number): void => {
+      const nextWide = width >= INSPECTOR_SPLIT_MIN_WIDTH;
+      if (previousWide && !nextWide && mode === 'edit') inspectorOpen = false;
+      previousWide = nextWide;
+      inspectorWide = nextWide;
+    };
+    const observer = new ResizeObserver(([entry]) => sync(entry.contentRect.width));
+    observer.observe(detailPane);
+    return () => observer.disconnect();
+  });
 
   function askName(title: string, initial: string): Promise<string | null> {
     return new Promise((resolve) => {
@@ -147,6 +173,7 @@
     const current = document;
     if (!current) {
       loadedKey = '';
+      editSelection = null;
       fillDialogOpen = false;
       metadata = null;
       originalMetadata = null;
@@ -160,6 +187,7 @@
     const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
+    editSelection = null;
     fillDialogOpen = false;
     body = current.body;
     originalBody = current.body;
@@ -175,6 +203,19 @@
 
   $effect(() => {
     onDirtyChange(dirty);
+  });
+
+  $effect(() => {
+    const current = document;
+    const editor = bodyEditor;
+    const saved = editSelection;
+    if (mode !== 'edit' || !current || !editor || !saved) return;
+    const key = current.projectPath + '\u0000' + current.name;
+    if (saved.key !== key) return;
+    const start = Math.max(0, Math.min(saved.start, editor.value.length));
+    const end = Math.max(start, Math.min(saved.end, editor.value.length));
+    editor.setSelectionRange(start, end);
+    editSelection = null;
   });
 
   function updateMetadata(value: PromptMetadata): void {
@@ -306,8 +347,26 @@
     void onCopy(body);
   }
 
+  function captureEditSelection(): void {
+    if (mode !== 'edit' || !bodyEditor || !document) return;
+    editSelection = {
+      key: document.projectPath + '\u0000' + document.name,
+      start: bodyEditor.selectionStart,
+      end: bodyEditor.selectionEnd,
+    };
+  }
+
+  function toggleRaw(): void {
+    if (!rawVisible) captureEditSelection();
+    rawVisible = !rawVisible;
+  }
+
   function setMode(next: 'preview' | 'edit' | 'history'): void {
+    if (mode === 'edit' && next !== 'edit') captureEditSelection();
     mode = next;
+    if (next === 'edit' && !inspectorWide) {
+      inspectorOpen = false;
+    }
     if (next === 'history' && document) {
       void loadPromptHistory(document.projectPath, document.name);
     }
@@ -326,9 +385,18 @@
     if (!document) return;
     void loadMorePromptHistory(document.projectPath, document.name);
   }
+
+  function toggleInspector(): void {
+    inspectorOpen = !inspectorOpen;
+  }
 </script>
 
-<section class="prompt-detail" aria-label={t('detail.aria')}>
+<section
+  bind:this={detailPane}
+  class="prompt-detail"
+  class:prompt-detail--edit={mode === 'edit'}
+  aria-label={t('detail.aria')}
+>
   {#if loading}
     <div class="detail-loading"><span></span><span></span></div>
   {:else if !document || !metadata}
@@ -366,9 +434,6 @@
         <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>{t('detail.tab.history')}</button>
       </div>
       <div class="detail-actions">
-        {#if mode === 'edit'}
-          <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>{saving ? t('detail.saving') : t('detail.save')}</button>
-        {/if}
         <div class="detail-action-group">
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>{t('detail.compare')}</button>
           <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>{t('detail.duplicate')}</button>
@@ -393,7 +458,7 @@
     {#if document.frontmatterError}
       <div class="frontmatter-warning">
         <span>{t('detail.frontmatterWarning', { detail: document.frontmatterError })}</span>
-        <button type="button" class="text-button" onclick={() => (rawVisible = !rawVisible)}>{rawVisible ? t('detail.hideRaw') : t('detail.showRaw')}</button>
+        <button type="button" class="text-button" onclick={toggleRaw}>{rawVisible ? t('detail.hideRaw') : t('detail.showRaw')}</button>
       </div>
     {/if}
 
@@ -407,6 +472,15 @@
             <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
           </div>
         {/each}
+      </div>
+    {/if}
+
+    {#if mode === 'edit' && rawVisible}
+      <div class="detail-edit-actions">
+        {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+        <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
+          {saving ? t('detail.saving') : t('detail.save')}
+        </button>
       </div>
     {/if}
 
@@ -429,29 +503,98 @@
       <PromptMetadataEditor metadata={metadata} body={body} editing={false} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
       <PromptPreview body={body} />
     {:else}
-      <div class="editor-layout">
-        <div class="editor-main">
+      <div
+        class="editor-layout"
+        class:editor-layout--inspector-open={inspectorVisible}
+      >
+        <div class="editor-canvas">
+          <div class="editor-canvas__toolbar">
+            {#if !inspectorVisible}
+              {#if dirty}<span class="dirty-dot" title={t('detail.dirty.title')}></span>{/if}
+              <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
+                {saving ? t('detail.saving') : t('detail.save')}
+              </button>
+            {/if}
+            <button
+              type="button"
+              class="btn btn--ghost btn--sm editor-inspector-toggle"
+              aria-expanded={inspectorVisible}
+              aria-controls="prompt-metadata-inspector"
+              onclick={toggleInspector}
+            >
+              {inspectorVisible ? t('detail.inspector.hide') : t('detail.inspector.show')}
+            </button>
+          </div>
           <label class="editor-label" for="prompt-body">{t('detail.editor.label')}</label>
-          <textarea id="prompt-body" class="prompt-editor" bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
+          <textarea id="prompt-body" class="prompt-editor" bind:this={bodyEditor} bind:value={body} spellcheck="false" oninput={() => (saveError = '', saveConflict = false)}></textarea>
           <span class="editor-hint">{t('detail.editor.hint')}</span>
         </div>
-        <div class="editor-inspector">
-          <PromptMetadataEditor metadata={metadata} body={body} editing={true} promptNames={projectPromptNames} currentName={document.name} summaries={projectSummaries} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} {requestConfirm} onChange={updateMetadata} />
-        </div>
+        <aside
+          id="prompt-metadata-inspector"
+          class="editor-inspector"
+          aria-label={t('detail.inspector.aria')}
+        >
+          <div class="editor-inspector__actions">
+            {#if dirty}<span class="dirty-dot editor-inspector__dirty" title={t('detail.dirty.title')}></span>{/if}
+            <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={save} disabled={!dirty || saving}>
+              {saving ? t('detail.saving') : t('detail.save')}
+            </button>
+            <button type="button" class="btn btn--ghost btn--sm editor-inspector__close" onclick={toggleInspector}>
+              {t('detail.inspector.hide')}
+            </button>
+          </div>
+          <div class="editor-inspector__scroll">
+            <PromptMetadataEditor
+              metadata={metadata}
+              body={body}
+              editing={true}
+              promptNames={projectPromptNames}
+              currentName={document.name}
+              summaries={projectSummaries}
+              projectPath={document.projectPath}
+              refreshVersion={library.searchIndexVersion}
+              {requestConfirm}
+              onChange={updateMetadata}
+            >
+              {#snippet relationsReadonly()}
+                <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata!.related} onNavigate={onNavigate} />
+                <VariantFamilyList document={document} summaries={projectSummaries} metadataOverride={metadata!} onNavigate={onNavigate} />
+              {/snippet}
+              {#snippet notesReadonly()}
+                <div class="editor-inspector__notes-health">
+                  <p class="detail-muted editor-inspector__health-hint">{t('detail.health.savedOnly')}</p>
+                  {#if healthIssues.length}
+                    <div class="health-section health-section--inspector">
+                      <div class="health-section__heading">{t('detail.healthHeading')}</div>
+                      {#each healthIssues as issue (issue.code + '\u0000' + JSON.stringify(issue.params ?? {}))}
+                        <div class="health-issue health-issue--{issue.severity}">
+                          <span class="health-issue__mark"><Icon name="warning" /></span>
+                          <span class="health-issue__text">{t(`health.${issue.code}`, issue.params)}</span>
+                          <span class="health-issue__detail">{t(`health.${issue.code}.detail`, issue.params)}</span>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                  {#if Object.keys(metadata!.extra).length}
+                    <span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata!.extra).length)}</span>
+                  {/if}
+                </div>
+              {/snippet}
+            </PromptMetadataEditor>
+          </div>
+        </aside>
       </div>
     {/if}
 
-    <div class="detail-footer">
-      {#if mode !== 'history'}
+    {#if mode === 'preview'}
+      <div class="detail-footer">
         <VariableList body={body} annotations={metadata.variables} />
         <RelatedList document={document} summaries={library.allPrompts} relatedOverride={metadata.related} onNavigate={onNavigate} />
-        {#if mode === 'preview'}
-          <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
-        {/if}
-        <VariantFamilyList document={document} summaries={projectSummaries} onNavigate={onNavigate} />
+        <ExamplesSection examples={metadata.examples ?? []} projectPath={document.projectPath} refreshVersion={library.searchIndexVersion} />
+        <VariantFamilyList document={document} summaries={projectSummaries} metadataOverride={metadata!} onNavigate={onNavigate} />
         {#if Object.keys(metadata.extra).length}<span class="detail-muted">{tPlural('detail.customFields', Object.keys(metadata.extra).length)}</span>{/if}
-      {/if}
-    </div>
+      </div>
+    {/if}
   {/if}
 </section>
 

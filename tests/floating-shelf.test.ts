@@ -631,6 +631,7 @@ describe('responsive Floating Shelf contracts', () => {
       expect(rail.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
     });
     expect(shelfQuery.addListener).toHaveBeenCalledOnce();
+    // PromptsView owns the 720px detail rail listener; PromptDetail measures its own container.
     expect(detailQuery.addListener).toHaveBeenCalledOnce();
 
     shelfQuery.fire(true);
