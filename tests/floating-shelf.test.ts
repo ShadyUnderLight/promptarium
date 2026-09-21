@@ -263,6 +263,130 @@ describe('Floating Shelf navigation rail', () => {
   });
 });
 
+/**
+ * Issue #67 — the Shelf's current item has to be *reported*, not only painted.
+ * `sidebar-nav__item--active` is a colour, and before this the only
+ * `aria-current` in the app sat on the Rail, so a screen reader could not tell
+ * which Smart View, folder or tag the list below was filtered by.
+ */
+describe('Floating Shelf current item semantics (Issue #67)', () => {
+  /** Shelf items carry a count span, and folder rows lead with a glyph. */
+  function shelfItem(container: HTMLElement, label: string): HTMLElement {
+    const item = Array.from(
+      container.querySelectorAll<HTMLElement>('.sidebar-nav__item')
+    ).find((candidate) =>
+      Array.from(candidate.children).some((child) => child.textContent?.trim() === label)
+    );
+    if (!item) throw new Error(`no Shelf nav item labelled ${label}`);
+    return item;
+  }
+
+  function isCurrent(container: HTMLElement, label: string): boolean {
+    return shelfItem(container, label).getAttribute('aria-current') === 'true';
+  }
+
+  it('marks the current Smart View and clears the marker from the others', async () => {
+    library.smartView = 'favorites';
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+
+    expect(isCurrent(container, 'Favorites')).toBe(true);
+    for (const label of ['All prompts', 'Needs Attention', 'Draft', 'Archived']) {
+      expect(isCurrent(container, label)).toBe(false);
+    }
+
+    library.smartView = 'draft';
+    await waitFor(() => expect(isCurrent(container, 'Draft')).toBe(true));
+    expect(isCurrent(container, 'Favorites')).toBe(false);
+  });
+
+  it('keeps All prompts current only while no folder or tag narrows it', async () => {
+    library.folderPaths = ['notes'];
+    library.allPrompts = [
+      {
+        projectPath: '/project',
+        relativePath: 'notes/prompt.md',
+        name: 'prompt',
+        folder: 'notes',
+        extension: '.md',
+        metadata: {
+          description: '',
+          tags: ['release'],
+          status: 'active',
+          favorite: false,
+          models: [],
+          related: [],
+          extra: {},
+        },
+        modifiedAt: 0,
+        hasFrontmatter: false,
+      },
+    ];
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+
+    expect(isCurrent(container, 'All prompts')).toBe(true);
+
+    library.folderFilter = 'notes';
+    await waitFor(() => expect(isCurrent(container, 'notes')).toBe(true));
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+
+    // Folder and tag filters are one slot each in the Shelf, so hand the slot over.
+    library.folderFilter = '';
+    library.tagFilter = 'release';
+    await waitFor(() => expect(isCurrent(container, '#release')).toBe(true));
+    expect(isCurrent(container, 'notes')).toBe(false);
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+  });
+
+  /**
+   * The composition the reducer does allow. It is the case `smartViewActive()`
+   * is easiest to "simplify" wrongly — folding the folder/tag guard into every
+   * view instead of only `all` would silently drop the marker from Needs
+   * Attention the moment a folder is picked — and it puts two `aria-current`
+   * markers on the Shelf at once, which is correct because they sit on two
+   * different navigation dimensions.
+   */
+  it('keeps Needs Attention and the folder current together, and All prompts not', async () => {
+    library.folderPaths = ['notes'];
+    library.allPrompts = [
+      {
+        projectPath: '/project',
+        relativePath: 'notes/prompt.md',
+        name: 'prompt',
+        folder: 'notes',
+        extension: '.md',
+        metadata: {
+          description: '',
+          tags: [],
+          status: 'active',
+          favorite: false,
+          models: [],
+          related: [],
+          extra: {},
+        },
+        modifiedAt: 0,
+        hasFrontmatter: false,
+      },
+    ];
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+
+    // Both markers are reached through the sidebar's own reducer rather than a
+    // hand-set fixture: the folder click yields All prompts + folder, and Needs
+    // Attention is the one view that keeps the folder when it is picked.
+    await fireEvent.click(shelfItem(container, 'notes'));
+    await waitFor(() => expect(isCurrent(container, 'notes')).toBe(true));
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+
+    await fireEvent.click(shelfItem(container, 'Needs Attention'));
+    await waitFor(() => expect(isCurrent(container, 'Needs Attention')).toBe(true));
+
+    expect(isCurrent(container, 'notes')).toBe(true);
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+    expect(library.smartView).toBe('needs-attention');
+    expect(library.folderFilter).toBe('notes');
+    expect(library.tagFilter).toBe('');
+  });
+});
+
 describe('responsive Floating Shelf contracts', () => {
   it('resizes from rendered pane widths when persisted widths are capped', async () => {
     const previousWidth = window.innerWidth;

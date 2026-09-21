@@ -398,6 +398,8 @@ export const zhCN = {
   'meta.undocumented': '未记录',
   'meta.variableDescription': '描述',
   'meta.variableExample': '示例',
+  'meta.variableDescription.aria': '变量 {name} 的说明',
+  'meta.variableExample.aria': '变量 {name} 的示例',
   'meta.staleDocs': '失效的文档',
   'meta.removeDoc': '移除文档',
   'meta.noVariables.body': '提示词正文中未检测到变量。',

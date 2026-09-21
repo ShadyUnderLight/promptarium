@@ -82,9 +82,13 @@
      them. The old --accent-result-err was #ef4444 in both: 3.89:1 on the dark
      content surface and 3.64:1 on the 8% tint the error banners sit on, for
      0.7rem text.
-     --error-fill is the one exception, and deliberately single-valued: it only
-     ever backs white text (the danger button, the count badge), and white on
-     it is theme-independent. */
+     --error-fill is deliberately single-valued, but not on the grounds that only
+     white text ever sits on it: .btn--danger:disabled tints the same fill and
+     keeps an --error-strong label on top. White on the fill (the danger button,
+     the count badge) is theme-independent, and the disabled tint clears its
+     ratio as well, so one value serving both themes is a result of the
+     arithmetic rather than a structural rule a dark step would have to break —
+     tests/material_contract.mjs measures both compositions. */
   --warning: #c98222;
   --warning-strong: #d97706;
   --favorite: #e1a93b;
@@ -93,6 +97,26 @@
   --error: #c62828;
   --error-strong: #b91c1c;
   --error-fill: #dc2626;
+
+  /* Increase Contrast (prefers-contrast: more) lifts the status colours through
+     these four, the same way it lifts --border through --border-strong. They are
+     explicit steps rather than aliases to the existing -strong variants: those
+     are already spent on borders and tints, and their values are not contrast
+     levels (light --warning-strong #d97706 clears 3.19:1 on white).
+
+     Every step is chosen against the *composited* surface rather than the bare
+     text ratio. Several consumers tint their own background with the same token
+     (`--warning` 14% under `.health-badge--warning`, the -strong tint under
+     `.frontmatter-warning`, `--error` 8% under the error strips), so deepening a
+     token also deepens what its text sits on and the two move towards each
+     other. Light --warning is the binding case: #9a5f0f clears 4.77:1 on plain
+     --bg-subtle but only 3.98:1 once the badge's own 14% tint is underneath.
+     These values clear 4.5:1 on every surface they actually land on; the
+     consumer list and the arithmetic live in tests/material_contract.mjs. */
+  --warning-contrast: #845007;
+  --success-contrast: #0f6e52;
+  --error-contrast: #a71d1d;
+  --error-fill-contrast: #b91c1c;
 
   --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code', monospace;
@@ -125,6 +149,16 @@
   --success-strong: #6ee7b7;
   --error: #ff8a80;
   --error-strong: #fca5a5;
+
+  /* Dark already clears AA (--warning 7.94:1 and --success 9.01:1 on
+     --bg-subtle), so Increase Contrast lifts the status colours rather than
+     darkening them. --error-fill-contrast is not repeated here because the fill
+     carries white labels rather than dark-theme text, so it is
+     theme-independent; the one consumer that is not white-on-fill,
+     .btn--danger:disabled, is measured in tests/material_contract.mjs. */
+  --warning-contrast: #e8bd66;
+  --success-contrast: #6ee7b7;
+  --error-contrast: #fca5a5;
 }
 
 * { box-sizing: border-box; }
@@ -3121,9 +3155,10 @@ body {
   }
 }
 
-/* Increase Contrast: strengthen the lines that separate surfaces and lift
-   secondary text. These override to --border-strong / --text-muted rather than
-   literals, so each theme keeps its own values. */
+/* Increase Contrast: strengthen the lines that separate surfaces, lift
+   secondary text, and deepen the status colours. These override to other tokens
+   (--border-strong / --text-muted / --*-contrast) rather than to literals, so
+   each theme keeps its own values. */
 @media (prefers-contrast: more) {
   :root {
     --border: var(--border-strong);
@@ -3132,6 +3167,29 @@ body {
     --focus-ring: 3px solid var(--accent-user);
     --selection-tint: color-mix(in srgb, var(--accent-user) 14%, var(--bg-card));
     --selection-border: color-mix(in srgb, var(--accent-user) 52%, var(--border-strong));
+    /* Status colours carry the same job as --border above: they must stay
+       readable as text (status chips, health badges) and carry the danger
+       button — white on the enabled fill, --error-strong on the disabled tint —
+       so Increase Contrast strengthens all four. */
+    --warning: var(--warning-contrast);
+    --success: var(--success-contrast);
+    --error: var(--error-contrast);
+    --error-fill: var(--error-fill-contrast);
+  }
+
+  /* The diff lines are the one consumer whose two halves come from different
+     tokens: the row tint is made of --success / --error, the text sits on
+     --success-strong / --error-strong. Redirecting the base token above
+     therefore darkens what the text stands on while the text stays put, and the
+     pair converges — light .diff-line--add went from 3.99:1 to 3.87:1 on
+     --bg-subtle, so asking for more contrast handed back less. Re-point the text
+     at the same token the tint is made of (4.80:1 on --bg-subtle, 5.23:1 on the
+     white --bg-card). Increase Contrast only: the default-light ratios are a
+     separate, pre-existing question that this block must not be read as fixing.
+     .diff-line--remove shares the shape but keeps 4.82:1, so it is left as it is;
+     tests/material_contract.mjs measures both. */
+  .diff-line--add {
+    color: var(--success);
   }
 }
 
