@@ -32,6 +32,8 @@ const tauriConf = JSON.parse(configs['../src-tauri/tauri.conf.json']) as {
       titleBarStyle?: string;
       hiddenTitle?: boolean;
       trafficLightPosition?: { x?: number; y?: number };
+      minWidth?: number;
+      minHeight?: number;
     }>;
   };
 };
@@ -55,5 +57,21 @@ describe('titlebar adoption contract (Issue #44)', () => {
     expect(windowConfig?.trafficLightPosition).toEqual({ x: 16, y: 26 });
     expect(titleBlockDraggable).toBe(true);
     expect(capability.permissions).toContain('core:window:allow-start-dragging');
+  });
+});
+
+/**
+ * Phase 7 packaged acceptance (Issue #68) rests on one measured fact: a 720x600
+ * resize request is clamped back to 900x600, so the `@media (max-width: 720px)`
+ * branch in src/app.css is unreachable inside the .app. That conclusion is only
+ * as stable as these two numbers — lowering minWidth to 720 or less would make
+ * the branch reachable again and silently invalidate the recorded pass without
+ * failing anything else.
+ */
+describe('packaged min-window contract (Issue #68)', () => {
+  it('pins the minimum window size that keeps the 720px branch unreachable', () => {
+    const windowConfig = tauriConf.app?.windows?.[0];
+    expect(windowConfig?.minWidth).toBe(900);
+    expect(windowConfig?.minHeight).toBe(600);
   });
 });
