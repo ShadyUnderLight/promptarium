@@ -3170,6 +3170,21 @@ body {
     --error: var(--error-contrast);
     --error-fill: var(--error-fill-contrast);
   }
+
+  /* The diff lines are the one consumer whose two halves come from different
+     tokens: the row tint is made of --success / --error, the text sits on
+     --success-strong / --error-strong. Redirecting the base token above
+     therefore darkens what the text stands on while the text stays put, and the
+     pair converges — light .diff-line--add went from 3.99:1 to 3.87:1 on
+     --bg-subtle, so asking for more contrast handed back less. Re-point the text
+     at the same token the tint is made of (4.80:1 on --bg-subtle, 5.23:1 on the
+     white --bg-card). Increase Contrast only: the default-light ratios are a
+     separate, pre-existing question that this block must not be read as fixing.
+     .diff-line--remove shares the shape but keeps 4.82:1, so it is left as it is;
+     tests/material_contract.mjs measures both. */
+  .diff-line--add {
+    color: var(--success);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

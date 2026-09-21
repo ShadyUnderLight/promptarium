@@ -401,6 +401,126 @@ for (const rule of STATUS_TEXT_RULES) {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * That scan keys on the foreground, so it is blind to the mirror image: text
+ * from a token Increase Contrast does *not* redirect, background from one it
+ * does. Both halves still move — the tint deepens underneath a text colour that
+ * stays put — so the two converge, and a consumer can come out with less
+ * contrast than it started with from a preference that asked for more.
+ *
+ * Not hypothetical: light .diff-line--add (text --success-strong on a 12%
+ * --success tint) fell from 3.99:1 to 3.87:1 once --success was redirected, and
+ * `color: var(--success-strong)` never matched the pattern above. So the
+ * complement is collected here rather than hand-listed.
+ *
+ * Literal text colours are out of scope: .btn--danger (#fff on the solid fill)
+ * and .warning-badge (#fff on the tint) keep the dedicated white-on-fill checks
+ * further down. A rule that declares no colour of its own inherits from the
+ * compound base class it is authored with — .library-warning--missing is always
+ * written as `library-warning library-warning--missing`, so the base's
+ * `color: var(--text)` is the declaration that lands.
+ * ------------------------------------------------------------------------- */
+const COLOR_DECLARATION = /(?:^|[;\s])color:\s*([^;]+);?/g;
+const REDIRECTED = new Set(Object.keys(CONTRAST_REDIRECT));
+
+const OWN_TEXT_TOKEN = new Map(
+  [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .map(([, selector, body]) => [
+      selector.trim(),
+      [...body.matchAll(COLOR_DECLARATION)]
+        .pop()?.[1]
+        .trim()
+        .match(/^var\((--[a-z-]+)\)$/)?.[1],
+    ])
+    .filter(([, token]) => token !== undefined)
+);
+
+/** The text token of the compound base class this selector is authored with. */
+function inheritedTextToken(selector) {
+  const base = [...OWN_TEXT_TOKEN.keys()]
+    .filter((candidate) => candidate !== selector && selector.startsWith(candidate))
+    .sort((a, b) => b.length - a.length)[0];
+  return base === undefined ? undefined : OWN_TEXT_TOKEN.get(base);
+}
+
+const MIXED_TEXT_RULES = [...stylesheet.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+  .map(([, selector, body]) => {
+    const name = selector.trim();
+    const tint =
+      /background:\s*color-mix\(in srgb,\s*var\((--[a-z-]+)\)\s*([\d.]+)%,\s*transparent\)/.exec(
+        body
+      );
+    const solid = /background:\s*var\((--[a-z-]+)\)/.exec(body);
+    const background = tint?.[1] ?? solid?.[1];
+    if (background === undefined || !REDIRECTED.has(background)) return null;
+    const own = [...body.matchAll(COLOR_DECLARATION)].pop()?.[1].trim();
+    // A literal is not a token pair that a redirect can move apart.
+    if (own !== undefined && !own.startsWith('var(')) return null;
+    const fg = own?.match(/^var\((--[a-z-]+)\)$/)?.[1] ?? inheritedTextToken(name);
+    // Rules whose *text* is redirected are already measured above.
+    if (fg === undefined || REDIRECTED.has(fg)) return null;
+    return {
+      selector: name,
+      fg,
+      tint: tint ? { token: tint[1], alpha: Number(tint[2]) / 100 } : null,
+      solid: solid ? solid[1] : null,
+    };
+  })
+  .filter(Boolean);
+
+// Named, so the collector cannot quietly stop seeing the consumers this section
+// exists for: an empty or reshaped scan would otherwise pass by measuring
+// nothing at all.
+for (const selector of [
+  '.btn--danger:disabled',
+  '.library-warning--missing',
+  '.diff-line--add',
+  '.diff-line--remove',
+]) {
+  assert(
+    MIXED_TEXT_RULES.some((rule) => rule.selector === selector),
+    `${selector} is measured as a mixed-token consumer`
+  );
+}
+
+/* Increase Contrast may re-point a consumer's text at the redirected token —
+ * that is how .diff-line--add is repaired — and the block wins the cascade, so
+ * its declaration, not the flat rule, is what has to be measured.
+ *
+ * Reads the comment-stripped text: `contrastRules` is sliced out of the raw
+ * stylesheet, and a comment sitting above a rule would otherwise land in the
+ * same `[^{}]+` group as the selector and stop it matching. */
+const CONTRAST_TEXT_OVERRIDE = new Map();
+for (const [, selector, body] of contrastRules
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  const declared = [...body.matchAll(COLOR_DECLARATION)].pop()?.[1].trim();
+  const token = declared?.match(/^var\((--[a-z-]+)\)$/)?.[1];
+  if (token !== undefined) CONTRAST_TEXT_OVERRIDE.set(selector.trim(), token);
+}
+
+for (const rule of MIXED_TEXT_RULES) {
+  const fg = CONTRAST_TEXT_OVERRIDE.get(rule.selector) ?? rule.fg;
+  const placement = rule.solid ?? (rule.tint ? `${rule.tint.token} ${rule.tint.alpha * 100}%` : 'page');
+  for (const theme of ['light', 'dark']) {
+    const worst = Math.min(
+      ...SURFACES.map((surface) => {
+        let base = resolveToken(theme, surface);
+        if (rule.solid) base = resolveToken(theme, rule.solid);
+        else if (rule.tint) {
+          base = composite(resolveToken(theme, rule.tint.token), rule.tint.alpha, base);
+        }
+        return contrast(resolveToken(theme, fg), base);
+      })
+    );
+    assert(
+      worst >= 4.5,
+      `Increase Contrast keeps ${rule.selector} readable in ${theme} ` +
+        `(${fg} on ${placement} = ${worst.toFixed(2)}:1, needs 4.5)`
+    );
+  }
+}
+
 // The fill is not "white text only": .btn--danger:disabled tints the same fill
 // and keeps an --error-strong label on top of it. Both compositions are
 // measured, so one value serving both themes is a result of the arithmetic
