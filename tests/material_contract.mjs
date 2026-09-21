@@ -413,12 +413,14 @@ for (const rule of STATUS_TEXT_RULES) {
  * `color: var(--success-strong)` never matched the pattern above. So the
  * complement is collected here rather than hand-listed.
  *
- * Literal text colours are out of scope: .btn--danger (#fff on the solid fill)
- * and .warning-badge (#fff on the tint) keep the dedicated white-on-fill checks
- * further down. A rule that declares no colour of its own inherits from the
- * compound base class it is authored with — .library-warning--missing is always
- * written as `library-warning library-warning--missing`, so the base's
- * `color: var(--text)` is the declaration that lands.
+ * Literal text colours are out of scope, but not unmeasured: .btn--danger and
+ * .warning-badge both paint #fff on the solid --error-fill, and the
+ * white-on-fill checks below name each of them individually rather than
+ * assuming they keep sharing one pair. A rule that declares no colour of its
+ * own inherits from the compound base class it is authored with —
+ * .library-warning--missing is always written as `library-warning
+ * library-warning--missing`, so the base's `color: var(--text)` is the
+ * declaration that lands.
  * ------------------------------------------------------------------------- */
 const COLOR_DECLARATION = /(?:^|[;\s])color:\s*([^;]+);?/g;
 const REDIRECTED = new Set(Object.keys(CONTRAST_REDIRECT));
@@ -525,16 +527,29 @@ for (const rule of MIXED_TEXT_RULES) {
 // and keeps an --error-strong label on top of it. Both compositions are
 // measured, so one value serving both themes is a result of the arithmetic
 // rather than a structural rule a future dark step would have to break.
-assert(
-  /color:\s*#fff/.test(ruleBody('.btn--danger')),
-  'the enabled danger button paints a white label on the fill'
-);
+//
+// Every consumer of white-on-fill is named, not just the first one. The pair is
+// shared today, so a selector that quietly moved to another surface would leave
+// this section green while the comment above it stopped being true.
+const WHITE_ON_FILL = ['.btn--danger', '.warning-badge'];
+for (const selector of WHITE_ON_FILL) {
+  const body = ruleBody(selector);
+  assert(
+    /(?:^|[;\s])color:\s*#fff/.test(body),
+    `${selector} paints a white label on the fill`
+  );
+  assert(
+    /background:\s*var\(--error-fill\)/.test(body),
+    `${selector} sits on the measured --error-fill surface`
+  );
+}
 for (const theme of ['light', 'dark']) {
   const fill = resolveToken(theme, '--error-fill');
+  const ratio = contrast('ffffff', fill);
   assert(
-    contrast('ffffff', fill) >= 4.5,
-    `Increase Contrast keeps the danger button label readable in ${theme} ` +
-      `(white on --error-fill = ${contrast('ffffff', fill).toFixed(2)}:1)`
+    ratio >= 4.5,
+    `Increase Contrast keeps the white-on-fill labels readable in ${theme} ` +
+      `(${WHITE_ON_FILL.join(' + ')} on --error-fill = ${ratio.toFixed(2)}:1)`
   );
   const disabledBody = ruleBody('.btn--danger:disabled');
   // The leading boundary matters: without it `border-color: var(--border)` reads

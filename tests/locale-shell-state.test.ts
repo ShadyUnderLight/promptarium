@@ -167,8 +167,10 @@ describe('Shell state survives a locale switch (Issue #67)', () => {
     // And the machine state behind them never moved.
     expect(library.searchQuery).toBe('review');
     expect(library.folderFilter).toBe('notes');
-    // Tag is the other half of that same single slot, and the reducer cleared it
-    // when the folder was picked — hence the fixture above.
+    // Folder and tag are one slot each, so a folder alone is the shape a real
+    // click produces. The fixture sets the field directly rather than driving
+    // the reducer, so this empty tag is the default, not something the reducer
+    // cleared; the end state it pins is the same either way.
     expect(library.tagFilter).toBe('');
     expect(library.viewMode).toBe('grid');
     expect(library.smartView).toBe('all');
