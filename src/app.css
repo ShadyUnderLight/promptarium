@@ -82,9 +82,13 @@
      them. The old --accent-result-err was #ef4444 in both: 3.89:1 on the dark
      content surface and 3.64:1 on the 8% tint the error banners sit on, for
      0.7rem text.
-     --error-fill is the one exception, and deliberately single-valued: it only
-     ever backs white text (the danger button, the count badge), and white on
-     it is theme-independent. */
+     --error-fill is deliberately single-valued, but not on the grounds that only
+     white text ever sits on it: .btn--danger:disabled tints the same fill and
+     keeps an --error-strong label on top. White on the fill (the danger button,
+     the count badge) is theme-independent, and the disabled tint clears its
+     ratio as well, so one value serving both themes is a result of the
+     arithmetic rather than a structural rule a dark step would have to break —
+     tests/material_contract.mjs measures both compositions. */
   --warning: #c98222;
   --warning-strong: #d97706;
   --favorite: #e1a93b;
@@ -148,8 +152,10 @@
 
   /* Dark already clears AA (--warning 7.94:1 and --success 9.01:1 on
      --bg-subtle), so Increase Contrast lifts the status colours rather than
-     darkening them. --error-fill-contrast is not repeated here: it only ever
-     backs white text, so it is theme-independent. */
+     darkening them. --error-fill-contrast is not repeated here because the fill
+     carries white labels rather than dark-theme text, so it is
+     theme-independent; the one consumer that is not white-on-fill,
+     .btn--danger:disabled, is measured in tests/material_contract.mjs. */
   --warning-contrast: #e8bd66;
   --success-contrast: #6ee7b7;
   --error-contrast: #fca5a5;

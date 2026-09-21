@@ -336,6 +336,55 @@ describe('Floating Shelf current item semantics (Issue #67)', () => {
     expect(isCurrent(container, 'notes')).toBe(false);
     expect(isCurrent(container, 'All prompts')).toBe(false);
   });
+
+  /**
+   * The composition the reducer does allow. It is the case `smartViewActive()`
+   * is easiest to "simplify" wrongly — folding the folder/tag guard into every
+   * view instead of only `all` would silently drop the marker from Needs
+   * Attention the moment a folder is picked — and it puts two `aria-current`
+   * markers on the Shelf at once, which is correct because they sit on two
+   * different navigation dimensions.
+   */
+  it('keeps Needs Attention and the folder current together, and All prompts not', async () => {
+    library.folderPaths = ['notes'];
+    library.allPrompts = [
+      {
+        projectPath: '/project',
+        relativePath: 'notes/prompt.md',
+        name: 'prompt',
+        folder: 'notes',
+        extension: '.md',
+        metadata: {
+          description: '',
+          tags: [],
+          status: 'active',
+          favorite: false,
+          models: [],
+          related: [],
+          extra: {},
+        },
+        modifiedAt: 0,
+        hasFrontmatter: false,
+      },
+    ];
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+
+    // Both markers are reached through the sidebar's own reducer rather than a
+    // hand-set fixture: the folder click yields All prompts + folder, and Needs
+    // Attention is the one view that keeps the folder when it is picked.
+    await fireEvent.click(shelfItem(container, 'notes'));
+    await waitFor(() => expect(isCurrent(container, 'notes')).toBe(true));
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+
+    await fireEvent.click(shelfItem(container, 'Needs Attention'));
+    await waitFor(() => expect(isCurrent(container, 'Needs Attention')).toBe(true));
+
+    expect(isCurrent(container, 'notes')).toBe(true);
+    expect(isCurrent(container, 'All prompts')).toBe(false);
+    expect(library.smartView).toBe('needs-attention');
+    expect(library.folderFilter).toBe('notes');
+    expect(library.tagFilter).toBe('');
+  });
 });
 
 describe('responsive Floating Shelf contracts', () => {

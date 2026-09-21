@@ -119,8 +119,12 @@ describe('Shell state survives a locale switch (Issue #67)', () => {
     await waitFor(() => expect(shelfToggle.getAttribute('aria-expanded')).toBe('false'));
 
     library.searchQuery = 'review';
+    // Folder and tag are one slot each in the Shelf, and `applyNavigationAction`
+    // is what enforces it: picking a folder clears the tag and picking a tag
+    // clears the folder, while only Needs Attention composes with either — and
+    // never with both. A fixture holding both filters is a state the app cannot
+    // reach, so the test would be preserving something no user can produce.
     library.folderFilter = 'notes';
-    library.tagFilter = 'release';
     library.viewMode = 'grid';
     library.selected = {
       ...MATCHED,
@@ -163,9 +167,18 @@ describe('Shell state survives a locale switch (Issue #67)', () => {
     // And the machine state behind them never moved.
     expect(library.searchQuery).toBe('review');
     expect(library.folderFilter).toBe('notes');
-    expect(library.tagFilter).toBe('release');
+    // Tag is the other half of that same single slot, and the reducer cleared it
+    // when the folder was picked — hence the fixture above.
+    expect(library.tagFilter).toBe('');
     expect(library.viewMode).toBe('grid');
     expect(library.smartView).toBe('all');
     expect(library.selectedName).toBe(MATCHED.name);
+
+    // And the Shelf still points at the folder. The rendered marker matters as
+    // much as the value behind it: this is the aria-current the switch is not
+    // allowed to drop.
+    expect(
+      container.querySelector('.sidebar-nav__item[aria-current="true"]')?.textContent
+    ).toContain('notes');
   });
 });
