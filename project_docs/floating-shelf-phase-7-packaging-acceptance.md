@@ -4,12 +4,20 @@
 要求的 macOS 打包态验收。Phase 7 不修改产品代码、Rust/IPC/数据模型或
 signing/updater 配置；它记录一次可复核的真实 `.app` 构建与运行时抽查证据。
 
-> **本版修订说明**（第二版之后的第二次修订，针对 PR 评审）。四条评审意见逐条处理：
-> ① 构建改为**独立临时 `CARGO_TARGET_DIR`**，并按新产物重跑了全部运行时抽查（本版所有
-> 截图都来自该隔离构建，不是复用暖缓存的产物）；② 契约测试由 `packaged min-window
-> contract` **改名**为 `min-window config contract`，范围收窄为「只锁配置」；
+> **本版修订说明**（第三次修订，针对第二份 PR 评审）。
+>
+> 第一批四条：① 构建改为**独立临时 `CARGO_TARGET_DIR`**，并按新产物重跑了全部运行时抽查
+> （本版所有截图都来自该隔离构建，不是复用暖缓存的产物）；② 契约测试由 `packaged
+> min-window contract` **改名**为 `min-window config contract`，范围收窄为「只锁配置」；
 > ③ 拆分了项目列表与扫描结果两类数据来源；④ 900×600 的 Shelf 结论改为「默认折叠」
-> 并补了展开态实测截图。上一版复用 `src-tauri/target` 的结果已被本版取代。
+> 并补了展开态实测截图。更早那版复用 `src-tauri/target` 的结果已被取代。
+>
+> 第二批三条：⑤ 900×600 的 Shelf / 选中态结论**按截图实际可见内容重写**，并补了两张
+> **在列内滚动之后**的截图 —— 原先写成「文件夹、标签分区全部渲染」「Detail 完整渲染」，
+> 而截图里这两处都在视口下方，AX 又拿不到 DOM，不可见的内容不能凭一张静态截图论证；
+> ⑥ **移除 SHA-256**：复查者用另一个全新 target 复建，字节数完全相同但 SHA-256 与
+> Mach-O `LC_UUID` 都不同，说明它只是单次构建实例的指纹（见第 1 节）；
+> ⑦ 同步更正 Issue #83 里遗留的旧测试名。
 
 ## 0. 被测对象
 
@@ -36,9 +44,9 @@ signing/updater 配置；它记录一次可复核的真实 `.app` 构建与运�
 2. **编译规模**：构建日志有 **302 条 `Compiling`**，新 target 里产生 **384 个 `.rlib`**
    （仓库暖缓存那份是 419 个）——即整棵依赖树被重新编译，`Finished release profile
    [optimized] target(s) in 59.25s`。59 秒是机器并行度的结果，不是复用了产物。
-3. **产物指纹不同**：新二进制 SHA-256 `31a00843a7605e1d852f499feacdf50f33165f3de62b6bfd4896c2b566c591fe`，
-   与上一版（复用暖缓存）的 `e8de23118f57fd453256259fd225f5542292708c6dad1fffad2a6746f448eb9b`
-   **不同**。
+3. **产物本身不同**：新二进制 `2026-09-22 14:51:13` / **16780176 B**，与上一版（复用暖缓存）
+   的 `2026-09-21 15:01:46` / **16763664 B** 在时间戳与字节数上都不同，即不是同一个
+   文件。（这里不记 SHA-256，原因见第 1 节。）
 
 作为补充事实，上一版担心的「缓存指向其他 checkout」在本次也被直接查过：`target/release/deps/*.d`
 与 `target/release/.fingerprint/` 中出现的 `/Users/lmz` 路径只有 `~/.cargo/` 与
@@ -50,7 +58,6 @@ clone 路径**。这条只作为旁证；本版结论不依赖它，因为本版
 | 检查 | 实测（本版，隔离构建） | 上一版（复用暖缓存） | A 方案落地前的旧产物 |
 |---|---|---|---|
 | `Contents/MacOS/promptarium` | 2026-09-22 14:51:13，**16780176 B** | 2026-09-21 15:01:46，16763664 B | 2026-09-15 11:47:21，16747152 B |
-| SHA-256 | `31a00843…` | `e8de2311…` | — |
 | `file` | `Mach-O 64-bit executable arm64` | 同 | 同 |
 | `CFBundleShortVersionString` / `CFBundleVersion` | `0.3.3` / `0.3.3` | 同 | 同 |
 | `CFBundleIdentifier` | `com.shadyunderlight.promptarium` | 同 | 同 |
@@ -58,6 +65,19 @@ clone 路径**。这条只作为旁证；本版结论不依赖它，因为本版
 | `codesign -dv` | `Identifier=promptarium-172d4104aa938eae`、`Signature=adhoc`、`TeamIdentifier=not set`、`Info.plist=not bound`、`Sealed Resources=none` | 同 | 同 |
 
 三个时间戳与字节数都互不相同，可以排除「复用了上一版或 2026-09-15 那份二进制」。
+
+### 为什么不把 SHA-256 当验收证据
+
+这里最初记过完整 SHA-256，用来「证明不是复用旧产物」。复查时做了可复现性检查：
+**从同一 head 用另一个全新 `CARGO_TARGET_DIR` 再干净构建一次，得到完全相同的字节数
+16780176 B，但 SHA-256 与 Mach-O `LC_UUID` 都与本次不同。** 也就是说 SHA 只是**单次构建
+实例的指纹**：复查者复现不出同一个值，它也不能说明源码或构建来源是否正确。用它当证据，
+反而会让一次完全正常的复建看起来像「产物不一致」。
+
+所以本文件**不记 SHA-256**，改用复查者自己能复现的东西来固定身份：exact head、独立临时
+target、编译日志规模（302 条 `Compiling` / 384 个 `.rlib`）、架构、Info.plist 身份字段，
+以及第 4 节的运行时抽查。字节数在这两次独立干净构建里一致，比 SHA 更适合当旁证 ——
+但也只当旁证，不作为结论依据。
 磁盘上原有的 `.app` 生成于 A 方案任何代码落地**之前**（PR #69 合并于 2026-09-15 18:58，
 PR #70–#75 在其后），所以 A 方案第一次真正进入打包态是上一版，本版是在隔离构建下复现。
 
@@ -218,8 +238,10 @@ fixture 目录树（`alpha` 是 git 仓库、两次提交；`beta` 故意不是�
 | 多项目 + 真实扫描 | 侧栏 3 个项目、`nested` 文件夹树、`#alpha`/`#writing` 标签、收藏 1 / 草稿 1、真实 mtime 全部正确 | `1440x900-dark-zh-CN-multi-project.png` |
 | missing project | 「项目文件夹未找到」+ 显示真实路径 + 「重新定位文件夹」/「移除」 | `1440x900-dark-zh-CN-missing-project.png` |
 | 最小窗口 900×600 | Rail / List / Detail / Toolbar 可达，无 document 级横向溢出；**Shelf 默认折叠**（见下「Shelf 折叠」小节） | `900x600-dark-zh-CN-min-window.png` |
-| 最小窗口 + 展开 Shelf | 点 Rail 底部的折叠按钮（`sidebar.rail.expandShelf`）后 Shelf 展开：项目（全部项目 / Alpha / Beta / Ghost）、智能视图（全部提示词 3 / 需要处理 / 收藏 1 / 草稿 1 / 已归档）、文件夹、标签分区全部渲染 | `900x600-dark-zh-CN-shelf-expanded.png` |
-| 最小窗口 + 选中态 | 在 900×600（Shelf 展开）下点选 `prompt one`，Detail 完整渲染：`prompt-one.md`、状态/标签/模型/描述等元数据、操作行（比较…/创建副本/创建变体副本/重命名/移动/删除）与正文预览 | `900x600-dark-zh-CN-min-window-selected.png` |
+| 最小窗口 + 展开 Shelf（视口内） | 点 Rail 底部的折叠按钮（`sidebar.rail.expandShelf`）后 Shelf 展开，900×600 视口内可见：项目（全部项目 / Alpha / Beta / Ghost）与智能视图（全部提示词 3 / 需要处理 0 / 收藏 1 / 草稿 1 / 已归档 0），底部是被视口切断的「文件夹」标题 | `900x600-dark-zh-CN-shelf-expanded.png` |
+| 最小窗口 + 展开 Shelf（滚动后） | 在该列内合成滚动 320px 后可见：文件夹树（`› nested 1`）、标签分区（`#alpha 1`、`#writing 1`）与「新建提示词」按钮 | `900x600-dark-zh-CN-shelf-expanded-scrolled.png` |
+| 最小窗口 + 选中态（视口内） | 在 900×600（Shelf 展开）下点选 `prompt one`，Detail 顶部可见：标题、`prompt-one.md`、项目根目录与 mtime、状态/标签徽标、复制提示词 / 在访达中显示、预览·编辑·历史 页签、操作行（比较…/创建副本/创建变体副本/重命名/移动/删除），以及起始的「描述」 | `900x600-dark-zh-CN-min-window-selected.png` |
+| 最小窗口 + 选中态（滚动后） | 在 Detail 列内合成滚动 320px 后可见：描述、状态、标签、模型 `deepseek-chat`、创建日期，**以及正文预览**（`Write a summary of {{topic}} in {{tone}} tone.` / `Usage notes`）与「变量 0 · 此提示词未检测到变量」 | `900x600-dark-zh-CN-min-window-selected-scrolled.png` |
 
 #### Shelf 折叠：900×600 下的真实行为
 
@@ -234,8 +256,15 @@ Shelf」：
   反映状态（`LibraryRail.svelte:117-127`）。
 
 因此上一版写的「Rail / Shelf / List / Detail / Toolbar **全部可达**」不准确：900×600 下**默认
-可见的**是 Rail + List + Detail，Shelf 是**折叠**的。本版补了展开态截图，把这条
-从「未验证」变成「已验证」——展开后四栏同时在 900×600 下渲染。
+可见的**是 Rail + List + Detail，Shelf 是**折叠**的。
+
+展开态截图能证到哪一步，需要说清楚：点折叠按钮后 Shelf 确实展开，**四栏布局同时存在于
+900×600 窗口内**；但四栏各自是独立的滚动容器，900×600 的视口只放得下 Shelf 的一部分
+——截图里能看到的是项目、智能视图与「文件夹」标题，文件夹内容与标签分区落在视口下方。
+AX 拿不到 WKWebView 的 DOM（见第 6 节），所以「视口外到底渲染了没有」**不能**由一张静态
+截图推出结论。本版因此补了一张**在该列内滚动 320px 之后**的截图（第 4 节新增两行），把这条
+从「看起来应该渲染」落到「滚动后确实看到」。选中态同理：未滚动的那张只到部分元数据，
+正文预览是滚动后拍的，两处都分开引用截图。
 
 ### 项目列表与扫描结果的来源不同
 
@@ -262,7 +291,9 @@ Shelf」：
 | `1440x900-dark-zh-CN-missing-project.png` | 1440×900 | 2880×1800 |
 | `900x600-dark-zh-CN-min-window.png` | 900×600 | 1800×1200 |
 | `900x600-dark-zh-CN-shelf-expanded.png` | 900×600 | 1800×1200 |
+| `900x600-dark-zh-CN-shelf-expanded-scrolled.png` | 900×600 | 1800×1200 |
 | `900x600-dark-zh-CN-min-window-selected.png` | 900×600 | 1800×1200 |
+| `900x600-dark-zh-CN-min-window-selected-scrolled.png` | 900×600 | 1800×1200 |
 | `1440x900-dark-zh-CN-topbar-traffic-lights.png` | 210×30（裁切） | 420×60 |
 
 最后一张是从 `multi-project` 那张窗口图的**左上角 (0,0) 起裁 420×60 像素**
@@ -340,10 +371,15 @@ Detail 与 pane resizer）**在打包态不可达**。900×600 命中的是
 | Update Banner 的安装/重启路径 | 只观察，不点安装与重启 | #83 |
 
 方法边界：本次运行验收基于 `screencapture -l <windowid>`（窗口自身缓冲区，不受遮挡
-影响）、CGWindowList / AX API 读写（含 `AXSetPosition`/`AXSetSize` 钉位与 2 次
-CGEvent 合成点击：展开 Shelf、选中列表行），以及 JSON 清单与磁盘 fixture 的预置。
+影响）、CGWindowList / AX API 读写（含 `AXSetPosition`/`AXSetSize` 钉位）、**CGEvent 合成
+输入**（3 次点击：展开 Shelf、一次中性点击、选中列表行；2 次滚轮：Shelf 列与 Detail 列
+各 320px），以及 JSON 清单与磁盘 fixture 的预置。
 **WKWebView 的 DOM 不暴露在 AX 树里**（AX 遍历只见到 241 个节点，无 web 内容），
-所以本次**没有**做 DOM 级断言，也没有冒充成逐像素快照门槛。
+所以本次**没有**做 DOM 级断言，也**无法用 AX 判断视口外是否渲染**——视口外的内容只能靠
+合成滚动把它移进视口再截图，这正是第 4 节新增那两张图的作用。
+⚠️ 合成点击与滚轮都要求窗口真的是前台应用，否则事件会被非活动窗口吞掉，而且**失败与
+「点空了」在截图上看不出区别**；本次因此在每次点击前先等到目标 pid 成为前台应用（中途
+一次失败就是这样诊断出来的）。
 
 ## 7. 非缺陷说明：`{{…}}` 是转义语法，不是变量
 
@@ -396,7 +432,7 @@ concern; Rust never parses them."）。
 | 1440×900、1180×720、900×600 与 720px 断点手工验收 | 1440×900 与 900×600（折叠 / 展开 / 选中态）已实测留图；**1180×720 未单独抓图**（→ #83）；**720px 已证不可达**（见第 4 节） |
 | 首次无项目 / 单项目 / 多项目 / All Projects / missing project 抽查 | 首次无项目、多项目（3 个）、missing project 已实测留图；**单项目与 All Projects 未覆盖**（→ #83） |
 | Light/Dark、English/简中、长标题、emoji、空/错误/missing/dirty/conflict | 简中 + Dark + 长中文标题 + emoji 已见；Light / English / dirty / conflict **未在打包态覆盖**（→ #83） |
-| Rail / Shelf / List / Detail / Inspector / Project Menu / Name / Confirm / Compare / Update Banner | Rail / List / Detail 默认可见且已验证；**Shelf 在 ≤980px 默认折叠，展开态已补测**（第 4 节）；其余**未覆盖**（→ #83） |
+| Rail / Shelf / List / Detail / Inspector / Project Menu / Name / Confirm / Compare / Update Banner | Rail / List / Detail 默认可见且已验证；**Shelf 在 ≤980px 默认折叠，展开态已补测（含滚动后的文件夹树与标签分区）**（第 4 节）；其余**未覆盖**（→ #83） |
 | Search / Project·Folder·Tag / List·Grid / Batch / pane resize / Preview·Edit·History / Save·Copy·Reveal | 未在打包态驱动（见第 6 节） |
 | traffic lights / drag region / 关闭·最小化·全屏·缩放 | 几何与最小尺寸已实测（含 zoom 与 fullscreen 为同一控件的实证）；**点击行为与 drag region 交互未覆盖**（→ #83） |
 | 无 console error / overflow / 白底闪烁 / 滚动卡顿 / modal 遮挡 | 1440×900 与 900×600 均无 document 级横向溢出；**console error 未采集**（打包态无 devtools 通道，`console.error` 不进 stderr，见第 5 节）；白底闪烁 / 滚动卡顿 / modal 遮挡未覆盖 |
@@ -404,7 +440,8 @@ concern; Rust never parses them."）。
 | 最终 PR 附 exact base/head、改动范围、命令、截图、已知限制 | 本文件 + PR #82 |
 
 **结论**：打包态在**启动、窗口镀铬、最小尺寸约束、真实 IPC/filesystem 扫描、
-空态、多项目、missing project、900×600 折叠/展开 Shelf 与选中态**这些维度上通过；
+空态、多项目、missing project、900×600 折叠/展开 Shelf（含滚动后的文件夹树与标签分区）
+与选中态（含滚动后的正文预览）**这些维度上通过；
 `drag region` 交互、真机系统偏好、原生 dialog、1180×720 与单项目/All Projects 粒度、
 以及各交互态未在本次覆盖（移交 #83），需人工确认后方可宣告 Phase 7 完成。
 本文件的证据来自**独立临时 `CARGO_TARGET_DIR` 的构建产物**，不复用仓库暖缓存。
