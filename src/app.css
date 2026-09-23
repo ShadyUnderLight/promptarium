@@ -844,11 +844,56 @@ body {
 
 .prompt-toolbar__controls,
 .detail-actions,
-.detail-action-group,
 .view-toggle {
   display: flex;
   align-items: center;
   gap: 0.25rem;
+}
+
+.detail-actions {
+  position: relative;
+}
+
+.detail-actions__toggle {
+  white-space: nowrap;
+}
+
+.detail-actions-menu {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: var(--z-context-menu);
+  display: grid;
+  min-width: 13rem;
+  gap: 0.15rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-overlay);
+  box-shadow: var(--shadow-overlay);
+}
+
+.detail-actions-menu__item {
+  width: 100%;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  border-radius: 0.3rem;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.detail-actions-menu__item:hover,
+.detail-actions-menu__item:focus-visible {
+  background: var(--bg-subtle);
+  color: var(--text);
+}
+
+.detail-actions-menu__item--danger {
+  color: var(--error);
 }
 
 .prompt-toolbar select {
@@ -2952,8 +2997,7 @@ body {
 
 @media (max-width: 1440px) {
   .detail-toolbar,
-  .detail-actions,
-  .detail-action-group {
+  .detail-actions {
     min-width: 0;
     flex-wrap: wrap;
   }
@@ -3020,8 +3064,7 @@ body {
   .detail-toolbar {
     flex-wrap: wrap;
   }
-  .detail-actions,
-  .detail-action-group {
+  .detail-actions {
     min-width: 0;
     flex-wrap: wrap;
   }
@@ -3109,7 +3152,8 @@ body {
      real page content, so their blur composites against actual content and
      reads as depth. The dark scrim behind the dialogs stays as-is. */
   .modal,
-  .project-menu {
+  .project-menu,
+  .detail-actions-menu {
     background: var(--surface-overlay-glass);
     -webkit-backdrop-filter: blur(var(--glass-blur));
     backdrop-filter: blur(var(--glass-blur));
@@ -3148,6 +3192,13 @@ body {
   }
 
   .project-menu {
+    background: var(--surface-overlay);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--shadow-overlay);
+  }
+
+  .detail-actions-menu {
     background: var(--surface-overlay);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;

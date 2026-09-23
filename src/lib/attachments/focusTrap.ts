@@ -22,7 +22,12 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(', ');
 
-export function focusTrap(node: HTMLElement): () => void {
+export interface FocusTrapOptions {
+  /** Decide whether teardown should return focus to the element that opened it. */
+  restoreFocus?: () => boolean;
+}
+
+export function focusTrap(node: HTMLElement, options: FocusTrapOptions = {}): () => void {
   const previouslyFocused =
     document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
@@ -75,6 +80,6 @@ export function focusTrap(node: HTMLElement): () => void {
     cancelAnimationFrame(rafId);
     node.removeEventListener('keydown', onKeydown);
     // Restore focus to wherever attention was before this opened (the trigger).
-    previouslyFocused?.focus();
+    if (options.restoreFocus?.() ?? true) previouslyFocused?.focus();
   };
 }

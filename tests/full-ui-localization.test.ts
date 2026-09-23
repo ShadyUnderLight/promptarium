@@ -89,7 +89,7 @@ afterEach(() => {
 });
 
 describe('Prompt Detail shell per locale (Issue #37)', () => {
-  it('English detail renders tabs, actions and shell copy', () => {
+  it('English detail renders tabs, actions and shell copy', async () => {
     const { container } = render(PromptDetail, {
       props: { ...detailProps, document: documentFixture() },
     });
@@ -98,19 +98,21 @@ describe('Prompt Detail shell per locale (Issue #37)', () => {
     expect(screen.getByText('History')).toBeTruthy();
     expect(screen.getByText('Copy Prompt')).toBeTruthy();
     expect(screen.getByText('Reveal')).toBeTruthy();
-    expect(screen.getByText('Duplicate as Variant')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: 'Actions' }));
+    expect(screen.getByRole('menuitem', { name: 'Duplicate as Variant' })).toBeTruthy();
     const section = container.querySelector('section.prompt-detail');
     expect(section?.getAttribute('aria-label')).toBe('Prompt detail');
   });
 
-  it('zh-CN detail renders 预览/编辑/历史/复制提示词', () => {
+  it('zh-CN detail renders 预览/编辑/历史/复制提示词', async () => {
     setPreference('zh-CN');
     render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
     expect(screen.getByText('预览')).toBeTruthy();
     expect(screen.getByText('编辑')).toBeTruthy();
     expect(screen.getByText('历史')).toBeTruthy();
     expect(screen.getByText('复制提示词')).toBeTruthy();
-    expect(screen.getByText('创建变体副本')).toBeTruthy();
+    await fireEvent.click(screen.getByRole('button', { name: '操作' }));
+    expect(screen.getByRole('menuitem', { name: '创建变体副本' })).toBeTruthy();
     expect(screen.queryByText('Preview')).toBeNull();
   });
 

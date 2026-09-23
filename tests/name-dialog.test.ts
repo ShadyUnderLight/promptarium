@@ -94,6 +94,11 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function clickAction(label: string): Promise<void> {
+  await fireEvent.click(screen.getByRole('button', { name: '操作' }));
+  await fireEvent.click(screen.getByRole('menuitem', { name: label }));
+}
+
 beforeEach(() => {
   localStorage.clear();
   setPreference('zh-CN');
@@ -112,7 +117,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     const document = documentFixture();
     const { container } = render(PromptDetail, { props: { ...detailProps, document } });
 
-    await fireEvent.click(screen.getByText('创建副本'));
+    await clickAction('创建副本');
 
     const dialog = openDialog(container);
     expect(dialog).not.toBeNull();
@@ -132,7 +137,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     const document = documentFixture();
     const { container } = render(PromptDetail, { props: { ...detailProps, document } });
 
-    await fireEvent.click(screen.getByText('创建变体副本'));
+    await clickAction('创建变体副本');
 
     const dialog = openDialog(container);
     expect(dialog).not.toBeNull();
@@ -149,12 +154,12 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     const document = documentFixture();
     const { container } = render(PromptDetail, { props: { ...detailProps, document } });
 
-    await fireEvent.click(screen.getByText('重命名'));
+    await clickAction('重命名');
     await fireEvent.click(openDialog(container)!.confirm);
     await flush();
     expect(detailProps.onRename).not.toHaveBeenCalled();
 
-    await fireEvent.click(screen.getByText('重命名'));
+    await clickAction('重命名');
     await fireEvent.input(openDialog(container)!.input, { target: { value: 'codes/review' } });
     await fireEvent.click(openDialog(container)!.confirm);
 
@@ -165,7 +170,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     const document = documentFixture();
     const { container } = render(PromptDetail, { props: { ...detailProps, document } });
 
-    await fireEvent.click(screen.getByText('移动'));
+    await clickAction('移动');
 
     const dialog = openDialog(container);
     expect(dialog).not.toBeNull();
@@ -177,7 +182,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
     await flush();
     expect(detailProps.onMove).not.toHaveBeenCalled();
 
-    await fireEvent.click(screen.getByText('移动'));
+    await clickAction('移动');
     await fireEvent.input(openDialog(container)!.input, { target: { value: 'codes/review' } });
     await fireEvent.click(openDialog(container)!.confirm);
 
@@ -190,7 +195,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
       props: { ...detailProps, document: documentFixture() },
     });
 
-    await fireEvent.click(screen.getByText('创建副本'));
+    await clickAction('创建副本');
     await fireEvent.input(openDialog(container)!.input, { target: { value: '   ' } });
     await fireEvent.click(openDialog(container)!.confirm);
     await flush();
@@ -205,7 +210,7 @@ describe('Prompt Detail naming dialog (window.prompt is unusable on macOS)', () 
       props: { ...detailProps, document: documentFixture() },
     });
 
-    await fireEvent.click(screen.getByText('创建副本'));
+    await clickAction('创建副本');
     expect(openDialog(container)).not.toBeNull();
 
     await fireEvent.click(openDialog(container)!.cancel);

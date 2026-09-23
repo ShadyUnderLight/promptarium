@@ -246,6 +246,7 @@ export const en = {
   'detail.dirty.title': 'Unsaved changes',
   'detail.copy': 'Copy Prompt',
   'detail.reveal': 'Reveal',
+  'detail.actions': 'Actions',
   'detail.tabs.aria': 'Prompt content',
   'detail.tab.preview': 'Preview',
   'detail.tab.edit': 'Edit',
