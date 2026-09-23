@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
  * The merged product contract is:
  * Overlay + drag surface + start-dragging ACL.
  *
- * Overlay removes the native title bar as a drag surface, so the topbar title
- * block must keep its data-tauri-drag-region and the main capability must
- * keep `core:window:allow-start-dragging` (core:default does NOT include it —
- * cargo test / generate_context! stay green without it because the gap only
- * shows up when the window is dragged). A future deliberate rollback of the
- * adopted Overlay must update this contract together with the implementation.
+ * Overlay removes the native title bar as a drag surface, so the topbar must
+ * provide a deep drag region while its interactive controls opt out. The main
+ * capability must keep `core:window:allow-start-dragging` (core:default does
+ * NOT include it — cargo test / generate_context! stay green without it because
+ * the gap only shows up when the window is dragged). A future deliberate
+ * rollback of the adopted Overlay must update this contract with the UI.
  */
 
 const configs = import.meta.glob('../src-tauri/{tauri.conf.json,capabilities/default.json}', {
@@ -42,20 +42,27 @@ const capability = JSON.parse(configs['../src-tauri/capabilities/default.json'])
 };
 
 const overlayOn = (tauriConf.app?.windows ?? []).some((w) => w.titleBarStyle === 'Overlay');
-// Scoped to the topbar title block on purpose: a drag region elsewhere in the
-// app must not stand in for the title bar's drag surface.
 const promptsView = sources['../src/lib/components/PromptsView.svelte'] ?? '';
-const titleBlockDraggable =
-  /class="library-topbar__title"[^>]*data-tauri-drag-region/.test(promptsView) ||
-  /data-tauri-drag-region[^>]*class="library-topbar__title"/.test(promptsView);
+const topbarSource =
+  promptsView.match(/<div class="library-topbar"[^>]*>([\s\S]*?)\n  <\/div>\n\n  \{#if library\.error/)?.[1] ?? '';
+const languageSelector = sources['../src/lib/components/LanguageSelector.svelte'] ?? '';
+const topbarDeepDraggable = /data-tauri-drag-region="deep"/.test(
+  promptsView.match(/<div class="library-topbar"[^>]*>/)?.[0] ?? ''
+);
+const searchInputOptsOut = /<input\b[^>]*data-tauri-drag-region="false"[^>]*>/.test(topbarSource);
+const actionButtonsOptOut = [...topbarSource.matchAll(/<button\b[^>]*data-tauri-drag-region="false"[^>]*>/g)].length;
+const languageSelectorOptsOut = /<label class="language-select"[^>]*data-tauri-drag-region="false"/.test(languageSelector);
 
 describe('titlebar adoption contract (Issue #44)', () => {
-  it('keeps the adopted Overlay titlebar wired for dragging', () => {
+  it('makes the topbar draggable while keeping its controls interactive', () => {
     const windowConfig = tauriConf.app?.windows?.[0];
     expect(overlayOn).toBe(true);
     expect(windowConfig?.hiddenTitle).toBe(true);
     expect(windowConfig?.trafficLightPosition).toEqual({ x: 16, y: 26 });
-    expect(titleBlockDraggable).toBe(true);
+    expect(topbarDeepDraggable).toBe(true);
+    expect(searchInputOptsOut).toBe(true);
+    expect(languageSelectorOptsOut).toBe(true);
+    expect(actionButtonsOptOut).toBe(3);
     expect(capability.permissions).toContain('core:window:allow-start-dragging');
   });
 });

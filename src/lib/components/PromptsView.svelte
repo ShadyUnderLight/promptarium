@@ -553,26 +553,26 @@
 </script>
 
 <div class="library-shell" class:library-shell--missing={selectedProjectMissing}>
-  <div class="library-topbar">
-    <div class="library-topbar__title" data-tauri-drag-region>
-      <span class="app-mark" data-tauri-drag-region><Icon name="sparkle" /></span>
-      <div data-tauri-drag-region>
-        <h1 data-tauri-drag-region>Promptarium</h1>
-        <span data-tauri-drag-region>{scopeTitle}</span>
+  <div class="library-topbar" data-tauri-drag-region="deep">
+    <div class="library-topbar__title">
+      <span class="app-mark"><Icon name="sparkle" /></span>
+      <div>
+        <h1>Promptarium</h1>
+        <span>{scopeTitle}</span>
       </div>
     </div>
     <label class="global-search">
       <span aria-hidden="true"><Icon name="search" /></span>
-      <input bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder={t('topbar.search.placeholder')} aria-label={t('topbar.search.aria')} />
+      <input data-tauri-drag-region="false" bind:this={searchInput} value={library.searchQuery} oninput={(event) => setSearchQuery(event.currentTarget.value)} placeholder={t('topbar.search.placeholder')} aria-label={t('topbar.search.aria')} />
       <kbd>⌘ F</kbd>
     </label>
     <div class="library-topbar__actions">
       <LanguageSelector />
-      <button type="button" class="btn btn--ghost btn--sm" onclick={handleToggleTheme}>
+      <button type="button" class="btn btn--ghost btn--sm" data-tauri-drag-region="false" onclick={handleToggleTheme}>
         {theme === 'dark' ? t('shell.theme.dark') : t('shell.theme.light')}
       </button>
-      <button type="button" class="btn btn--primary btn--prominent btn--sm" onclick={openNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
-      <button type="button" class="icon-button" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}><Icon name="refresh" /></button>
+      <button type="button" class="btn btn--primary btn--prominent btn--sm" data-tauri-drag-region="false" onclick={openNewPrompt}><Icon name="plus" /> {t('sidebar.newPrompt')}</button>
+      <button type="button" class="icon-button" data-tauri-drag-region="false" title={t('topbar.refresh')} aria-label={t('topbar.refresh')} onclick={handleRefresh}><Icon name="refresh" /></button>
     </div>
   </div>
 
