@@ -551,9 +551,11 @@ body {
 }
 
 .library-rail {
+  align-self: start;
   display: flex;
   flex-direction: column;
   align-items: center;
+  height: fit-content;
   gap: 0.35rem;
   margin: var(--surface-margin);
   padding: 0.6rem 0.35rem;
@@ -561,6 +563,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sidebar);
+  overflow: visible;
   position: relative;
   z-index: var(--z-shelf);
 }
@@ -573,9 +576,11 @@ body {
   background: var(--border);
 }
 
-.library-rail__spacer {
-  flex: 1;
-  min-height: 0.75rem;
+.library-rail__toggle {
+  width: 100%;
+  margin-top: 0.25rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid var(--border);
 }
 
 .rail-button {

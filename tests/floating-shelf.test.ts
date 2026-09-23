@@ -131,6 +131,7 @@ describe('Floating Shelf navigation rail', () => {
     expect(railQueries.getByRole('button', { name: 'Focus tags' })).toBeTruthy();
     expect(railQueries.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(true);
     expect(railQueries.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
+    expect(railQueries.getByRole('button', { name: 'Focus projects' }).getAttribute('aria-current')).toBe('true');
   });
 
   it('routes Search and Shelf actions through shell callbacks', async () => {
@@ -260,6 +261,24 @@ describe('Floating Shelf navigation rail', () => {
     const { container } = render(ProjectSidebar, { props: sidebarProps() });
     const tagButton = container.querySelector<HTMLButtonElement>('.sidebar-section--tags .sidebar-nav__item');
     expect(tagButton?.getAttribute('title')).toBe('#' + longTag);
+  });
+
+  it('reports the active folder and tag filters on the Rail', async () => {
+    library.folderFilter = 'notes';
+    library.tagFilter = '';
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+    const rail = within(screen.getByRole('navigation', { name: 'Library navigation rail' }));
+
+    expect(rail.getByRole('button', { name: 'Focus folders' }).getAttribute('aria-current')).toBe('true');
+    expect(rail.getByRole('button', { name: 'Focus tags' }).getAttribute('aria-current')).toBeNull();
+
+    library.folderFilter = '';
+    library.tagFilter = 'release';
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Focus folders' }).getAttribute('aria-current')).toBeNull();
+      expect(rail.getByRole('button', { name: 'Focus tags' }).getAttribute('aria-current')).toBe('true');
+    });
+    expect(container.querySelector('.library-rail__spacer')).toBeNull();
   });
 });
 

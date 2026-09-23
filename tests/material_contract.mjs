@@ -166,6 +166,15 @@ assert(
   'workspace has a UI-only collapsed Shelf layout'
 );
 assert(
+  /\.library-rail\s*\{[^}]*align-self:\s*start/s.test(appCss) &&
+    /\.library-rail\s*\{[^}]*height:\s*fit-content/s.test(appCss),
+  'Rail sizes to its controls instead of stretching through the workspace'
+);
+assert(
+  !appCss.includes('.library-rail__spacer'),
+  'Rail does not reserve a full-height spacer between navigation groups'
+);
+assert(
   /\.project-sidebar--collapsed\s*\{[^}]*visibility:\s*hidden/s.test(appCss),
   'collapsed Shelf retains its grid slot'
 );
