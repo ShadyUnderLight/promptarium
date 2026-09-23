@@ -131,6 +131,7 @@ describe('Floating Shelf navigation rail', () => {
     expect(railQueries.getByRole('button', { name: 'Focus tags' })).toBeTruthy();
     expect(railQueries.getByRole('button', { name: 'Show prompt history' }).hasAttribute('disabled')).toBe(true);
     expect(railQueries.getByRole('button', { name: 'Collapse project shelf' })).toBeTruthy();
+    expect(railQueries.getByRole('button', { name: 'Focus projects' }).getAttribute('aria-current')).toBe('true');
   });
 
   it('routes Search and Shelf actions through shell callbacks', async () => {
@@ -260,6 +261,24 @@ describe('Floating Shelf navigation rail', () => {
     const { container } = render(ProjectSidebar, { props: sidebarProps() });
     const tagButton = container.querySelector<HTMLButtonElement>('.sidebar-section--tags .sidebar-nav__item');
     expect(tagButton?.getAttribute('title')).toBe('#' + longTag);
+  });
+
+  it('reports the active folder and tag filters on the Rail', async () => {
+    library.folderFilter = 'notes';
+    library.tagFilter = '';
+    const { container } = render(ProjectSidebar, { props: sidebarProps() });
+    const rail = within(screen.getByRole('navigation', { name: 'Library navigation rail' }));
+
+    expect(rail.getByRole('button', { name: 'Focus folders' }).getAttribute('aria-current')).toBe('true');
+    expect(rail.getByRole('button', { name: 'Focus tags' }).getAttribute('aria-current')).toBeNull();
+
+    library.folderFilter = '';
+    library.tagFilter = 'release';
+    await waitFor(() => {
+      expect(rail.getByRole('button', { name: 'Focus folders' }).getAttribute('aria-current')).toBeNull();
+      expect(rail.getByRole('button', { name: 'Focus tags' }).getAttribute('aria-current')).toBe('true');
+    });
+    expect(container.querySelector('.library-rail__spacer')).toBeNull();
   });
 });
 
@@ -590,7 +609,8 @@ describe('responsive Floating Shelf contracts', () => {
       }))
     );
     library.libraryScope = { kind: 'all-projects' };
-    library.allProjectsWarnings = [{ projectPath: '/project', error: 'permission denied' }];
+    const longError = `permission denied: ${'details '.repeat(48)}`;
+    library.allProjectsWarnings = [{ projectPath: '/project', error: longError }];
 
     const { container } = render(PromptsView);
 
@@ -608,7 +628,7 @@ describe('responsive Floating Shelf contracts', () => {
       const visibleWarningDetail = screen.getByRole('group', { name: '1 project could not refresh' });
       expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
       expect(screen.queryByRole('button', { name: 'Show failed project details' })).toBeNull();
-      expect(screen.getByText('Project — permission denied')).toBeTruthy();
+      expect(visibleWarningDetail.textContent).toContain(`Project — ${longError.slice(0, 40)}`);
       expect(visibleWarningDetail).toBe(warningDetail);
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
       expect(document.activeElement).toBe(visibleWarningDetail);

@@ -7,6 +7,9 @@
   interface Props {
     shelfExpanded: boolean;
     allProjectsActive: boolean;
+    projectsActive: boolean;
+    foldersActive: boolean;
+    tagsActive: boolean;
     foldersAvailable: boolean;
     tagsAvailable: boolean;
     historyAvailable: boolean;
@@ -20,6 +23,9 @@
   let {
     shelfExpanded,
     allProjectsActive,
+    projectsActive,
+    foldersActive,
+    tagsActive,
     foldersAvailable,
     tagsAvailable,
     historyAvailable,
@@ -69,6 +75,8 @@
   <button
     type="button"
     class="rail-button"
+    class:rail-button--active={projectsActive}
+    aria-current={projectsActive ? 'true' : undefined}
     aria-label={t('sidebar.rail.projects')}
     title={t('sidebar.rail.projects')}
     aria-controls="project-shelf-projects"
@@ -80,6 +88,8 @@
   <button
     type="button"
     class="rail-button"
+    class:rail-button--active={foldersActive}
+    aria-current={foldersActive ? 'true' : undefined}
     disabled={!foldersAvailable}
     aria-label={t('sidebar.rail.folders')}
     title={t('sidebar.rail.folders')}
@@ -92,6 +102,8 @@
   <button
     type="button"
     class="rail-button"
+    class:rail-button--active={tagsActive}
+    aria-current={tagsActive ? 'true' : undefined}
     disabled={!tagsAvailable}
     aria-label={t('sidebar.rail.tags')}
     title={t('sidebar.rail.tags')}
@@ -112,19 +124,19 @@
     <Icon name="history" />
   </button>
 
-  <div class="library-rail__spacer" aria-hidden="true"></div>
-
-  <button
-    type="button"
-    class="rail-button"
-    class:rail-button--active={shelfExpanded}
-    bind:this={shelfToggle}
-    aria-expanded={shelfExpanded}
-    aria-controls="project-shelf"
-    aria-label={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
-    title={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
-    onclick={handleToggleShelf}
-  >
-    <Icon name="panel-left" />
-  </button>
+  <div class="library-rail__toggle">
+    <button
+      type="button"
+      class="rail-button"
+      class:rail-button--active={shelfExpanded}
+      bind:this={shelfToggle}
+      aria-expanded={shelfExpanded}
+      aria-controls="project-shelf"
+      aria-label={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
+      title={shelfExpanded ? t('sidebar.rail.collapseShelf') : t('sidebar.rail.expandShelf')}
+      onclick={handleToggleShelf}
+    >
+      <Icon name="panel-left" />
+    </button>
+  </div>
 </nav>

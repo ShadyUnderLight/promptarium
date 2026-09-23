@@ -96,6 +96,9 @@
 
   const project = $derived(activeProject());
   const allProjectsActive = $derived(isAllProjects());
+  const projectsActive = $derived(!allProjectsActive && Boolean(library.activeProjectPath));
+  const foldersActive = $derived(Boolean(library.folderFilter));
+  const tagsActive = $derived(Boolean(library.tagFilter));
   const folders = $derived(flattenFolders(buildFolderTree(library.allPrompts, library.folderPaths)));
   const tags = $derived(tagCounts(library.allPrompts));
   const isMissing = $derived(
@@ -383,6 +386,9 @@
   bind:this={rail}
   {shelfExpanded}
   allProjectsActive={allProjectsActive}
+  projectsActive={projectsActive}
+  foldersActive={foldersActive}
+  tagsActive={tagsActive}
   foldersAvailable={foldersAvailable}
   tagsAvailable={tagsAvailable}
   historyAvailable={historyAvailable}
