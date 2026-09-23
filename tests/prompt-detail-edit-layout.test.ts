@@ -409,4 +409,28 @@ describe('Prompt Detail actions menu (Issue #64)', () => {
     expect(document.activeElement).toBe(trigger);
     expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
+
+  it('keeps focus on an outside control when it closes the menu', async () => {
+    const outside = document.createElement('button');
+    outside.type = 'button';
+    outside.textContent = 'Outside control';
+    document.body.append(outside);
+
+    try {
+      render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
+
+      const trigger = screen.getByRole('button', { name: 'Actions' });
+      trigger.focus();
+      await fireEvent.click(trigger);
+      await screen.findByRole('menu', { name: 'Actions' });
+
+      outside.focus();
+      await fireEvent.click(outside);
+
+      await waitFor(() => expect(screen.queryByRole('menu', { name: 'Actions' })).toBeNull());
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
 });

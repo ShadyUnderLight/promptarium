@@ -85,6 +85,7 @@
   let actionsOpen = $state(false);
   let actionsMenu = $state<HTMLElement | null>(null);
   let actionsToggle = $state<HTMLButtonElement | null>(null);
+  let restoreActionsFocus = true;
   let fillDialogOpen = $state(false);
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
@@ -398,10 +399,12 @@
   }
 
   function toggleActions(): void {
+    if (!actionsOpen) restoreActionsFocus = true;
     actionsOpen = !actionsOpen;
   }
 
-  function closeActions(): void {
+  function closeActions(options: { restoreFocus?: boolean } = {}): void {
+    restoreActionsFocus = options.restoreFocus ?? true;
     actionsOpen = false;
   }
 
@@ -410,7 +413,12 @@
     const target = event.target;
     if (!(target instanceof Node)) return;
     if (actionsMenu?.contains(target) || actionsToggle?.contains(target)) return;
-    closeActions();
+    const activeElement = globalThis.document.activeElement;
+    const focusMovedOutside =
+      activeElement instanceof HTMLElement &&
+      activeElement !== globalThis.document.body &&
+      !actionsMenu?.contains(activeElement);
+    closeActions({ restoreFocus: !focusMovedOutside });
   }
 
   function handleActionsKeydown(event: KeyboardEvent): void {
@@ -426,6 +434,10 @@
     // overlay opened by the action.
     await tick();
     await action();
+  }
+
+  function actionsFocusTrap(node: HTMLElement): () => void {
+    return focusTrap(node, { restoreFocus: () => restoreActionsFocus });
   }
 </script>
 
@@ -494,7 +506,7 @@
             aria-label={t('detail.actions')}
             tabindex="-1"
             onkeydown={handleActionsKeydown}
-            {@attach focusTrap}
+            {@attach actionsFocusTrap}
           >
             <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionCompare)}>{t('detail.compare')}</button>
             <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionDuplicate)}>{t('detail.duplicate')}</button>
