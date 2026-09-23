@@ -8,7 +8,7 @@
   }
 </script>
 
-<label class="language-select">
+<label class="language-select" data-tauri-drag-region="false">
   <span class="language-select__label">{t('app.language')}</span>
   <select
     class="language-select__control"
