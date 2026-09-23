@@ -609,7 +609,8 @@ describe('responsive Floating Shelf contracts', () => {
       }))
     );
     library.libraryScope = { kind: 'all-projects' };
-    library.allProjectsWarnings = [{ projectPath: '/project', error: 'permission denied' }];
+    const longError = `permission denied: ${'details '.repeat(48)}`;
+    library.allProjectsWarnings = [{ projectPath: '/project', error: longError }];
 
     const { container } = render(PromptsView);
 
@@ -627,7 +628,7 @@ describe('responsive Floating Shelf contracts', () => {
       const visibleWarningDetail = screen.getByRole('group', { name: '1 project could not refresh' });
       expect(container.querySelector('#project-shelf')?.getAttribute('aria-hidden')).toBe('false');
       expect(screen.queryByRole('button', { name: 'Show failed project details' })).toBeNull();
-      expect(screen.getByText('Project — permission denied')).toBeTruthy();
+      expect(visibleWarningDetail.textContent).toContain(`Project — ${longError.slice(0, 40)}`);
       expect(visibleWarningDetail).toBe(warningDetail);
       expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
       expect(document.activeElement).toBe(visibleWarningDetail);

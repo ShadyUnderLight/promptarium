@@ -563,7 +563,9 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sidebar);
-  overflow: visible;
+  max-height: calc(100% - var(--surface-margin) - var(--surface-margin));
+  overflow-x: hidden;
+  overflow-y: auto;
   position: relative;
   z-index: var(--z-shelf);
 }

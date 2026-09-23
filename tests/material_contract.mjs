@@ -175,6 +175,14 @@ assert(
   'Rail does not reserve a full-height spacer between navigation groups'
 );
 assert(
+  /.library-rail\s*\{[^}]*max-height:\s*calc\(100%\s*-\s*var\(--surface-margin\)\s*-\s*var\(--surface-margin\)/s.test(appCss),
+  'Rail stays within the workspace height'
+);
+assert(
+  /\.library-rail\s*\{[^}]*overflow-y:\s*auto/s.test(appCss),
+  'Rail scrolls vertically when its controls exceed the workspace height'
+);
+assert(
   /\.project-sidebar--collapsed\s*\{[^}]*visibility:\s*hidden/s.test(appCss),
   'collapsed Shelf retains its grid slot'
 );
