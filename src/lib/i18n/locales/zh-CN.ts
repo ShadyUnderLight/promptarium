@@ -242,6 +242,7 @@ export const zhCN = {
   'detail.dirty.title': '有未保存的更改',
   'detail.copy': '复制提示词',
   'detail.reveal': '在访达中显示',
+  'detail.actions': '操作',
   'detail.tabs.aria': '提示词内容',
   'detail.tab.preview': '预览',
   'detail.tab.edit': '编辑',

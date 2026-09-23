@@ -342,22 +342,23 @@ describe('Metadata Inspector variable inputs (Issue #67)', () => {
  * Issue #66 — "focus must return to the button that opened the overlay".
  *
  * Unmounting PromptCompare directly only proves the attachment's teardown, so
- * this drives the real path instead: the real Compare button on the real
- * PromptDetail, Escape closing the overlay through `onClose`, and PromptDetail
- * dropping `compareOpen` so the overlay unmounts. If that wiring breaks, this
- * fails even though a direct-unmount test would still pass.
+ * this drives the real path instead: the Actions menu on the real PromptDetail,
+ * its Compare item, Escape closing the overlay through `onClose`, and
+ * PromptDetail dropping `compareOpen` so the overlay unmounts. If that wiring
+ * breaks, this fails even though a direct-unmount test would still pass.
  */
 describe('PromptCompare focus hand-back (Issue #66)', () => {
   beforeEach(() => {
     stubInspectorResizeObserver(720);
   });
 
-  it('returns focus to the Compare button when Escape closes the overlay', async () => {
+  it('returns focus to the Actions trigger when Escape closes the overlay', async () => {
     render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
 
-    const trigger = screen.getByRole('button', { name: 'Compare…' });
+    const trigger = screen.getByRole('button', { name: 'Actions' });
     trigger.focus();
     await fireEvent.click(trigger);
+    await fireEvent.click(screen.getByRole('menuitem', { name: 'Compare…' }));
 
     const overlay = await waitFor(() => {
       const found = document.querySelector<HTMLElement>('.compare-modal');
@@ -370,5 +371,42 @@ describe('PromptCompare focus hand-back (Issue #66)', () => {
 
     await waitFor(() => expect(document.querySelector('.compare-modal')).toBeNull());
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe('Prompt Detail actions menu (Issue #64)', () => {
+  beforeEach(() => {
+    stubInspectorResizeObserver(720);
+  });
+
+  it('keeps management actions in an accessible overflow menu', async () => {
+    render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
+
+    const trigger = screen.getByRole('button', { name: 'Actions' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('menu', { name: 'Actions' })).toBeNull();
+
+    await fireEvent.click(trigger);
+
+    const menu = await screen.findByRole('menu', { name: 'Actions' });
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(menu.getAttribute('id')).toBe('prompt-detail-actions-menu');
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(6);
+    expect(within(menu).getByRole('menuitem', { name: 'Delete' })).toBeTruthy();
+  });
+
+  it('closes on Escape and returns focus to the trigger', async () => {
+    render(PromptDetail, { props: { ...detailProps, document: documentFixture() } });
+
+    const trigger = screen.getByRole('button', { name: 'Actions' });
+    trigger.focus();
+    await fireEvent.click(trigger);
+    const menu = await screen.findByRole('menu', { name: 'Actions' });
+
+    await fireEvent.keyDown(menu, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('menu', { name: 'Actions' })).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
   });
 });

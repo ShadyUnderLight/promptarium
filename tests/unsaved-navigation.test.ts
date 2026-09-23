@@ -306,7 +306,8 @@ describe('global shortcuts yield while a modal is open', () => {
   it('⌘N and ⌘F do not reach the page behind the naming dialog', async () => {
     const { container } = render(PromptsView);
 
-    await fireEvent.click(screen.getByText('重命名'));
+    await fireEvent.click(screen.getByRole('button', { name: '操作' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }));
     const field = openNamingDialog(container);
     // ⌘N opens the New Prompt dialog asynchronously, so absent-today is only
     // meaningful once the handler has had a chance to run.
@@ -329,7 +330,8 @@ describe('global shortcuts yield while a modal is open', () => {
     const { container } = render(PromptsView);
     await makeEditorDirty(container);
 
-    await fireEvent.click(screen.getByText('重命名'));
+    await fireEvent.click(screen.getByRole('button', { name: '操作' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '重命名' }));
     expect(pressChord(openNamingDialog(container), 's')).toBe(true);
     await flush();
 
@@ -375,7 +377,8 @@ describe('global shortcuts yield while a modal is open', () => {
   it('⌘N does not open a second modal over Compare', async () => {
     const { container } = render(PromptsView);
 
-    await fireEvent.click(screen.getByRole('button', { name: '比较…' }));
+    await fireEvent.click(screen.getByRole('button', { name: '操作' }));
+    await fireEvent.click(screen.getByRole('menuitem', { name: '比较…' }));
     const compare = container.querySelector('.compare-modal');
     expect(compare).not.toBeNull();
 

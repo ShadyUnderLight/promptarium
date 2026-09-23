@@ -132,6 +132,7 @@ for (const allowedSelector of [
   '.project-sidebar',
   '.modal',
   '.project-menu',
+  '.detail-actions-menu',
   '.update-banner',
 ]) {
   assert(
@@ -146,6 +147,7 @@ for (const fallbackSelector of [
   '.project-sidebar',
   '.modal',
   '.project-menu',
+  '.detail-actions-menu',
   '.update-banner',
 ]) {
   assert(

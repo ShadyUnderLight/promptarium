@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick } from 'svelte';
+  import { focusTrap } from '$lib/attachments/focusTrap';
   import type { PromptDocument, PromptMetadata, PromptStatus } from '$lib/prompts/types';
   import { cloneMetadata } from '$lib/prompts/duplicate';
   import { effectiveMetadataForSave } from '$lib/examples/editor-helpers';
@@ -80,6 +82,9 @@
 
   let mode = $state<'preview' | 'edit' | 'history'>('preview');
   let compareOpen = $state(false);
+  let actionsOpen = $state(false);
+  let actionsMenu = $state<HTMLElement | null>(null);
+  let actionsToggle = $state<HTMLButtonElement | null>(null);
   let fillDialogOpen = $state(false);
   let body = $state('');
   let metadata = $state<PromptMetadata | null>(null);
@@ -173,6 +178,7 @@
     const current = document;
     if (!current) {
       loadedKey = '';
+      actionsOpen = false;
       editSelection = null;
       fillDialogOpen = false;
       metadata = null;
@@ -187,6 +193,7 @@
     const key = current.projectPath + '\u0000' + current.name + '\u0000' + current.raw;
     if (key === loadedKey) return;
     loadedKey = key;
+    actionsOpen = false;
     editSelection = null;
     fillDialogOpen = false;
     body = current.body;
@@ -389,7 +396,40 @@
   function toggleInspector(): void {
     inspectorOpen = !inspectorOpen;
   }
+
+  function toggleActions(): void {
+    actionsOpen = !actionsOpen;
+  }
+
+  function closeActions(): void {
+    actionsOpen = false;
+  }
+
+  function handleActionsWindowClick(event: MouseEvent): void {
+    if (!actionsOpen) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (actionsMenu?.contains(target) || actionsToggle?.contains(target)) return;
+    closeActions();
+  }
+
+  function handleActionsKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    closeActions();
+  }
+
+  async function runAction(action: () => void | Promise<void>): Promise<void> {
+    closeActions();
+    // Let the menu attachment tear down first. Its cleanup returns focus to the
+    // Actions trigger, which then becomes the correct owner for any dialog or
+    // overlay opened by the action.
+    await tick();
+    await action();
+  }
 </script>
+
+<svelte:window onclick={handleActionsWindowClick} />
 
 <section
   bind:this={detailPane}
@@ -434,14 +474,36 @@
         <button type="button" role="tab" aria-selected={mode === 'history'} class:detail-tab--active={mode === 'history'} class="detail-tab" onclick={() => setMode('history')}>{t('detail.tab.history')}</button>
       </div>
       <div class="detail-actions">
-        <div class="detail-action-group">
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionCompare}>{t('detail.compare')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicate}>{t('detail.duplicate')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionDuplicateAsVariant}>{t('detail.duplicateAsVariant')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionRename}>{t('detail.rename')}</button>
-          <button type="button" class="btn btn--ghost btn--sm" onclick={actionMove}>{t('detail.move')}</button>
-          <button type="button" class="btn btn--ghost btn--sm btn--danger-text" onclick={() => onDeleteRequest(document)}>{t('detail.delete')}</button>
-        </div>
+        <button
+          type="button"
+          class="btn btn--ghost btn--sm detail-actions__toggle"
+          bind:this={actionsToggle}
+          aria-haspopup="menu"
+          aria-expanded={actionsOpen}
+          aria-controls={actionsOpen ? 'prompt-detail-actions-menu' : undefined}
+          onclick={toggleActions}
+        >
+          <Icon name="more-horizontal" /> {t('detail.actions')}
+        </button>
+        {#if actionsOpen}
+          <div
+            id="prompt-detail-actions-menu"
+            bind:this={actionsMenu}
+            class="detail-actions-menu"
+            role="menu"
+            aria-label={t('detail.actions')}
+            tabindex="-1"
+            onkeydown={handleActionsKeydown}
+            {@attach focusTrap}
+          >
+            <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionCompare)}>{t('detail.compare')}</button>
+            <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionDuplicate)}>{t('detail.duplicate')}</button>
+            <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionDuplicateAsVariant)}>{t('detail.duplicateAsVariant')}</button>
+            <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionRename)}>{t('detail.rename')}</button>
+            <button type="button" role="menuitem" class="detail-actions-menu__item" onclick={() => void runAction(actionMove)}>{t('detail.move')}</button>
+            <button type="button" role="menuitem" class="detail-actions-menu__item detail-actions-menu__item--danger" onclick={() => void runAction(() => onDeleteRequest(document))}>{t('detail.delete')}</button>
+          </div>
+        {/if}
       </div>
     </div>
 
