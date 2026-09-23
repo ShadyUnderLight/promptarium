@@ -175,7 +175,7 @@ assert(
   'Rail does not reserve a full-height spacer between navigation groups'
 );
 assert(
-  /.library-rail\s*\{[^}]*max-height:\s*calc\(100%\s*-\s*var\(--surface-margin\)\s*-\s*var\(--surface-margin\)/s.test(appCss),
+  /\.library-rail\s*\{[^}]*max-height:\s*calc\(100%\s*-\s*var\(--surface-margin\)\s*-\s*var\(--surface-margin\)/s.test(appCss),
   'Rail stays within the workspace height'
 );
 assert(
