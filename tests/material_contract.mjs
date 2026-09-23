@@ -183,6 +183,10 @@ assert(
   'Rail scrolls vertically when its controls exceed the workspace height'
 );
 assert(
+  /\.rail-button\s*\{[^}]*padding:\s*0\s*;/s.test(appCss),
+  'Rail buttons leave enough inline space to center their icons'
+);
+assert(
   /\.project-sidebar--collapsed\s*\{[^}]*visibility:\s*hidden/s.test(appCss),
   'collapsed Shelf retains its grid slot'
 );
